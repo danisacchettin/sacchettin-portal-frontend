@@ -310,9 +310,12 @@
 
   @media print{
     body{background:#fff !important;}
-    .frame,.blob,.fab,.fab-label,.subbar,.section-title::after{display:none !important;}
-    .overlay{position:static; background:none; backdrop-filter:none; padding:0;}
-    .panel{box-shadow:none; border:1px solid #ddd;}
+    .frame,.blob,.fab,.fab-label,.fab-baixa,.fab-baixa-label,.subbar,.section-title::after{display:none !important;}
+        .wrap,.login-screen{display:none !important;}
+        .overlay{position:static !important; background:none !important; backdrop-filter:none !important; padding:0 !important; opacity:1 !important; pointer-events:auto !important;}
+        .overlay:not(.open){display:none !important;}
+        .panel{box-shadow:none; border:1px solid #ddd; transform:none !important; opacity:1 !important;}
+        .panel-actions,.close-x{display:none !important;}
   }
 </style>
 </head>
