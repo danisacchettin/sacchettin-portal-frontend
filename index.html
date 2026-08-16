@@ -358,6 +358,7 @@
     <select class="client-select" id="clientSelect">
       <option>Casa de Carnes Cristal</option>
     </select>
+    <button type="button" class="btn-mini" id="btnMenu">Menu</button>
     <button type="button" class="btn-mini" id="btnLogout">Sair</button>
   </div>
 
@@ -456,6 +457,8 @@ let DATA = null;
    ========================================================================================== */
 const API_BASE = 'https://sacchettin-portal-backend.onrender.com';
 let authToken = localStorage.getItem('portalToken') || null;
+let USUARIO = null;
+function setUsuario(u){ USUARIO = u; }
 
 async function apiFetch(path, options = {}){
   const headers = Object.assign({}, options.headers || {});
@@ -493,6 +496,7 @@ async function tentarSessaoSalva(){
     const me = await apiFetch('/api/auth/me');
     document.getElementById('clientSelect').innerHTML = `<option>${me.empresa}</option>`;
     setClientLogo(me.logo_url, me.empresa);
+    setUsuario(me);
     return true;
   }catch(e){
     authToken = null; localStorage.removeItem('portalToken');
@@ -742,6 +746,202 @@ function openOverlay(html){
   document.getElementById('overlay').classList.add('open');
 }
 function closeOverlay(){ document.getElementById('overlay').classList.remove('open'); }
+
+function campoMenu(label, inputHtml){
+  return '<label style="font-size:11px; letter-spacing:1px; text-transform:uppercase; color:var(--ink-faint); display:block; margin-top:12px;">' + label + '</label>' + inputHtml;
+}
+const ESTILO_INPUT_MENU = 'width:100%; margin-top:6px; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:var(--paper-2); font-family:inherit; font-size:13px; color:var(--ink);';
+
+function sugerirSenhaCliente(nomeFantasia){
+  const limpo = (nomeFantasia || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]/g, '');
+  return limpo ? ('Admin' + limpo) : '';
+}
+
+function openMenuPanel(){
+  const isAdmin = USUARIO && USUARIO.papel === 'escritorio';
+  const impersonando = !!localStorage.getItem('portalAdminToken');
+
+  openOverlay(`
+    <div class="panel-head">
+      <div><h2>Menu</h2><p>Configurações da sua conta${isAdmin ? ' e do escritório' : ''}.</p></div>
+      <button class="close-x" onclick="closeOverlay()">✕</button>
+    </div>
+
+    ${impersonando ? `
+    <div class="notes-box" style="margin-top:0;">
+      <p style="margin:0 0 10px; font-size:12.5px; color:var(--ink-soft);">Você está vendo o portal como <strong>${USUARIO ? USUARIO.empresa : 'outro cliente'}</strong>.</p>
+      <button type="button" class="btn gold" onclick="voltarParaMinhaConta()">Voltar para minha conta</button>
+    </div>
+    ` : ''}
+
+    <div class="section-title" style="margin-top:${impersonando ? '24px' : '4px'};">Trocar senha</div>
+    <form id="formSenha" class="notes-box" style="border-top:none; padding-top:0;">
+      ${campoMenu('Senha atual', '<input type="password" name="senhaAtual" required style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Nova senha (mín. 8 caracteres)', '<input type="password" name="novaSenha" required minlength="8" style="' + ESTILO_INPUT_MENU + '">')}
+      <div id="senhaMsg" style="font-size:12px; margin-top:12px; display:none;"></div>
+      <button type="submit" class="btn olive" style="margin-top:14px;">Salvar nova senha</button>
+    </form>
+
+    <div class="section-title">Dados da empresa</div>
+    <form id="formPerfil" class="notes-box" style="border-top:none; padding-top:0;">
+      ${campoMenu('Seu nome', '<input type="text" name="nome" value="' + (USUARIO ? USUARIO.nome : '') + '" style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Nome fantasia da empresa', '<input type="text" name="nome_fantasia" value="' + (USUARIO ? USUARIO.empresa : '') + '" style="' + ESTILO_INPUT_MENU + '">')}
+      <div id="perfilMsg" style="font-size:12px; margin-top:12px; display:none;"></div>
+      <button type="submit" class="btn olive" style="margin-top:14px;">Salvar dados</button>
+    </form>
+
+    ${isAdmin ? `
+    <div class="section-title">Adicionar cliente</div>
+    <form id="formNovoCliente" class="notes-box" style="border-top:none; padding-top:0;">
+      ${campoMenu('Razão social', '<input type="text" name="razao_social" required style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Nome fantasia (aparece no seletor de cliente)', '<input type="text" name="nome_fantasia" style="' + ESTILO_INPUT_MENU + '" oninput="const s=document.querySelector(\'#formNovoCliente [name=senha]\'); if(s && !s.dataset.editado){ s.value = sugerirSenhaCliente(this.value); }">')}
+      ${campoMenu('Ramo de atividade (opcional)', '<input type="text" name="ramo" placeholder="ex.: açougue, padaria, salão" style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('E-mail de login do cliente', '<input type="email" name="email" required style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Senha inicial (mín. 8 caracteres)', '<input type="text" name="senha" required minlength="8" style="' + ESTILO_INPUT_MENU + '" oninput="this.dataset.editado=\'1\'">')}
+      ${campoMenu('Logo (PNG ou JPG, opcional)', '<input type="file" name="logo" accept="image/*" style="' + ESTILO_INPUT_MENU + '" onchange="handleNovoClienteLogoChange(event)">')}
+      ${campoMenu('Categorias extras de DRE (opcional — uma por linha)', '<textarea name="categorias_extras" placeholder="ex.: Perda por Quebra/Validade" style="' + ESTILO_INPUT_MENU + ' min-height:60px;"></textarea>')}
+      <div id="novoClienteMsg" style="font-size:12px; margin-top:12px; display:none;"></div>
+      <button type="submit" class="btn gold" style="margin-top:14px;">Criar cliente</button>
+    </form>
+
+    <div class="section-title">Entrar como cliente</div>
+    <div id="listaClientesAdmin" class="notes-box" style="border-top:none; padding-top:0;">Carregando empresas…</div>
+    ` : ''}
+  `);
+
+  document.getElementById('formSenha').addEventListener('submit', handleTrocarSenha);
+  document.getElementById('formPerfil').addEventListener('submit', handleSalvarPerfil);
+  if(isAdmin){
+    document.getElementById('formNovoCliente').addEventListener('submit', handleNovoCliente);
+    carregarListaClientesAdmin();
+  }
+}
+
+async function handleTrocarSenha(e){
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const msg = document.getElementById('senhaMsg');
+  msg.style.display = 'none';
+  try{
+    await apiFetch('/api/auth/senha', {method:'PATCH', body: JSON.stringify({senhaAtual: fd.get('senhaAtual'), novaSenha: fd.get('novaSenha')})});
+    msg.textContent = 'Senha alterada com sucesso.';
+    msg.style.color = 'var(--olive-strong)';
+    msg.style.display = 'block';
+    e.target.reset();
+  }catch(err){
+    msg.textContent = err.message || 'Não foi possível trocar a senha.';
+    msg.style.color = 'var(--red)';
+    msg.style.display = 'block';
+  }
+}
+
+async function handleSalvarPerfil(e){
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const msg = document.getElementById('perfilMsg');
+  msg.style.display = 'none';
+  try{
+    await apiFetch('/api/auth/perfil', {method:'PATCH', body: JSON.stringify({nome: fd.get('nome'), nome_fantasia: fd.get('nome_fantasia')})});
+    const me = await apiFetch('/api/auth/me');
+    setUsuario(me);
+    document.getElementById('clientSelect').innerHTML = `<option>${me.empresa}</option>`;
+    setClientLogo(me.logo_url, me.empresa);
+    msg.textContent = 'Dados atualizados.';
+    msg.style.color = 'var(--olive-strong)';
+    msg.style.display = 'block';
+  }catch(err){
+    msg.textContent = err.message || 'Não foi possível salvar.';
+    msg.style.color = 'var(--red)';
+    msg.style.display = 'block';
+  }
+}
+
+let novoClienteLogoDataUri = null;
+
+function handleNovoClienteLogoChange(e){
+  const file = e.target.files[0];
+  if(!file){ novoClienteLogoDataUri = null; return; }
+  const reader = new FileReader();
+  reader.onload = () => { novoClienteLogoDataUri = reader.result; };
+  reader.readAsDataURL(file);
+}
+
+async function handleNovoCliente(e){
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const msg = document.getElementById('novoClienteMsg');
+  msg.style.display = 'none';
+  const categoriasExtras = (fd.get('categorias_extras') || '').split('\n').map(s => s.trim()).filter(Boolean);
+  try{
+    await apiFetch('/api/admin/empresas', {method:'POST', body: JSON.stringify({
+      razao_social: fd.get('razao_social'),
+      nome_fantasia: fd.get('nome_fantasia'),
+      ramo: fd.get('ramo'),
+      email: fd.get('email'),
+      senha: fd.get('senha'),
+      logo_url: novoClienteLogoDataUri,
+      categorias_extras: categoriasExtras,
+    })});
+    msg.textContent = 'Cliente criado com sucesso.';
+    msg.style.color = 'var(--olive-strong)';
+    msg.style.display = 'block';
+    e.target.reset();
+    novoClienteLogoDataUri = null;
+    carregarListaClientesAdmin();
+  }catch(err){
+    msg.textContent = err.message || 'Não foi possível criar o cliente.';
+    msg.style.color = 'var(--red)';
+    msg.style.display = 'block';
+  }
+}
+
+async function carregarListaClientesAdmin(){
+  const container = document.getElementById('listaClientesAdmin');
+  if(!container) return;
+  try{
+    const empresas = await apiFetch('/api/admin/empresas');
+    if(!empresas.length){
+      container.innerHTML = '<p style="font-size:12.5px; color:var(--ink-faint); margin:0;">Nenhuma empresa cadastrada ainda.</p>';
+      return;
+    }
+    container.innerHTML = empresas.map(emp => `
+      <div style="display:flex; align-items:center; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--border);">
+        <span style="font-size:13px;">${emp.nome_fantasia || emp.razao_social}</span>
+        <button type="button" class="btn" onclick="entrarComoCliente(${emp.id})">Entrar</button>
+      </div>
+    `).join('');
+  }catch(err){
+    container.innerHTML = '<p style="font-size:12.5px; color:var(--red); margin:0;">' + (err.message || 'Erro ao carregar empresas.') + '</p>';
+  }
+}
+
+async function entrarComoCliente(id){
+  const container = document.getElementById('listaClientesAdmin');
+  try{
+    const resp = await apiFetch(`/api/admin/empresas/${id}/entrar`, {method:'POST'});
+    if(!localStorage.getItem('portalAdminToken')){
+      localStorage.setItem('portalAdminToken', authToken);
+    }
+    authToken = resp.token;
+    localStorage.setItem('portalToken', authToken);
+    closeOverlay();
+    await tentarSessaoSalva();
+    await carregarDados();
+  }catch(err){
+    if(container) container.insertAdjacentHTML('afterbegin', '<p style="font-size:12.5px; color:var(--red);">' + (err.message || 'Não foi possível entrar nessa empresa.') + '</p>');
+  }
+}
+
+async function voltarParaMinhaConta(){
+  const adminToken = localStorage.getItem('portalAdminToken');
+  if(!adminToken) return;
+  authToken = adminToken;
+  localStorage.setItem('portalToken', authToken);
+  localStorage.removeItem('portalAdminToken');
+  closeOverlay();
+  await tentarSessaoSalva();
+  await carregarDados();
+}
 
 function openReceberPanel(){
   openOverlay(`
@@ -1413,6 +1613,7 @@ document.getElementById('loginForm').addEventListener('submit', async e=>{
     localStorage.setItem('portalToken', authToken);
     document.getElementById('clientSelect').innerHTML = `<option>${resp.usuario.empresa}</option>`;
     setClientLogo(resp.usuario.logo_url, resp.usuario.empresa);
+    setUsuario(resp.usuario);
     showApp();
     await carregarDados();
   }catch(err){
@@ -1420,6 +1621,8 @@ document.getElementById('loginForm').addEventListener('submit', async e=>{
     erroEl.style.display = 'block';
   }
 });
+
+document.getElementById('btnMenu').addEventListener('click', openMenuPanel);
 
 document.getElementById('btnLogout').addEventListener('click', ()=>{
   authToken = null; localStorage.removeItem('portalToken');
