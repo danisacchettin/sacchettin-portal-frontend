@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;1,500&family=Cormorant+Garamond:ital@1&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root{
     /* paleta clara — ivory quente + cards brancos foscos */
@@ -1068,11 +1069,66 @@ function openDRE(){
   `);
 }
 
+function baixarModeloImportacao(){
+  if(typeof XLSX === 'undefined'){
+    alert('Não consegui carregar a biblioteca de planilhas agora. Verifique sua conexão e tente novamente.');
+    return;
+  }
+  const wb = XLSX.utils.book_new();
+
+  const leiaMe = [
+    ['Modelo de Importação em Lote — Portal do Cliente'],
+    [],
+    ['Como usar:'],
+    ["1. Preencha as abas 'Contas a Pagar', 'Contas a Receber' e/ou 'Caixa e Bancos' — não precisa preencher todas."],
+    ["2. Não mude os nomes das colunas nem das abas."],
+    ['3. Datas precisam ser datas de verdade do Excel (clique na célula e formate como data, não digite como texto solto).'],
+    ["4. Salve o arquivo e envie pelo botão 'Importar planilha' no dashboard."],
+  ];
+  const wsLeiaMe = XLSX.utils.aoa_to_sheet(leiaMe);
+  wsLeiaMe['!cols'] = [{ wch: 100 }, { wch: 8.71 }];
+  XLSX.utils.book_append_sheet(wb, wsLeiaMe, 'Leia-me');
+
+  const folhas = [
+    {
+      nome: 'Contas a Pagar',
+      instrucao: 'Preencha uma linha por conta a pagar. Vencimento deve ser uma data real do Excel (não texto). Forma de Pagamento sugerida: PIX, Boleto, TED, Cartão ou Dinheiro. Fornecedor e Categoria são criados automaticamente se ainda não existirem.',
+      cabecalho: ['Fornecedor', 'Categoria', 'Vencimento', 'Valor Original (R$)', 'Forma de Pagamento', 'Documento', 'Observações'],
+      larguras: [28, 20, 14, 18, 14, 14, 40],
+    },
+    {
+      nome: 'Contas a Receber',
+      instrucao: 'Preencha uma linha por conta a receber. Vencimento deve ser uma data real do Excel (não texto). Cliente e Categoria são criados automaticamente se ainda não existirem.',
+      cabecalho: ['Cliente', 'Categoria', 'Vencimento', 'Valor Original (R$)', 'Forma de Recebimento', 'Documento', 'Observações'],
+      larguras: [28, 20, 14, 18, 20, 18, 40],
+    },
+    {
+      nome: 'Caixa e Bancos',
+      instrucao: 'Preencha uma linha por movimento de caixa/banco já realizado (histórico). Data deve ser uma data real do Excel. Preencha Entrada OU Saída (deixe a outra em branco ou 0).',
+      cabecalho: ['Conta Bancária', 'Data', 'Descrição', 'Categoria', 'Entrada (R$)', 'Saída (R$)', 'Observações'],
+      larguras: [22, 14, 30, 20, 16, 14, 40],
+    },
+  ];
+
+  folhas.forEach(f => {
+    const linhas = [[f.instrucao], f.cabecalho];
+    const ws = XLSX.utils.aoa_to_sheet(linhas);
+    ws['!cols'] = f.larguras.map(w => ({ wch: w }));
+    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: f.cabecalho.length - 1 } }];
+    XLSX.utils.book_append_sheet(wb, ws, f.nome);
+  });
+
+  XLSX.writeFile(wb, 'Modelo de Importação em Lote.xlsx');
+}
+
 function openImportPanel(){
   openOverlay(`
     <div class="panel-head">
       <div><h2>Importação em lote</h2><p>Envie o modelo preenchido — contas a pagar, a receber e/ou caixa e bancos, tudo de uma vez.</p></div>
       <button class="close-x" onclick="closeOverlay()">✕</button>
+    </div>
+    <div class="panel-actions" style="margin-bottom:16px;">
+      <button class="btn" onclick="baixarModeloImportacao()">Baixar modelo (.xlsx)</button>
     </div>
     <div class="dropzone" id="dropzoneImportar">
       <input type="file" id="importInput" accept=".xlsx">
