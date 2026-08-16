@@ -136,6 +136,7 @@
   }
   .card:hover::before{opacity:1;}
   .card:hover{transform:translateY(-4px); border-color:var(--gold-line); box-shadow:var(--shadow);}
+  .card.expandable{ padding-bottom:44px; }
   .card.expandable::after{
     content:'expandir'; position:absolute; right:20px; bottom:16px; font-size:10px; letter-spacing:1.5px;
     text-transform:uppercase; color:var(--ink-faint);
@@ -198,6 +199,11 @@
   .tag-aberto{background:var(--gold-wash); color:var(--gold);}
   .tag-atraso{background:var(--red-wash); color:var(--red);}
   .tag-pago{background:var(--olive-wash); color:var(--olive);}
+
+  .origem-tag{padding:3px 9px; border-radius:999px; font-size:10px; letter-spacing:.3px; font-weight:600; background:var(--paper-2); color:var(--ink-faint); white-space:nowrap;}
+  .origem-tag.tag-escritorio{background:var(--gold-wash); color:var(--gold);}
+  .origem-tag.tag-cliente{background:var(--olive-wash); color:var(--olive);}
+  .origem-tag.tag-sistema{background:rgba(27,43,58,.08); color:var(--ink-soft);}
 
   .notes-box{margin-top:20px; border-top:1px dashed var(--border); padding-top:18px;}
   .notes-box textarea{
@@ -536,6 +542,11 @@ function limparAvisoDesatualizado(){
   if(el) el.remove();
 }
 
+function atualizarSyncTxt(){
+  const el = document.getElementById('syncTxt');
+  if(el) el.textContent = 'Sincronizado às ' + new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+}
+
 async function carregarDados(){
   limparAvisoDesatualizado();
   try{
@@ -560,6 +571,7 @@ async function carregarDados(){
   }
   renderKPIs();
   renderFlowCards();
+  atualizarSyncTxt();
 }
 
 function loadMockData(){
@@ -596,6 +608,10 @@ function loadMockData(){
   };
 }
 
+const MESES_PT = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+const DIAS_SEMANA_PT = ['domingo','segunda-feira','terça-feira','quarta-feira','quinta-feira','sexta-feira','sábado'];
+function nomeMesAtual(){ const d = new Date(); return `${MESES_PT[d.getMonth()]}/${d.getFullYear()}`; }
+function nomeDiaSemanaHoje(){ return DIAS_SEMANA_PT[new Date().getDay()]; }
 function todayISO(){ return new Date().toISOString().slice(0,10); }
 function fmtBRL(v){ return v.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}); }
 function fmtDate(iso){ const [y,m,d]=String(iso).slice(0,10).split('-'); return `${d}/${m}/${y}`; }
@@ -656,17 +672,18 @@ function cardHTML({label, value, valueClass='', sub='', tone='', expandable=fals
 
 function renderKPIs(){
   const k = computeKPIs();
+  const fimSemana = new Date(); fimSemana.setDate(fimSemana.getDate()+6);
   document.getElementById('kpiGrid').innerHTML = `
     ${cardHTML({label:'Saldo atual em contas bancárias', value:fmtBRL(k.saldoCaixa), tone:'gold', valueClass:'pos', expandable:true, id:'cardSaldo',
       sub: DATA.saldoContas.map(c=>c.conta.split('—')[0].trim()).join(' · ')})}
     ${cardHTML({label:'A receber no mês', value:fmtBRL(k.receberMes), tone:'gold', expandable:true, id:'cardReceber',
-      sub:`${DATA.contasReceber.length} título(s) em aberto`})}
+      sub:`Referente a ${nomeMesAtual()} · ${DATA.contasReceber.length} título(s) em aberto`})}
     ${cardHTML({label:'A pagar no mês', value:fmtBRL(k.pagarMes), tone:'gold', expandable:true, id:'cardPagar',
-      sub:`${DATA.contasPagar.length} título(s) em aberto`})}
-    ${cardHTML({label:'A pagar na semana', value:fmtBRL(k.pagarSemana), tone:'gold',
-      sub:'Próximos 7 dias'})}
-    ${cardHTML({label:'A pagar hoje', value:fmtBRL(k.pagarHoje), tone: k.pagarHoje>0?'red':'', valueClass:k.pagarHoje>0?'neg':'',
-      sub:fmtDate(todayISO())})}
+      sub:`Referente a ${nomeMesAtual()} · ${DATA.contasPagar.length} título(s) em aberto`})}
+    ${cardHTML({label:'A pagar na semana', value:fmtBRL(k.pagarSemana), tone:'gold', expandable:true, id:'cardPagarSemana',
+      sub:`De ${fmtDate(todayISO())} a ${fmtDate(fimSemana.toISOString().slice(0,10))}`})}
+    ${cardHTML({label:'A pagar hoje', value:fmtBRL(k.pagarHoje), tone: k.pagarHoje>0?'red':'', valueClass:k.pagarHoje>0?'neg':'', expandable:true, id:'cardPagarHoje',
+      sub:`Hoje, ${fmtDate(todayISO())} (${nomeDiaSemanaHoje()})`})}
   `;
 }
 
@@ -721,6 +738,18 @@ function statusTag(item, tipo){
   return `<span class="tag-status tag-aberto">${item.status}</span>`;
 }
 
+function origemTag(x){
+  const papel = x.criado_por_papel;
+  const origem = x.origem;
+  let label, cls;
+  if(origem === 'Importação'){ label = 'Importação em lote'; cls = 'tag-sistema'; }
+  else if(origem === 'Documento'){ label = 'Documento (auto)'; cls = 'tag-sistema'; }
+  else if(papel === 'escritorio'){ label = 'Escritório'; cls = 'tag-escritorio'; }
+  else if(papel === 'cliente'){ label = 'Cliente'; cls = 'tag-cliente'; }
+  else { label = '—'; cls = ''; }
+  return `<span class="origem-tag ${cls}">${label}</span>`;
+}
+
 function reportTable(list, tipo){
   const nomeCol = tipo==='pagar' ? 'Fornecedor' : 'Cliente';
   const rows = list.map(x=>{
@@ -734,11 +763,12 @@ function reportTable(list, tipo){
       <td>${fmtBRL(x.valor_original)}</td>
       <td>${fmtBRL(saldoAberto(x,tipo))}</td>
       <td>${statusTag(x,tipo)}</td>
+      <td>${origemTag(x)}</td>
       <td>${aberto ? `<button type="button" class="btn-mini" onclick="openBaixaForItem('${tipo}','${x.id}','${tipo}')">${acaoLbl}</button>` : '—'}</td>
     </tr>`;
   }).join('');
   return `<table class="report"><thead><tr>
-    <th>${nomeCol}</th><th>Categoria</th><th>Vencimento</th><th>Valor</th><th>Saldo em aberto</th><th>Status</th><th>Ação</th>
+    <th>${nomeCol}</th><th>Categoria</th><th>Vencimento</th><th>Valor</th><th>Saldo em aberto</th><th>Status</th><th>Origem</th><th>Ação</th>
   </tr></thead><tbody>${rows}</tbody></table>`;
 }
 
@@ -978,6 +1008,38 @@ function openPagarPanel(){
     </div>
   `);
 }
+function openPagarSemanaPanel(){
+  const inicioSemana = new Date(); const fimSemana = new Date(); fimSemana.setDate(fimSemana.getDate()+6);
+  const lista = DATA.contasPagar.filter(x=>{
+    const d = new Date(x.vencimento); return d>=inicioSemana && d<=fimSemana;
+  });
+  openOverlay(`
+    <div class="panel-head">
+      <div><h2>A pagar na semana</h2><p>Vencimentos entre ${fmtDate(todayISO())} e ${fmtDate(fimSemana.toISOString().slice(0,10))}.</p></div>
+      <button class="close-x" onclick="closeOverlay()">✕</button>
+    </div>
+    <div class="panel-actions">
+      <button class="btn gold" onclick="closeOverlay(); openForm('pagar')">+ Adicionar conta a pagar</button>
+      <button class="btn" onclick="window.print()">Imprimir</button>
+    </div>
+    ${reportTable(lista,'pagar')}
+  `);
+}
+function openPagarHojePanel(){
+  const hoje = todayISO();
+  const lista = DATA.contasPagar.filter(x=>x.vencimento===hoje);
+  openOverlay(`
+    <div class="panel-head">
+      <div><h2>A pagar hoje</h2><p>Vencimentos de hoje, ${fmtDate(hoje)} (${nomeDiaSemanaHoje()}).</p></div>
+      <button class="close-x" onclick="closeOverlay()">✕</button>
+    </div>
+    <div class="panel-actions">
+      <button class="btn gold" onclick="closeOverlay(); openForm('pagar')">+ Adicionar conta a pagar</button>
+      <button class="btn" onclick="window.print()">Imprimir</button>
+    </div>
+    ${reportTable(lista,'pagar')}
+  `);
+}
 function openFluxoPanel(){
   const k = computeKPIs();
   let acumulado = k.saldoCaixa;
@@ -999,10 +1061,10 @@ function openFluxoPanel(){
     <tbody>${rows}</tbody></table>
     ${DATA.caixaMovimentos.length ? `
       <p style="font-size:12px; color:var(--ink-soft); margin:22px 0 6px;">Movimentações lançadas pelo cliente</p>
-      <table class="report"><thead><tr><th>Data</th><th>Conta</th><th>Descrição</th><th>Entrada</th><th>Saída</th></tr></thead>
+      <table class="report"><thead><tr><th>Data</th><th>Conta</th><th>Descrição</th><th>Entrada</th><th>Saída</th><th>Origem</th></tr></thead>
       <tbody>${DATA.caixaMovimentos.slice().reverse().map(m=>`
         <tr><td>${fmtDate(m.data)}</td><td>${m.conta}</td><td>${m.descricao||'—'}</td>
-        <td>${m.entrada?fmtBRL(m.entrada):'—'}</td><td>${m.saida?fmtBRL(m.saida):'—'}</td></tr>`).join('')}</tbody></table>
+        <td>${m.entrada?fmtBRL(m.entrada):'—'}</td><td>${m.saida?fmtBRL(m.saida):'—'}</td><td>${origemTag(m)}</td></tr>`).join('')}</tbody></table>
     ` : ''}
     <div class="notes-box">
       <label style="font-size:11px; letter-spacing:1px; text-transform:uppercase; color:var(--ink-faint);">Notas do cliente</label>
@@ -1021,10 +1083,10 @@ function openSaldoPanel(){
     </tbody></table>
     ${DATA.caixaMovimentos.length ? `
       <p style="font-size:12px; color:var(--ink-soft); margin:20px 0 6px;">Movimentações recentes</p>
-      <table class="report"><thead><tr><th>Data</th><th>Conta</th><th>Descrição</th><th>Entrada</th><th>Saída</th></tr></thead>
+      <table class="report"><thead><tr><th>Data</th><th>Conta</th><th>Descrição</th><th>Entrada</th><th>Saída</th><th>Origem</th></tr></thead>
       <tbody>${DATA.caixaMovimentos.slice().reverse().slice(0,15).map(m=>`
         <tr><td>${fmtDate(m.data)}</td><td>${m.conta}</td><td>${m.descricao||'—'}</td>
-        <td>${m.entrada?fmtBRL(m.entrada):'—'}</td><td>${m.saida?fmtBRL(m.saida):'—'}</td></tr>`).join('')}</tbody></table>
+        <td>${m.entrada?fmtBRL(m.entrada):'—'}</td><td>${m.saida?fmtBRL(m.saida):'—'}</td><td>${origemTag(m)}</td></tr>`).join('')}</tbody></table>
     ` : ''}
   `);
 }
@@ -1459,7 +1521,6 @@ document.getElementById('entryForm').addEventListener('submit', async e=>{
     }
     closeForm();
     await carregarDados();
-    document.getElementById('syncTxt').textContent = 'Sincronizado às ' + new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
   }catch(err){
     alert('Não foi possível salvar: ' + err.message);
   }finally{
@@ -1695,6 +1756,8 @@ async function init(){
     if(e.target.closest('#cardReceber')) openReceberPanel();
     if(e.target.closest('#cardPagar')) openPagarPanel();
     if(e.target.closest('#cardSaldo')) openSaldoPanel();
+    if(e.target.closest('#cardPagarSemana')) openPagarSemanaPanel();
+    if(e.target.closest('#cardPagarHoje')) openPagarHojePanel();
   });
   document.getElementById('flowGrid').addEventListener('click', e=>{
     if(e.target.closest('#cardFluxo')) openFluxoPanel();
@@ -1708,6 +1771,15 @@ async function init(){
   } else {
     showLogin();
   }
+
+  // Atualização automática: reconsulta os dados a cada 5 minutos (sem recarregar a página),
+  // para que valores, referências de mês/dia e horário de sincronização fiquem sempre corretos
+  // mesmo com a aba aberta por várias horas — inclusive na virada do dia.
+  setInterval(()=>{
+    if(!document.body.classList.contains('not-authed') && authToken){
+      carregarDados();
+    }
+  }, 5*60*1000);
 }
 init();
 </script>
