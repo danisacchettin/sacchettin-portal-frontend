@@ -821,6 +821,13 @@ function openMenuPanel(){
       <button type="submit" class="btn olive" style="margin-top:14px;">Salvar dados</button>
     </form>
 
+    <div class="section-title">Editar cadastros</div>
+    <div class="notes-box" style="border-top:none; padding-top:0; display:flex; gap:10px; flex-wrap:wrap;">
+      <button type="button" class="btn" onclick="openEditFornecedores()">Fornecedores</button>
+      <button type="button" class="btn" onclick="openEditCategorias()">Categorias</button>
+      <button type="button" class="btn" onclick="openEditContasBancarias()">Contas bancárias</button>
+    </div>
+
     ${isAdmin ? `
     <div class="section-title">Adicionar cliente</div>
     <form id="formNovoCliente" class="notes-box" style="border-top:none; padding-top:0;">
@@ -846,6 +853,134 @@ function openMenuPanel(){
     document.getElementById('formNovoCliente').addEventListener('submit', handleNovoCliente);
     carregarListaClientesAdmin();
   }
+}
+
+/* ==========================================================================================
+   MENU > EDITAR CADASTROS — renomear/corrigir fornecedores, categorias e contas bancárias já
+   existentes, sem duplicar (edita por id via PATCH, diferente do upsert-por-nome do "+
+   Cadastrar novo" usado no formulário de lançamento). Nomes sempre gravados em maiúsculas
+   (o backend já uniformiza no PATCH), para manter os dropdowns consistentes.
+   ========================================================================================== */
+const GRUPOS_DRE = ['Receita','CMV','Despesas Fixas','Despesas Variáveis','Retiradas de Sócios','Cartao de Credito','Divida'];
+
+async function openEditFornecedores(){
+  openOverlay(`<div class="panel-head"><div><h2>Editar fornecedores</h2><p>Carregando…</p></div><button class="close-x" onclick="closeOverlay()">✕</button></div>`);
+  const lista = await apiFetch('/api/cadastros/fornecedores').catch(()=>[]);
+  const linhas = (lista||[]).map(f => `
+    <tr data-id="${f.id}">
+      <td><input type="text" class="ec-nome" value="${escapeHtml(f.nome)}" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
+      <td><input type="text" class="ec-cnpj" value="${escapeHtml(f.cnpj_cpf||'')}" placeholder="CNPJ/CPF" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
+      <td><input type="text" class="ec-contato" value="${escapeHtml(f.contato||'')}" placeholder="Contato" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
+      <td><input type="text" class="ec-pix" value="${escapeHtml(f.chave_pix||'')}" placeholder="Chave PIX" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
+      <td><input type="text" class="ec-banco" value="${escapeHtml(f.dados_bancarios||'')}" placeholder="Dados bancários" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
+      <td><button type="button" class="btn-mini ec-salvar">Salvar</button><span class="ec-msg" style="font-size:10.5px; margin-left:6px;"></span></td>
+    </tr>`).join('');
+  openOverlay(`
+    <div class="panel-head">
+      <div><h2>Editar fornecedores</h2><p>Corrija nome, documento, contato ou dados de pagamento (PIX/conta) de um fornecedor já cadastrado.</p></div>
+      <button class="close-x" onclick="closeOverlay()">✕</button>
+    </div>
+    <div style="overflow-x:auto;">
+    <table class="report"><thead><tr><th>Nome</th><th>CNPJ/CPF</th><th>Contato</th><th>Chave PIX</th><th>Dados bancários</th><th></th></tr></thead>
+    <tbody id="ecFornecedoresBody">${linhas || '<tr><td colspan="6">Nenhum fornecedor cadastrado ainda.</td></tr>'}</tbody></table>
+    </div>
+    <div class="panel-actions" style="margin-top:20px;"><button type="button" class="btn ghost" onclick="openMenuPanel()">Voltar ao menu</button></div>
+  `);
+  document.querySelectorAll('#ecFornecedoresBody .ec-salvar').forEach(btn=>{
+    btn.addEventListener('click', async e=>{
+      const tr = e.target.closest('tr'); const id = tr.dataset.id;
+      const msg = tr.querySelector('.ec-msg');
+      try{
+        await apiFetch(`/api/cadastros/fornecedores/${id}`, {method:'PATCH', body: JSON.stringify({
+          nome: tr.querySelector('.ec-nome').value,
+          cnpj_cpf: tr.querySelector('.ec-cnpj').value || null,
+          contato: tr.querySelector('.ec-contato').value || null,
+          chave_pix: tr.querySelector('.ec-pix').value || null,
+          dados_bancarios: tr.querySelector('.ec-banco').value || null,
+        })});
+        msg.textContent = 'Salvo ✓'; msg.style.color = 'var(--olive)';
+        await carregarCadastros();
+      }catch(err){ msg.textContent = 'Erro: ' + err.message; msg.style.color = 'var(--red)'; }
+    });
+  });
+}
+
+async function openEditCategorias(){
+  openOverlay(`<div class="panel-head"><div><h2>Editar categorias</h2><p>Carregando…</p></div><button class="close-x" onclick="closeOverlay()">✕</button></div>`);
+  const lista = await apiFetch('/api/cadastros/categorias').catch(()=>[]);
+  const gruposOpts = g => `<option value="">— Não classificado —</option>` + GRUPOS_DRE.map(x=>`<option value="${x}" ${g===x?'selected':''}>${x}</option>`).join('');
+  const linhas = (lista||[]).map(c => `
+    <tr data-id="${c.id}">
+      <td><input type="text" class="ec-nome" value="${escapeHtml(c.nome_categoria)}" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
+      <td>${c.tipo === 'receita' ? 'Receita' : 'Despesa'}</td>
+      <td><select class="ec-grupo" style="width:100%; ${ESTILO_INPUT_MENU}">${gruposOpts(c.grupo_dre)}</select></td>
+      <td><button type="button" class="btn-mini ec-salvar">Salvar</button><span class="ec-msg" style="font-size:10.5px; margin-left:6px;"></span></td>
+    </tr>`).join('');
+  openOverlay(`
+    <div class="panel-head">
+      <div><h2>Editar categorias</h2><p>Corrija o nome ou o grupo de DRE (fixo/variável/etc.) de uma categoria — o grupo de DRE é o que alimenta o relatório de DRE automático.</p></div>
+      <button class="close-x" onclick="closeOverlay()">✕</button>
+    </div>
+    <div style="overflow-x:auto;">
+    <table class="report"><thead><tr><th>Nome</th><th>Tipo</th><th>Grupo de DRE</th><th></th></tr></thead>
+    <tbody id="ecCategoriasBody">${linhas || '<tr><td colspan="4">Nenhuma categoria cadastrada ainda.</td></tr>'}</tbody></table>
+    </div>
+    <div class="panel-actions" style="margin-top:20px;"><button type="button" class="btn ghost" onclick="openMenuPanel()">Voltar ao menu</button></div>
+  `);
+  document.querySelectorAll('#ecCategoriasBody .ec-salvar').forEach(btn=>{
+    btn.addEventListener('click', async e=>{
+      const tr = e.target.closest('tr'); const id = tr.dataset.id;
+      const msg = tr.querySelector('.ec-msg');
+      try{
+        await apiFetch(`/api/cadastros/categorias/${id}`, {method:'PATCH', body: JSON.stringify({
+          nome_categoria: tr.querySelector('.ec-nome').value,
+          grupo_dre: tr.querySelector('.ec-grupo').value || null,
+        })});
+        msg.textContent = 'Salvo ✓'; msg.style.color = 'var(--olive)';
+        await carregarCadastros();
+      }catch(err){ msg.textContent = 'Erro: ' + err.message; msg.style.color = 'var(--red)'; }
+    });
+  });
+}
+
+async function openEditContasBancarias(){
+  openOverlay(`<div class="panel-head"><div><h2>Editar contas bancárias</h2><p>Carregando…</p></div><button class="close-x" onclick="closeOverlay()">✕</button></div>`);
+  const lista = await apiFetch('/api/cadastros/contas-bancarias').catch(()=>[]);
+  const linhas = (lista||[]).map(c => `
+    <tr data-id="${c.id}">
+      <td><input type="text" class="ec-nome" value="${escapeHtml(c.nome_conta)}" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
+      <td><input type="text" class="ec-banco" value="${escapeHtml(c.banco||'')}" placeholder="Banco" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
+      <td><input type="text" class="ec-agencia" value="${escapeHtml(c.agencia||'')}" placeholder="Agência" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
+      <td><input type="text" class="ec-numero" value="${escapeHtml(c.numero_conta||'')}" placeholder="Nº conta" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
+      <td><button type="button" class="btn-mini ec-salvar">Salvar</button><span class="ec-msg" style="font-size:10.5px; margin-left:6px;"></span></td>
+    </tr>`).join('');
+  openOverlay(`
+    <div class="panel-head">
+      <div><h2>Editar contas bancárias</h2><p>Corrija nome, banco, agência ou número de uma conta já cadastrada.</p></div>
+      <button class="close-x" onclick="closeOverlay()">✕</button>
+    </div>
+    <div style="overflow-x:auto;">
+    <table class="report"><thead><tr><th>Nome</th><th>Banco</th><th>Agência</th><th>Nº conta</th><th></th></tr></thead>
+    <tbody id="ecContasBody">${linhas || '<tr><td colspan="5">Nenhuma conta bancária cadastrada ainda.</td></tr>'}</tbody></table>
+    </div>
+    <div class="panel-actions" style="margin-top:20px;"><button type="button" class="btn ghost" onclick="openMenuPanel()">Voltar ao menu</button></div>
+  `);
+  document.querySelectorAll('#ecContasBody .ec-salvar').forEach(btn=>{
+    btn.addEventListener('click', async e=>{
+      const tr = e.target.closest('tr'); const id = tr.dataset.id;
+      const msg = tr.querySelector('.ec-msg');
+      try{
+        await apiFetch(`/api/cadastros/contas-bancarias/${id}`, {method:'PATCH', body: JSON.stringify({
+          nome_conta: tr.querySelector('.ec-nome').value,
+          banco: tr.querySelector('.ec-banco').value || null,
+          agencia: tr.querySelector('.ec-agencia').value || null,
+          numero_conta: tr.querySelector('.ec-numero').value || null,
+        })});
+        msg.textContent = 'Salvo ✓'; msg.style.color = 'var(--olive)';
+        await carregarCadastros();
+      }catch(err){ msg.textContent = 'Erro: ' + err.message; msg.style.color = 'var(--red)'; }
+    });
+  });
 }
 
 async function handleTrocarSenha(e){
@@ -1103,26 +1238,71 @@ function openAgingPanel(){
   `);
 }
 
+// Agrupa uma lista de lançamentos (contas a pagar) pelo nome da categoria, somando valor_original —
+// usado para detalhar o que compõe cada bloco (fixo/variável) do DRE, não só o total.
+function agruparPorCategoria(lista){
+  const m = {};
+  lista.forEach(x=>{ const c = x.categoria || 'Sem categoria'; m[c] = (m[c]||0) + x.valor_original; });
+  return Object.entries(m).sort((a,b)=>b[1]-a[1]);
+}
+function linhasDetalheDRE(pares){
+  return pares.map(([cat,val])=>`<tr><td style="padding-left:24px; color:var(--ink-faint); font-size:11.5px;">${escapeHtml(cat)}</td><td style="text-align:right; color:var(--ink-faint); font-size:11.5px;">${fmtBRL(val)}</td></tr>`).join('');
+}
+
 function openDRE(){
-  const receitaBruta = DATA.contasReceber.reduce((s,x)=>s+x.valor_original,0);
-  // (x.categoria || '') — categoria agora é opcional no lançamento (dropdown "Cadastrar novo"
-  // pode ficar em branco), então um lançamento sem categoria não pode quebrar o DRE.
-  const custosVar = DATA.contasPagar.filter(x=>['CMV','Embalagens'].some(c=>(x.categoria||'').includes(c))).reduce((s,x)=>s+x.valor_original,0);
-  const custosFixos = DATA.contasPagar.filter(x=>!['CMV','Embalagens'].some(c=>(x.categoria||'').includes(c))).reduce((s,x)=>s+x.valor_original,0);
+  const hoje = new Date();
+  // Regime de competência: considera o mês de vencimento, não a data em que foi de fato pago/recebido.
+  const noPeriodo = iso => { const d = new Date(iso); return d.getUTCFullYear()===hoje.getFullYear() && d.getUTCMonth()===hoje.getMonth(); };
+  const receberPeriodo = DATA.contasReceber.filter(x=>noPeriodo(x.vencimento));
+  const pagarPeriodo = DATA.contasPagar.filter(x=>noPeriodo(x.vencimento));
+
+  const receitaBruta = receberPeriodo.reduce((s,x)=>s+x.valor_original,0);
+
+  // grupo_dre vem do cadastro de categorias (Menu > Editar > Categorias). Lançamento sem
+  // categoria, ou com categoria ainda sem grupo_dre definido, cai em "Não classificado" —
+  // aparece como linha própria em vez de ser somado escondido em algum bloco, para não
+  // maquiar o resultado com dado que ainda não foi revisado.
+  const itensVar = pagarPeriodo.filter(x=>x.grupo_dre==='CMV' || x.grupo_dre==='Despesas Variáveis');
+  const itensFixos = pagarPeriodo.filter(x=>x.grupo_dre==='Despesas Fixas');
+  const itensNaoClass = pagarPeriodo.filter(x=>!x.grupo_dre);
+  const itensSocios = pagarPeriodo.filter(x=>x.grupo_dre==='Retiradas de Sócios');
+  const itensCartao = pagarPeriodo.filter(x=>x.grupo_dre==='Cartao de Credito');
+  const itensDivida = pagarPeriodo.filter(x=>x.grupo_dre==='Divida');
+
+  const custosVar = itensVar.reduce((s,x)=>s+x.valor_original,0);
+  const custosFixos = itensFixos.reduce((s,x)=>s+x.valor_original,0);
+  const naoClass = itensNaoClass.reduce((s,x)=>s+x.valor_original,0);
+  const socios = itensSocios.reduce((s,x)=>s+x.valor_original,0);
+  const cartao = itensCartao.reduce((s,x)=>s+x.valor_original,0);
+  const divida = itensDivida.reduce((s,x)=>s+x.valor_original,0);
+
   const margem = receitaBruta - custosVar;
-  const resultado = margem - custosFixos;
+  const margemPct = receitaBruta ? (margem/receitaBruta*100) : 0;
+  const resultado = margem - custosFixos - naoClass;
+
   openOverlay(`
     <div class="panel-head">
-      <div><h2>DRE automático — período atual</h2><p>Gerado a partir dos lançamentos correntes. Regime de competência simplificado.</p></div>
+      <div><h2>DRE automático — ${nomeMesAtual()}</h2><p>Regime de competência (por vencimento) · custos fixos e variáveis separados pelo grupo de DRE de cada categoria.</p></div>
       <button class="close-x" onclick="closeOverlay()">✕</button>
     </div>
     <table class="report">
       <tbody>
         <tr><td>Receita Operacional Bruta</td><td style="text-align:right;">${fmtBRL(receitaBruta)}</td></tr>
-        <tr><td>(–) Custos Variáveis</td><td style="text-align:right;">${fmtBRL(custosVar)}</td></tr>
-        <tr><td><strong>Margem de Contribuição</strong></td><td style="text-align:right;"><strong>${fmtBRL(margem)}</strong></td></tr>
+        <tr><td>(–) Custos Variáveis (CMV)</td><td style="text-align:right;">${fmtBRL(custosVar)}</td></tr>
+        ${linhasDetalheDRE(agruparPorCategoria(itensVar))}
+        <tr><td><strong>Margem de Contribuição</strong></td><td style="text-align:right;"><strong>${fmtBRL(margem)} (${margemPct.toFixed(1)}%)</strong></td></tr>
         <tr><td>(–) Custos Fixos</td><td style="text-align:right;">${fmtBRL(custosFixos)}</td></tr>
-        <tr><td><strong>Resultado do Período</strong></td><td style="text-align:right;"><strong>${fmtBRL(resultado)}</strong></td></tr>
+        ${linhasDetalheDRE(agruparPorCategoria(itensFixos))}
+        ${naoClass ? `<tr><td style="color:var(--red);">(–) Não classificado (revisar categoria)</td><td style="text-align:right; color:var(--red);">${fmtBRL(naoClass)}</td></tr>${linhasDetalheDRE(agruparPorCategoria(itensNaoClass))}` : ''}
+        <tr><td><strong>Resultado do Período</strong></td><td style="text-align:right;"><strong class="${resultado<0?'val neg':''}">${fmtBRL(resultado)}</strong></td></tr>
+      </tbody>
+    </table>
+    <div class="panel-head" style="margin-top:26px; margin-bottom:8px;"><div><h2 style="font-size:15px;">Fora do resultado operacional</h2><p>Não entram na margem de contribuição — são estrutura de capital/retirada, não custo da operação.</p></div></div>
+    <table class="report">
+      <tbody>
+        <tr><td>Retiradas de Sócios / Pró-labore</td><td style="text-align:right;">${fmtBRL(socios)}</td></tr>
+        <tr><td>Cartão de Crédito (PJ/PF a confirmar)</td><td style="text-align:right;">${fmtBRL(cartao)}</td></tr>
+        <tr><td>Serviço da Dívida (empréstimos/acordos)</td><td style="text-align:right;">${fmtBRL(divida)}</td></tr>
       </tbody>
     </table>
     <div class="panel-actions" style="margin-top:20px;">
@@ -1534,12 +1714,15 @@ document.getElementById('entryForm').addEventListener('submit', async e=>{
    ========================================================================================== */
 let baixaState = {tipo:'pagar', itemId:null, origin:'fab', fase:'total'};
 
-function mockPaymentInfo(item){
-  // Ilustrativo apenas — integração real de boleto/PIX entra na fase de backend (banco/PSP).
-  const seed = String(item.id).padStart(6,'0');
-  const linha = `341-7  ${seed}0-9  60009.${seed}3  90000.00190  1  95000000${String(Math.round(item.valor_original*100)).padStart(10,'0')}`;
-  const pix = `00020126580014BR.GOV.BCB.PIX0136cristal-${seed}5204000053039865406${item.valor_original.toFixed(2)}5802BR5920CASA DE CARNES CRISTAL6009SAO PAULO6304ABCD`;
-  return {linha, pix};
+// Dados reais de pagamento do fornecedor (chave PIX / dados bancários), cadastrados em
+// Menu > Editar > Fornecedores. Nunca gera nada artificial — se o fornecedor não tiver esses
+// campos preenchidos, simplesmente não mostra a seção (evita que o cliente tente pagar com um
+// código que não existe de verdade).
+function fornecedorPaymentInfo(item){
+  const forn = (CADASTROS.fornecedores||[]).find(f => (f.nome||'').trim().toUpperCase() === (item.credor||'').trim().toUpperCase());
+  if(!forn) return null;
+  if(!forn.chave_pix && !forn.dados_bancarios) return null;
+  return { chave_pix: forn.chave_pix, dados_bancarios: forn.dados_bancarios };
 }
 
 function copyToClipboard(text, btn){
@@ -1551,13 +1734,15 @@ function copyToClipboard(text, btn){
   }
 }
 
-function openBaixaFab(){
+async function openBaixaFab(){
   baixaState = {tipo:'pagar', itemId:null, origin:'fab', fase:'total'};
+  await carregarCadastros();
   renderBaixaPicker();
   document.getElementById('overlayBaixa').classList.add('open');
 }
-function openBaixaForItem(tipo, id, origin){
+async function openBaixaForItem(tipo, id, origin){
   baixaState = {tipo, itemId:id, origin, fase:'total'};
+  await carregarCadastros();
   renderBaixaDetail();
   document.getElementById('overlayBaixa').classList.add('open');
 }
@@ -1597,6 +1782,15 @@ function renderBaixaPicker(){
   });
 }
 
+// Select de "de qual conta saiu/entrou o dinheiro" — alimentado pelo mesmo cadastro de contas
+// bancárias usado no lançamento manual (CADASTROS.contasBancarias), para saber qual banco
+// movimentou cada baixa (importante com mais de uma conta ativa).
+function optionsContaBancaria(){
+  const lista = CADASTROS.contasBancarias || [];
+  const opts = lista.map(c=>`<option value="${c.id}">${escapeHtml(c.nome_conta)}</option>`).join('');
+  return `<option value="">— Não informado —</option>${opts}`;
+}
+
 function renderBaixaForm(fase, saldo){
   const wrap = document.getElementById('baixaFormWrap');
   if(fase==='total'){
@@ -1604,8 +1798,11 @@ function renderBaixaForm(fase, saldo){
       <div class="form-grid">
         <div class="field"><label>Valor a confirmar</label><input type="text" value="${fmtBRL(saldo)}" disabled></div>
         <div class="field"><label>Data do pagamento</label><input type="date" name="data" value="${todayISO()}"></div>
-        <div class="field full"><label>Forma de pagamento</label>
+        <div class="field"><label>Forma de pagamento</label>
           <select name="forma"><option>PIX</option><option>Boleto</option><option>TED</option><option>Cartão</option><option>Dinheiro</option></select>
+        </div>
+        <div class="field full"><label>Conta bancária (de onde saiu/entrou)</label>
+          <select name="conta_bancaria_id">${optionsContaBancaria()}</select>
         </div>
       </div>`;
   } else {
@@ -1615,6 +1812,9 @@ function renderBaixaForm(fase, saldo){
         <div class="field"><label>Data</label><input type="date" name="data" value="${todayISO()}"></div>
         <div class="field"><label>Forma de pagamento</label>
           <select name="forma"><option>PIX</option><option>Boleto</option><option>TED</option><option>Cartão</option><option>Dinheiro</option></select>
+        </div>
+        <div class="field"><label>Conta bancária (de onde saiu/entrou)</label>
+          <select name="conta_bancaria_id">${optionsContaBancaria()}</select>
         </div>
         <div class="field"><label>Nova data de vencimento do restante</label><input type="date" name="nova_venc"></div>
         <div class="field full"><label>Observações da renegociação</label><input type="text" name="observacoes" placeholder="Ex: acordo verbal, parcela 1 de 2..."></div>
@@ -1628,7 +1828,7 @@ function renderBaixaDetail(){
   if(!item){ renderBaixaPicker(); return; }
   const nome = baixaState.tipo==='pagar' ? item.credor : item.cliente;
   const saldo = saldoAberto(item, baixaState.tipo);
-  const pay = baixaState.tipo==='pagar' ? mockPaymentInfo(item) : null;
+  const pay = baixaState.tipo==='pagar' ? fornecedorPaymentInfo(item) : null;
   const fase = baixaState.fase || 'total';
 
   document.getElementById('panelBaixa').innerHTML = `
@@ -1638,17 +1838,16 @@ function renderBaixaDetail(){
     </div>
     ${pay ? `
     <div>
-      <label style="font-size:11px; letter-spacing:1px; text-transform:uppercase; color:var(--ink-faint);">Dados para pagamento (simulado)</label>
+      <label style="font-size:11px; letter-spacing:1px; text-transform:uppercase; color:var(--ink-faint);">Dados de pagamento cadastrados para este fornecedor</label>
+      ${pay.chave_pix ? `
       <div style="font-family:monospace; font-size:11px; background:var(--paper-2); border:1px solid var(--border); border-radius:10px; padding:10px 12px; margin-top:6px; word-break:break-all; display:flex; align-items:center; gap:8px; justify-content:space-between;">
-        <span>Linha digitável: ${pay.linha}</span>
-        <button type="button" class="btn-mini" onclick="copyToClipboard('${pay.linha}', this)">Copiar</button>
-      </div>
-      <div style="font-family:monospace; font-size:11px; background:var(--paper-2); border:1px solid var(--border); border-radius:10px; padding:10px 12px; margin-top:8px; word-break:break-all; display:flex; align-items:center; gap:8px; justify-content:space-between;">
-        <span>PIX copia e cola: ${pay.pix}</span>
-        <button type="button" class="btn-mini" onclick="copyToClipboard('${pay.pix}', this)">Copiar</button>
-      </div>
-      <div style="font-size:10.5px; color:var(--ink-faint); margin-top:6px;">Integração real com banco/PSP entra na fase de backend — hoje é apenas ilustrativo.</div>
-    </div>` : ''}
+        <span>Chave PIX: ${escapeHtml(pay.chave_pix)}</span>
+        <button type="button" class="btn-mini" onclick="copyToClipboard('${escapeHtml(pay.chave_pix)}', this)">Copiar</button>
+      </div>` : ''}
+      ${pay.dados_bancarios ? `
+      <div style="font-size:11px; background:var(--paper-2); border:1px solid var(--border); border-radius:10px; padding:10px 12px; margin-top:8px; white-space:pre-wrap;">${escapeHtml(pay.dados_bancarios)}</div>` : ''}
+      <div style="font-size:10.5px; color:var(--ink-faint); margin-top:6px;">Para editar, use Menu &gt; Editar &gt; Fornecedores.</div>
+    </div>` : (baixaState.tipo==='pagar' ? `<div style="font-size:11.5px; color:var(--ink-faint); background:var(--paper-2); border:1px solid var(--border); border-radius:10px; padding:10px 12px;">Nenhum dado de pagamento (PIX/conta) cadastrado para este fornecedor ainda. Cadastre em Menu &gt; Editar &gt; Fornecedores.</div>` : '')}
     <div class="type-toggle" id="baixaFaseToggle" style="margin-top:18px;">
       <button type="button" class="${fase==='total'?'active':''}" data-fase="total">Pagamento total</button>
       <button type="button" class="${fase==='parcial'?'active':''}" data-fase="parcial">Parcial / renegociado</button>
@@ -1674,11 +1873,13 @@ function renderBaixaDetail(){
     const forma = f.querySelector('[name=forma]').value;
     const obsEl = f.querySelector('[name=observacoes]');
     const vencEl = f.querySelector('[name=nova_venc]');
+    const contaEl = f.querySelector('[name=conta_bancaria_id]');
     const valor = fase==='total' ? saldo : (parseFloat(f.querySelector('[name=valor]').value)||0);
     applyBaixa(baixaState.tipo, item.id, {
       valor, data, forma,
       observacoes: obsEl ? obsEl.value : '',
       novaDataVenc: vencEl && vencEl.value ? vencEl.value : null,
+      contaBancariaId: contaEl && contaEl.value ? contaEl.value : null,
       parcial: fase==='parcial',
     });
   });
@@ -1691,6 +1892,7 @@ async function applyBaixa(tipo, id, payload){
     await apiFetch(path, {method:'POST', body: JSON.stringify({
       valor: payload.valor, data: payload.data, forma: payload.forma,
       observacoes: payload.observacoes, nova_data_vencimento: payload.novaDataVenc,
+      conta_bancaria_id: payload.contaBancariaId,
     })});
     closeBaixa();
     await carregarDados();
