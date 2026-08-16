@@ -667,7 +667,9 @@ function renderFlowCards(){
   const k = computeKPIs();
   let acumulado = k.saldoCaixa;
   const acumulados = DATA.fluxoProjetado.map(m=>{ acumulado += (m.receber - m.pagar); return acumulado; });
-  document.getElementById('fluxoSaldoFinal').textContent = fmtBRL(acumulados[acumulados.length-1]);
+  // Sem meses projetados ainda (cliente novo/sem dados): mostra o saldo atual em vez de
+  // quebrar a tela tentando formatar o último item de uma lista vazia.
+  document.getElementById('fluxoSaldoFinal').textContent = fmtBRL(acumulados.length ? acumulados[acumulados.length-1] : k.saldoCaixa);
 
   new Chart(document.getElementById('miniFlow'), {
     type:'line',
@@ -705,7 +707,7 @@ function reportTable(list, tipo){
     return `
     <tr>
       <td>${tipo==='pagar'?x.credor:x.cliente}</td>
-      <td>${x.categoria}</td>
+      <td>${x.categoria || '—'}</td>
       <td>${fmtDate(x.vencimento)}</td>
       <td>${fmtBRL(x.valor_original)}</td>
       <td>${fmtBRL(saldoAberto(x,tipo))}</td>
@@ -823,8 +825,10 @@ function openAgingPanel(){
 
 function openDRE(){
   const receitaBruta = DATA.contasReceber.reduce((s,x)=>s+x.valor_original,0);
-  const custosVar = DATA.contasPagar.filter(x=>['CMV','Embalagens'].some(c=>x.categoria.includes(c))).reduce((s,x)=>s+x.valor_original,0);
-  const custosFixos = DATA.contasPagar.filter(x=>!['CMV','Embalagens'].some(c=>x.categoria.includes(c))).reduce((s,x)=>s+x.valor_original,0);
+  // (x.categoria || '') — categoria agora é opcional no lançamento (dropdown "Cadastrar novo"
+  // pode ficar em branco), então um lançamento sem categoria não pode quebrar o DRE.
+  const custosVar = DATA.contasPagar.filter(x=>['CMV','Embalagens'].some(c=>(x.categoria||'').includes(c))).reduce((s,x)=>s+x.valor_original,0);
+  const custosFixos = DATA.contasPagar.filter(x=>!['CMV','Embalagens'].some(c=>(x.categoria||'').includes(c))).reduce((s,x)=>s+x.valor_original,0);
   const margem = receitaBruta - custosVar;
   const resultado = margem - custosFixos;
   openOverlay(`
