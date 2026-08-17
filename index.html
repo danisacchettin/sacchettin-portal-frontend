@@ -107,6 +107,8 @@
   }
   .sync-dot{width:6px; height:6px; border-radius:50%; background:var(--olive-strong); box-shadow:0 0 6px var(--olive-strong); animation:pulse 2.4s ease-in-out infinite;}
   @keyframes pulse{0%,100%{opacity:1;} 50%{opacity:.35;}}
+  .sync-pill.offline{border-color:rgba(193,85,75,.4); background:var(--red-wash); color:var(--red);}
+  .sync-dot.offline{background:var(--red); box-shadow:0 0 6px var(--red); animation:none; opacity:1;}
   .client-select{
     font-family:inherit; font-size:12.5px; color:var(--ink); background:var(--surface);
     border:1px solid var(--border); border-radius:9px; padding:7px 12px; letter-spacing:.2px;
@@ -555,6 +557,29 @@ function limparAvisoDesatualizado(){
 function atualizarSyncTxt(){
   const el = document.getElementById('syncTxt');
   if(el) el.textContent = 'Sincronizado às ' + new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  const pill = document.querySelector('.sync-pill');
+  const dot = document.querySelector('.sync-dot');
+  if(pill) pill.classList.remove('offline');
+  if(dot) dot.classList.remove('offline');
+}
+
+// Deixa visível, na própria bolinha/selo (não só num aviso separado que passa despercebido),
+// que os dados na tela NÃO são a última versão — evita a bolinha continuar "verde" como se
+// estivesse tudo em dia quando na verdade a busca no servidor falhou.
+function marcarSyncOffline(quandoISO){
+  const el = document.getElementById('syncTxt');
+  const pill = document.querySelector('.sync-pill');
+  const dot = document.querySelector('.sync-dot');
+  if(el){
+    if(quandoISO){
+      const quando = new Date(quandoISO);
+      el.textContent = 'Sem conexão — dado de ' + quando.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+    } else {
+      el.textContent = 'Sem conexão com o servidor';
+    }
+  }
+  if(pill) pill.classList.add('offline');
+  if(dot) dot.classList.add('offline');
 }
 
 async function carregarDados(){
@@ -570,6 +595,7 @@ async function carregarDados(){
       renderKPIs();
       renderFlowCards();
       mostrarAvisoDesatualizado(snap.quando);
+      marcarSyncOffline(snap.quando);
       return;
     }
     // Nunca houve uma atualização real recebida — não inventa números, avisa e para.
@@ -577,6 +603,7 @@ async function carregarDados(){
       Não foi possível carregar os dados agora, e ainda não existe nenhuma atualização anterior salva neste navegador.<br>Tente novamente em alguns instantes.
     </div>`;
     document.getElementById('flowGrid').innerHTML = '';
+    marcarSyncOffline(null);
     return;
   }
   renderKPIs();
