@@ -1703,7 +1703,7 @@ async function handleImportUpload(file){
     ];
     document.getElementById('importResultado').innerHTML = secoes.map(s => `
       <div style="margin-top:14px;">
-        <p style="font-size:12.5px; color:var(--ink); margin:0 0 6px;"><strong>${s.label}</strong> — ${s.r.inseridos} lançamento(s) importado(s)${s.r.erros.length ? `, ${s.r.erros.length} linha(s) com problema` : ''}.</p>
+        <p style="font-size:12.5px; color:var(--ink); margin:0 0 6px;"><strong>${s.label}</strong> — ${s.r.inseridos} lançamento(s) importado(s)${s.r.baixados ? `, ${s.r.baixados} baixado(s) automaticamente` : ''}${s.r.duplicados ? `, ${s.r.duplicados} já existiam (não duplicado)` : ''}${s.r.erros.length ? `, ${s.r.erros.length} linha(s) com problema` : ''}.</p>
         ${s.r.erros.length ? `<ul style="font-size:11.5px; color:var(--red); margin:0; padding-left:18px;">${s.r.erros.map(e=>`<li>${e}</li>`).join('')}</ul>` : ''}
       </div>
     `).join('') + `<div class="panel-actions" style="margin-top:18px;"><button class="btn gold" onclick="closeOverlay()">Fechar</button></div>`;
