@@ -392,6 +392,16 @@
       <div class="val" style="font-size:19px;">Importar planilha</div>
       <div class="sub">Sobe de uma vez um histórico de contas a pagar, a receber ou caixa</div>
     </div>
+    <div class="card" id="btnContratos">
+      <div class="lbl">Contratos</div>
+      <div class="val" style="font-size:19px;">Empréstimos e financiamentos</div>
+      <div class="sub">Parcelas, juros, vencimentos e cópia de cada contrato</div>
+    </div>
+    <div class="card" id="btnFuncionarios">
+      <div class="lbl">Funcionários</div>
+      <div class="val" style="font-size:19px;">Cadastro de RH</div>
+      <div class="sub">Salário, benefícios, encargos e alertas de férias</div>
+    </div>
   </div>
 
   <footer class="foot">
@@ -866,10 +876,14 @@ const GRUPOS_DRE = ['Receita','CMV','Despesas Fixas','Despesas Variáveis','Reti
 async function openEditFornecedores(){
   openOverlay(`<div class="panel-head"><div><h2>Editar fornecedores</h2><p>Carregando…</p></div><button class="close-x" onclick="closeOverlay()">✕</button></div>`);
   const lista = await apiFetch('/api/cadastros/fornecedores').catch(()=>[]);
+  const optTipoPessoa = tp => `<option value="">— A confirmar —</option>
+    <option value="PJ" ${tp==='PJ'?'selected':''}>PJ</option>
+    <option value="PF" ${tp==='PF'?'selected':''}>PF</option>`;
   const linhas = (lista||[]).map(f => `
     <tr data-id="${f.id}">
       <td><input type="text" class="ec-nome" value="${escapeHtml(f.nome)}" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
       <td><input type="text" class="ec-cnpj" value="${escapeHtml(f.cnpj_cpf||'')}" placeholder="CNPJ/CPF" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
+      <td><select class="ec-tipo-pessoa" style="width:100%; ${ESTILO_INPUT_MENU}">${optTipoPessoa(f.tipo_pessoa)}</select></td>
       <td><input type="text" class="ec-contato" value="${escapeHtml(f.contato||'')}" placeholder="Contato" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
       <td><input type="text" class="ec-pix" value="${escapeHtml(f.chave_pix||'')}" placeholder="Chave PIX" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
       <td><input type="text" class="ec-banco" value="${escapeHtml(f.dados_bancarios||'')}" placeholder="Dados bancários" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
@@ -877,12 +891,12 @@ async function openEditFornecedores(){
     </tr>`).join('');
   openOverlay(`
     <div class="panel-head">
-      <div><h2>Editar fornecedores</h2><p>Corrija nome, documento, contato ou dados de pagamento (PIX/conta) de um fornecedor já cadastrado.</p></div>
+      <div><h2>Editar fornecedores</h2><p>Corrija nome, documento, contato ou dados de pagamento (PIX/conta) de um fornecedor já cadastrado. O campo PJ/PF define se os pagamentos a esse fornecedor entram como despesa normal ou como retirada de prólabore no DRE.</p></div>
       <button class="close-x" onclick="closeOverlay()">✕</button>
     </div>
     <div style="overflow-x:auto;">
-    <table class="report"><thead><tr><th>Nome</th><th>CNPJ/CPF</th><th>Contato</th><th>Chave PIX</th><th>Dados bancários</th><th></th></tr></thead>
-    <tbody id="ecFornecedoresBody">${linhas || '<tr><td colspan="6">Nenhum fornecedor cadastrado ainda.</td></tr>'}</tbody></table>
+    <table class="report"><thead><tr><th>Nome</th><th>CNPJ/CPF</th><th>PJ/PF</th><th>Contato</th><th>Chave PIX</th><th>Dados bancários</th><th></th></tr></thead>
+    <tbody id="ecFornecedoresBody">${linhas || '<tr><td colspan="7">Nenhum fornecedor cadastrado ainda.</td></tr>'}</tbody></table>
     </div>
     <div class="panel-actions" style="margin-top:20px;"><button type="button" class="btn ghost" onclick="openMenuPanel()">Voltar ao menu</button></div>
   `);
@@ -894,6 +908,7 @@ async function openEditFornecedores(){
         await apiFetch(`/api/cadastros/fornecedores/${id}`, {method:'PATCH', body: JSON.stringify({
           nome: tr.querySelector('.ec-nome').value,
           cnpj_cpf: tr.querySelector('.ec-cnpj').value || null,
+          tipo_pessoa: tr.querySelector('.ec-tipo-pessoa').value || null,
           contato: tr.querySelector('.ec-contato').value || null,
           chave_pix: tr.querySelector('.ec-pix').value || null,
           dados_bancarios: tr.querySelector('.ec-banco').value || null,
@@ -980,6 +995,247 @@ async function openEditContasBancarias(){
         await carregarCadastros();
       }catch(err){ msg.textContent = 'Erro: ' + err.message; msg.style.color = 'var(--red)'; }
     });
+  });
+}
+
+/* ==========================================================================================
+   CONTRATOS — empréstimos, financiamentos e renegociações. "Parcelas pagas" nunca é um
+   contador manual solto: é sempre calculado pelo backend contando os lançamentos de
+   contas_pagar vinculados ao contrato (contrato_id) que já estão com status 'Pago Total' —
+   ou seja, dar baixa no boleto de uma parcela (fluxo que já existe) atualiza o progresso
+   automaticamente, sem nenhum passo extra.
+   ========================================================================================== */
+async function openContratosPanel(){
+  openOverlay(`<div class="panel-head"><div><h2>Contratos</h2><p>Carregando…</p></div><button class="close-x" onclick="closeOverlay()">✕</button></div>`);
+  const lista = await apiFetch('/api/contratos').catch(()=>[]);
+  renderContratosPanel(lista);
+}
+
+function renderContratosPanel(lista){
+  const linhas = (lista||[]).map(c => {
+    const pagas = Number(c.parcelas_pagas||0);
+    const total = c.num_parcelas_total ? Number(c.num_parcelas_total) : (Number(c.parcelas_lancadas)||0);
+    const pct = total ? Math.round((pagas/total)*100) : 0;
+    return `
+    <tr data-id="${c.id}">
+      <td>
+        <div style="font-weight:600;">${escapeHtml(c.credor)}</div>
+        <div style="font-size:11px; color:var(--ink-faint);">${escapeHtml(c.numero_contrato||'sem número')}</div>
+      </td>
+      <td>${escapeHtml(c.finalidade||'—')}</td>
+      <td>${c.valor_total!=null ? fmtBRL(Number(c.valor_total)) : '—'}</td>
+      <td>${c.valor_parcela!=null ? fmtBRL(Number(c.valor_parcela)) : '—'}</td>
+      <td>${escapeHtml(c.taxa_juros||'—')}</td>
+      <td>
+        <div style="font-size:11.5px; margin-bottom:4px;">${pagas} / ${total || '?'} parcelas</div>
+        <div style="background:var(--paper-2); border-radius:6px; height:6px; overflow:hidden;">
+          <div style="background:var(--olive); height:100%; width:${pct}%;"></div>
+        </div>
+        ${c.saldo_em_aberto!=null ? `<div style="font-size:11px; color:var(--ink-faint); margin-top:4px;">Saldo em aberto: ${fmtBRL(Number(c.saldo_em_aberto))}</div>` : ''}
+      </td>
+      <td><span class="tag-status ${c.status==='Ativo'?'tag-aberto':'tag-pago'}">${escapeHtml(c.status)}</span></td>
+      <td>
+        <input type="file" class="ct-anexo-input" style="display:none;" accept="application/pdf,image/*">
+        <button type="button" class="btn-mini ct-anexar">Anexar cópia</button>
+        <div class="ct-anexos-lista" style="font-size:10.5px; margin-top:4px;"></div>
+        <span class="ct-msg" style="font-size:10.5px; display:block; margin-top:4px;"></span>
+      </td>
+    </tr>`;
+  }).join('');
+
+  openOverlay(`
+    <div class="panel-head">
+      <div><h2>Contratos</h2><p>Empréstimos, financiamentos e renegociações. As parcelas pagas são calculadas automaticamente a partir das baixas dadas em Contas a Pagar vinculadas a cada contrato.</p></div>
+      <button class="close-x" onclick="closeOverlay()">✕</button>
+    </div>
+    <div style="overflow-x:auto;">
+    <table class="report"><thead><tr><th>Credor / nº</th><th>Finalidade</th><th>Valor total</th><th>Valor parcela</th><th>Juros</th><th>Parcelas</th><th>Status</th><th>Anexo</th></tr></thead>
+    <tbody id="ctBody">${linhas || '<tr><td colspan="8">Nenhum contrato cadastrado ainda.</td></tr>'}</tbody></table>
+    </div>
+
+    <div class="section-title">Adicionar contrato</div>
+    <form id="formNovoContrato" class="notes-box" style="border-top:none; padding-top:0;">
+      ${campoMenu('Credor (ex: Banco Santander)', '<input type="text" name="credor" required style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Número do contrato', '<input type="text" name="numero_contrato" style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Finalidade', '<input type="text" name="finalidade" placeholder="ex: capital de giro, PRONAMPE" style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Valor total contratado (R$)', '<input type="number" step="0.01" name="valor_total" style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Valor da parcela (R$)', '<input type="number" step="0.01" name="valor_parcela" style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Taxa de juros', '<input type="text" name="taxa_juros" placeholder="ex: 0,48% a.m. + 100% Selic" style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Quantidade total de parcelas', '<input type="number" name="num_parcelas_total" style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Data de emissão', '<input type="date" name="data_emissao" style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Data da 1ª parcela', '<input type="date" name="data_primeira_parcela" style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Data da última parcela', '<input type="date" name="data_ultima_parcela" style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Avalista (opcional)', '<input type="text" name="avalista" style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Observações', '<textarea name="observacoes" style="' + ESTILO_INPUT_MENU + ' min-height:60px;"></textarea>')}
+      <div id="novoContratoMsg" style="font-size:12px; margin-top:12px; display:none;"></div>
+      <button type="submit" class="btn gold" style="margin-top:14px;">Salvar contrato</button>
+    </form>
+
+    <div class="panel-actions" style="margin-top:20px;"><button type="button" class="btn ghost" onclick="closeOverlay()">Fechar</button></div>
+  `);
+
+  document.getElementById('formNovoContrato').addEventListener('submit', async e=>{
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const msg = document.getElementById('novoContratoMsg');
+    msg.style.display = 'none';
+    try{
+      await apiFetch('/api/contratos', {method:'POST', body: JSON.stringify({
+        credor: fd.get('credor'), numero_contrato: fd.get('numero_contrato') || null,
+        finalidade: fd.get('finalidade') || null,
+        valor_total: fd.get('valor_total') || null, valor_parcela: fd.get('valor_parcela') || null,
+        taxa_juros: fd.get('taxa_juros') || null, num_parcelas_total: fd.get('num_parcelas_total') || null,
+        data_emissao: fd.get('data_emissao') || null, data_primeira_parcela: fd.get('data_primeira_parcela') || null,
+        data_ultima_parcela: fd.get('data_ultima_parcela') || null, avalista: fd.get('avalista') || null,
+        observacoes: fd.get('observacoes') || null,
+      })});
+      await openContratosPanel();
+    }catch(err){
+      msg.textContent = 'Erro: ' + err.message; msg.style.color = 'var(--red)'; msg.style.display = 'block';
+    }
+  });
+
+  document.querySelectorAll('#ctBody .ct-anexar').forEach(btn=>{
+    btn.addEventListener('click', e=>{ e.target.closest('tr').querySelector('.ct-anexo-input').click(); });
+  });
+  document.querySelectorAll('#ctBody .ct-anexo-input').forEach(input=>{
+    input.addEventListener('change', async e=>{
+      const tr = e.target.closest('tr'); const id = tr.dataset.id;
+      const msg = tr.querySelector('.ct-msg');
+      const file = e.target.files[0]; if(!file) return;
+      const fd = new FormData(); fd.append('arquivo', file); fd.append('entidade_id', id);
+      try{
+        await apiFetch('/api/upload/contratos', {method:'POST', body: fd});
+        msg.textContent = 'Anexado ✓'; msg.style.color = 'var(--olive)';
+        await carregarAnexosEntidade('contratos', id, tr.querySelector('.ct-anexos-lista'));
+      }catch(err){ msg.textContent = 'Erro: ' + err.message; msg.style.color = 'var(--red)'; }
+    });
+  });
+  document.querySelectorAll('#ctBody tr[data-id]').forEach(tr=>{
+    carregarAnexosEntidade('contratos', tr.dataset.id, tr.querySelector('.ct-anexos-lista'));
+  });
+}
+
+async function carregarAnexosEntidade(tipo, id, container){
+  if(!container) return;
+  const anexos = await apiFetch(`/api/upload/entidade/${tipo}/${id}`).catch(()=>[]);
+  container.innerHTML = (anexos||[]).map(a =>
+    `<div><a href="#" onclick="baixarAnexo(${a.id}, '${escapeHtml(a.nome_arquivo)}'); return false;">${escapeHtml(a.nome_arquivo)}</a></div>`
+  ).join('') || '<span style="color:var(--ink-faint);">Nenhum anexo.</span>';
+}
+
+async function baixarAnexo(id, nome){
+  try{
+    const res = await fetch(API_BASE + '/api/upload/' + id, { headers: { Authorization: 'Bearer ' + authToken } });
+    if(!res.ok) throw new Error('Erro ' + res.status);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = nome || 'anexo'; document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  }catch(err){ alert('Erro ao baixar anexo: ' + err.message); }
+}
+
+/* ==========================================================================================
+   FUNCIONÁRIOS — cadastro de RH com alertas automáticos (período aquisitivo de férias
+   vencendo/vencido, experiência em andamento). Cálculo de alertas é feito no navegador, na
+   hora de renderizar, usando a data de hoje — não depende de nenhum job/cron no backend.
+   ========================================================================================== */
+async function openFuncionariosPanel(){
+  openOverlay(`<div class="panel-head"><div><h2>Funcionários</h2><p>Carregando…</p></div><button class="close-x" onclick="closeOverlay()">✕</button></div>`);
+  const lista = await apiFetch('/api/funcionarios').catch(()=>[]);
+  renderFuncionariosPanel(lista);
+}
+
+function alertasFuncionario(f){
+  const alertas = [];
+  const hoje = new Date();
+  if(f.ferias_periodo_aquisitivo_fim){
+    const fim = new Date(f.ferias_periodo_aquisitivo_fim + 'T00:00:00');
+    const dias = Math.round((fim - hoje) / 86400000);
+    if(dias < 0) alertas.push('Período aquisitivo de férias vencido há ' + Math.abs(dias) + ' dia(s)');
+    else if(dias <= 60) alertas.push('Período aquisitivo de férias vence em ' + dias + ' dia(s)');
+  }
+  if(f.data_admissao){
+    const adm = new Date(f.data_admissao + 'T00:00:00');
+    const diasAdm = Math.round((hoje - adm) / 86400000);
+    if(diasAdm >= 0 && diasAdm <= 90) alertas.push('Em período de experiência (contratado há ' + diasAdm + ' dia(s))');
+  }
+  return alertas;
+}
+
+function renderFuncionariosPanel(lista){
+  const linhas = (lista||[]).map(f => {
+    const alertas = alertasFuncionario(f);
+    return `
+    <tr data-id="${f.id}">
+      <td>
+        <div style="font-weight:600;">${escapeHtml(f.nome)}</div>
+        <div style="font-size:11px; color:var(--ink-faint);">${escapeHtml(f.cargo||'—')}</div>
+        ${alertas.length ? alertas.map(a=>`<span class="tag-status tag-atraso" style="display:block; margin-top:3px; width:fit-content;">⚠ ${escapeHtml(a)}</span>`).join('') : ''}
+      </td>
+      <td>${f.data_admissao ? fmtDate(f.data_admissao) : '—'}</td>
+      <td>${f.salario!=null ? fmtBRL(Number(f.salario)) : '—'}</td>
+      <td>${f.vale_transporte!=null ? fmtBRL(Number(f.vale_transporte)) : '—'}</td>
+      <td>${f.vale_alimentacao!=null ? fmtBRL(Number(f.vale_alimentacao)) : '—'}</td>
+      <td>${f.inss!=null ? fmtBRL(Number(f.inss)) : '—'}</td>
+      <td>${f.fgts!=null ? fmtBRL(Number(f.fgts)) : '—'}</td>
+      <td><span class="tag-status ${f.status==='Ativo'?'tag-aberto':'tag-pago'}">${escapeHtml(f.status)}</span></td>
+    </tr>`;
+  }).join('');
+
+  openOverlay(`
+    <div class="panel-head">
+      <div><h2>Funcionários</h2><p>Cadastro de RH — salário, benefícios, encargos e alertas automáticos de férias/experiência.</p></div>
+      <button class="close-x" onclick="closeOverlay()">✕</button>
+    </div>
+    <div style="overflow-x:auto;">
+    <table class="report"><thead><tr><th>Nome / cargo</th><th>Admissão</th><th>Salário</th><th>VT</th><th>VA</th><th>INSS</th><th>FGTS</th><th>Status</th></tr></thead>
+    <tbody id="fnBody">${linhas || '<tr><td colspan="8">Nenhum funcionário cadastrado ainda.</td></tr>'}</tbody></table>
+    </div>
+
+    <div class="section-title">Adicionar funcionário</div>
+    <form id="formNovoFuncionario" class="notes-box" style="border-top:none; padding-top:0;">
+      ${campoMenu('Nome', '<input type="text" name="nome" required style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Cargo', '<input type="text" name="cargo" style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Data de admissão', '<input type="date" name="data_admissao" style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Salário (R$)', '<input type="number" step="0.01" name="salario" style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Vale-transporte (R$)', '<input type="number" step="0.01" name="vale_transporte" style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Vale-alimentação (R$)', '<input type="number" step="0.01" name="vale_alimentacao" style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('INSS (R$)', '<input type="number" step="0.01" name="inss" style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('FGTS (R$)', '<input type="number" step="0.01" name="fgts" style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Descontos (R$)', '<input type="number" step="0.01" name="descontos" style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Descrição dos descontos', '<input type="text" name="descontos_obs" style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Início do período aquisitivo de férias', '<input type="date" name="ferias_periodo_aquisitivo_inicio" style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Fim do período aquisitivo de férias', '<input type="date" name="ferias_periodo_aquisitivo_fim" style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Último gozo de férias', '<input type="date" name="ferias_ultimo_gozo" style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Observações', '<textarea name="observacoes" style="' + ESTILO_INPUT_MENU + ' min-height:60px;"></textarea>')}
+      <div id="novoFuncionarioMsg" style="font-size:12px; margin-top:12px; display:none;"></div>
+      <button type="submit" class="btn gold" style="margin-top:14px;">Salvar funcionário</button>
+    </form>
+
+    <div class="panel-actions" style="margin-top:20px;"><button type="button" class="btn ghost" onclick="closeOverlay()">Fechar</button></div>
+  `);
+
+  document.getElementById('formNovoFuncionario').addEventListener('submit', async e=>{
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const msg = document.getElementById('novoFuncionarioMsg');
+    msg.style.display = 'none';
+    try{
+      await apiFetch('/api/funcionarios', {method:'POST', body: JSON.stringify({
+        nome: fd.get('nome'), cargo: fd.get('cargo') || null, data_admissao: fd.get('data_admissao') || null,
+        salario: fd.get('salario') || null, vale_transporte: fd.get('vale_transporte') || null,
+        vale_alimentacao: fd.get('vale_alimentacao') || null, inss: fd.get('inss') || null, fgts: fd.get('fgts') || null,
+        descontos: fd.get('descontos') || null, descontos_obs: fd.get('descontos_obs') || null,
+        ferias_periodo_aquisitivo_inicio: fd.get('ferias_periodo_aquisitivo_inicio') || null,
+        ferias_periodo_aquisitivo_fim: fd.get('ferias_periodo_aquisitivo_fim') || null,
+        ferias_ultimo_gozo: fd.get('ferias_ultimo_gozo') || null,
+        observacoes: fd.get('observacoes') || null,
+      })});
+      await openFuncionariosPanel();
+    }catch(err){
+      msg.textContent = 'Erro: ' + err.message; msg.style.color = 'var(--red)'; msg.style.display = 'block';
+    }
   });
 }
 
@@ -1925,6 +2181,8 @@ document.getElementById('overlayBaixa').addEventListener('click', e=>{ if(e.targ
 document.getElementById('btnDRE').addEventListener('click', openDRE);
 document.getElementById('btnPrint').addEventListener('click', openPrintAll);
 document.getElementById('btnImportar').addEventListener('click', openImportPanel);
+document.getElementById('btnContratos').addEventListener('click', openContratosPanel);
+document.getElementById('btnFuncionarios').addEventListener('click', openFuncionariosPanel);
 
 document.getElementById('loginForm').addEventListener('submit', async e=>{
   e.preventDefault();
