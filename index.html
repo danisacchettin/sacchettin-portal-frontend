@@ -813,12 +813,138 @@ function reportTable(list, tipo){
       <td>${fmtBRL(saldoAberto(x,tipo))}</td>
       <td>${statusTag(x,tipo)}</td>
       <td>${origemTag(x)}</td>
-      <td>${aberto ? `<button type="button" class="btn-mini" onclick="openBaixaForItem('${tipo}','${x.id}','${tipo}')">${acaoLbl}</button>` : '—'}</td>
+      <td>${(() => {
+        const btns = [];
+        if(aberto) btns.push(`<button type="button" class="btn-mini" onclick="openBaixaForItem('${tipo}','${x.id}','${tipo}')">${acaoLbl}</button>`);
+        if(tipo==='pagar' && x.forma_pagamento==='Dinheiro') btns.push(`<button type="button" class="btn-mini" onclick="openReciboForm('${x.id}')">🧾 Recibo</button>`);
+        return btns.length ? btns.join(' ') : '—';
+      })()}</td>
     </tr>`;
   }).join('');
   return `<table class="report"><thead><tr>
     <th>${nomeCol}</th><th>Categoria</th><th>Vencimento</th><th>Valor</th><th>Saldo em aberto</th><th>Status</th><th>Origem</th><th>Ação</th>
   </tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+/* ---------- recibo de pagamento em dinheiro ---------- */
+let EMPRESA_INFO = null;
+async function getEmpresaInfo(){
+  if(EMPRESA_INFO) return EMPRESA_INFO;
+  try{
+    EMPRESA_INFO = await apiFetch('/api/empresa');
+  }catch(e){
+    console.error('Não consegui carregar os dados da empresa para o recibo:', e);
+    EMPRESA_INFO = {};
+  }
+  return EMPRESA_INFO;
+}
+
+function numeroPorExtenso(valor){
+  valor = Math.round((Number(valor)||0) * 100) / 100;
+  const reais = Math.floor(valor);
+  const centavos = Math.round((valor - reais) * 100);
+  const un = ['','um','dois','três','quatro','cinco','seis','sete','oito','nove'];
+  const dez10 = ['dez','onze','doze','treze','quatorze','quinze','dezesseis','dezessete','dezoito','dezenove'];
+  const dezenas = ['','','vinte','trinta','quarenta','cinquenta','sessenta','setenta','oitenta','noventa'];
+  const centenas = ['','cento','duzentos','trezentos','quatrocentos','quinhentos','seiscentos','setecentos','oitocentos','novecentos'];
+  function centena(n){
+    if(n===0) return '';
+    if(n===100) return 'cem';
+    const c = Math.floor(n/100), d = Math.floor((n%100)/10), u = n%10;
+    const partes = [];
+    if(c) partes.push(centenas[c]);
+    if(d===1) partes.push(dez10[u]);
+    else{
+      if(d) partes.push(dezenas[d]);
+      if(u) partes.push(un[u]);
+    }
+    return partes.join(' e ');
+  }
+  function grupoDeTres(n, singular, plural){
+    if(n===0) return '';
+    if(n===1) return 'um ' + singular;
+    return centena(n) + ' ' + plural;
+  }
+  function extensoInteiro(n){
+    if(n===0) return 'zero';
+    const milhoes = Math.floor(n/1000000);
+    const milhares = Math.floor((n%1000000)/1000);
+    const resto = n%1000;
+    const partes = [];
+    if(milhoes) partes.push(grupoDeTres(milhoes,'milhão','milhões'));
+    if(milhares) partes.push(milhares===1 ? 'mil' : centena(milhares) + ' mil');
+    if(resto) partes.push(centena(resto));
+    return partes.join(' e ');
+  }
+  let texto = extensoInteiro(reais) + (reais===1 ? ' real' : ' reais');
+  if(centavos>0){
+    texto += ' e ' + extensoInteiro(centavos) + (centavos===1 ? ' centavo' : ' centavos');
+  }
+  return texto.charAt(0).toUpperCase() + texto.slice(1);
+}
+
+function cidadeUfDeEndereco(end){
+  if(!end) return '';
+  const m = String(end).match(/([A-Za-zÀ-ÿ\s]+-[A-Z]{2})\b/);
+  return m ? m[1].trim() : '';
+}
+
+async function openReciboForm(id){
+  const item = DATA.contasPagar.find(x=>String(x.id)===String(id));
+  if(!item) return;
+  await getEmpresaInfo();
+  openOverlay(`
+    <div class="panel-head">
+      <div><h2>Emitir recibo</h2><p>${escapeHtml(item.credor)} — pagamento em dinheiro, vencimento ${fmtDate(item.vencimento)}</p></div>
+      <button class="close-x" onclick="closeOverlay()">✕</button>
+    </div>
+    <div class="form-grid">
+      <div class="field full">
+        <label>Valor pago (R$)</label>
+        <input type="text" id="reciboValor" value="${(Number(item.valor_original)||0).toFixed(2).replace('.',',')}">
+      </div>
+      <div class="field full">
+        <label>Referente a</label>
+        <input type="text" id="reciboReferente" placeholder="Ex.: pagamento em dinheiro ref. ${escapeHtml(item.documento || item.codigo || '')}" value="${escapeHtml(item.documento || '')}">
+      </div>
+    </div>
+    <div class="panel-actions" style="margin-top:18px;">
+      <button type="button" class="btn gold" onclick="gerarRecibo('${item.id}')">Gerar recibo</button>
+      <button type="button" class="btn ghost" onclick="closeOverlay()">Cancelar</button>
+    </div>
+  `);
+}
+
+function gerarRecibo(id){
+  const item = DATA.contasPagar.find(x=>String(x.id)===String(id));
+  if(!item) return;
+  const valorInput = document.getElementById('reciboValor').value.trim();
+  const referente = document.getElementById('reciboReferente').value.trim();
+  const valor = parseFloat(valorInput.replace(/\./g,'').replace(',','.'));
+  if(!valor || valor<=0){ alert('Informe um valor válido para o recibo.'); return; }
+  if(!referente){ alert('Informe a que se refere o pagamento.'); return; }
+  const emp = EMPRESA_INFO || {};
+  const cidadeUf = cidadeUfDeEndereco(emp.endereco);
+  openOverlay(`
+    <div class="panel-head">
+      <div><h2>Recibo</h2><p>${escapeHtml(item.credor)}</p></div>
+      <button class="close-x" onclick="closeOverlay()">✕</button>
+    </div>
+    <div style="padding:14px 6px 4px; font-size:13.5px; line-height:1.8; color:var(--ink);">
+      <p style="text-align:center; font-weight:700; letter-spacing:3px; font-size:17px; margin-bottom:26px;">RECIBO</p>
+      <p style="text-align:right; font-size:15px; font-weight:600; margin-bottom:18px;">${fmtBRL(valor)}</p>
+      <p>Recebi de <strong>${escapeHtml(emp.razao_social || 'Casa de Carnes Cristal')}</strong>${emp.cnpj ? `, CNPJ ${escapeHtml(emp.cnpj)}` : ''}${emp.endereco ? `, com endereço em ${escapeHtml(emp.endereco)}` : ''}, a importância de <strong>${fmtBRL(valor)} (${numeroPorExtenso(valor)})</strong>, referente a <strong>${escapeHtml(referente)}</strong>, nesta data, dando plena quitação do valor recebido.</p>
+      <p style="margin-top:30px;">${cidadeUf ? escapeHtml(cidadeUf) + ', ' : ''}${fmtDate(todayISO())}.</p>
+      <div style="margin-top:70px; text-align:center;">
+        <div style="border-top:1px solid var(--ink); width:340px; margin:0 auto;"></div>
+        <p style="margin-top:6px;">${escapeHtml(item.credor)}${item.credor_cnpj ? ' — CNPJ/CPF ' + escapeHtml(item.credor_cnpj) : ''}</p>
+      </div>
+    </div>
+    <div class="panel-actions" style="margin-top:26px;">
+      <button type="button" class="btn gold" onclick="window.print()">Imprimir</button>
+      <button type="button" class="btn ghost" onclick="openReciboForm('${item.id}')">Voltar</button>
+    </div>
+  `);
 }
 
 function openOverlay(html){
