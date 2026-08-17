@@ -606,9 +606,21 @@ async function carregarDados(){
     marcarSyncOffline(null);
     return;
   }
-  renderKPIs();
-  renderFlowCards();
-  atualizarSyncTxt();
+  // A busca deu certo — mas se o processamento do que veio (montar os cards, gráficos etc.)
+  // travar por qualquer motivo, isso não pode ficar mudo: sem este try/catch, um erro aqui
+  // simplesmente para a função no meio, e a bolinha de sincronização fica congelada no valor
+  // antigo (ou até no texto de exemplo do HTML) sem nenhum aviso — foi exatamente esse tipo de
+  // falha silenciosa que a Danielle relatou (selo sempre parado em "09:14").
+  try{
+    renderKPIs();
+    renderFlowCards();
+    atualizarSyncTxt();
+  }catch(e){
+    console.error('Dados chegaram, mas houve erro ao processar/exibir.', e);
+    marcarSyncOffline(null);
+    const el = document.getElementById('syncTxt');
+    if(el) el.textContent = 'Erro ao exibir os dados recebidos';
+  }
 }
 
 function loadMockData(){
