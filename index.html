@@ -677,6 +677,35 @@ function emAtraso(item, tipo){
 }
 
 /* ---------- cálculo dos KPIs a partir de DATA (mesma lógica das fórmulas da planilha) ---------- */
+// Segunda-feira da semana corrente (00h), usada como início do "fechamento de caixa da semana" —
+// olha pra trás (do que já aconteceu) e não pra frente, ao contrário do "a pagar na semana".
+function inicioSemanaAtual(){
+  const d = new Date(); const dia = d.getDay(); const diff = (dia===0 ? -6 : 1-dia);
+  const seg = new Date(d.getFullYear(), d.getMonth(), d.getDate()+diff);
+  return seg;
+}
+
+function computeFechamentoSemana(){
+  const inicio = inicioSemanaAtual();
+  const movs = DATA.caixaMovimentos.filter(m=> new Date(m.data) >= inicio);
+  const porForma = {Dinheiro:0, 'Cartão':0, PIX:0, Outros:0};
+  const porMaquininha = {};
+  const porContaPix = {};
+  let totalEntradas = 0, totalSaidas = 0;
+  movs.forEach(m=>{
+    totalEntradas += Number(m.entrada||0);
+    totalSaidas += Number(m.saida||0);
+    const liquido = Number(m.entrada||0) - Number(m.saida||0);
+    const forma = m.forma_pagamento && porForma.hasOwnProperty(m.forma_pagamento) ? m.forma_pagamento : (m.forma_pagamento ? 'Outros' : null);
+    if(forma){
+      porForma[forma] += liquido;
+      if(forma==='Cartão'){ const mq = m.maquininha || 'Não informada'; porMaquininha[mq] = (porMaquininha[mq]||0) + liquido; }
+      if(forma==='PIX'){ const ct = m.conta || 'Não informada'; porContaPix[ct] = (porContaPix[ct]||0) + liquido; }
+    }
+  });
+  return { inicio, movs, porForma, porMaquininha, porContaPix, totalEntradas, totalSaidas, saldo: totalEntradas-totalSaidas };
+}
+
 function computeKPIs(){
   const hoje = todayISO();
   const inicioSemana = new Date(); const fimSemana = new Date(); fimSemana.setDate(fimSemana.getDate()+6);
@@ -693,8 +722,9 @@ function computeKPIs(){
     const d=new Date(x.vencimento); return d>=inicioSemana && d<=fimSemana;
   }).reduce((s,x)=>s+saldoAberto(x,'pagar'),0);
   const pagarHoje = DATA.contasPagar.filter(x=>x.vencimento===hoje).reduce((s,x)=>s+saldoAberto(x,'pagar'),0);
+  const fechamentoSemana = computeFechamentoSemana();
 
-  return {saldoCaixa, receberMes, pagarMes, pagarSemana, pagarHoje};
+  return {saldoCaixa, receberMes, pagarMes, pagarSemana, pagarHoje, fechamentoSemana};
 }
 
 function computeAging(){
@@ -722,17 +752,20 @@ function cardHTML({label, value, valueClass='', sub='', tone='', expandable=fals
 function renderKPIs(){
   const k = computeKPIs();
   const fimSemana = new Date(); fimSemana.setDate(fimSemana.getDate()+6);
+  const fs = k.fechamentoSemana;
   document.getElementById('kpiGrid').innerHTML = `
     ${cardHTML({label:'Saldo atual em contas bancárias', value:fmtBRL(k.saldoCaixa), tone:'gold', valueClass:'pos', expandable:true, id:'cardSaldo',
       sub: DATA.saldoContas.map(c=>c.conta.split('—')[0].trim()).join(' · ')})}
-    ${cardHTML({label:'A receber no mês', value:fmtBRL(k.receberMes), tone:'gold', expandable:true, id:'cardReceber',
-      sub:`Referente a ${nomeMesAtual()} · ${DATA.contasReceber.length} título(s) em aberto`})}
+    ${cardHTML({label:'Fechamento de caixa da semana', value:fmtBRL(fs.saldo), tone:'gold', expandable:true, id:'cardFechamentoSemana',
+      sub:`Desde ${fmtDate(fs.inicio.toISOString().slice(0,10))} · Dinheiro ${fmtBRL(fs.porForma.Dinheiro)} · Cartão ${fmtBRL(fs.porForma['Cartão'])} · PIX ${fmtBRL(fs.porForma.PIX)}`})}
     ${cardHTML({label:'A pagar no mês', value:fmtBRL(k.pagarMes), tone:'gold', expandable:true, id:'cardPagar',
       sub:`Referente a ${nomeMesAtual()} · ${DATA.contasPagar.length} título(s) em aberto`})}
     ${cardHTML({label:'A pagar na semana', value:fmtBRL(k.pagarSemana), tone:'gold', expandable:true, id:'cardPagarSemana',
       sub:`De ${fmtDate(todayISO())} a ${fmtDate(fimSemana.toISOString().slice(0,10))}`})}
     ${cardHTML({label:'A pagar hoje', value:fmtBRL(k.pagarHoje), tone: k.pagarHoje>0?'red':'', valueClass:k.pagarHoje>0?'neg':'', expandable:true, id:'cardPagarHoje',
       sub:`Hoje, ${fmtDate(todayISO())} (${nomeDiaSemanaHoje()})`})}
+    ${cardHTML({label:'A receber no mês', value:fmtBRL(k.receberMes), expandable:true, id:'cardReceber',
+      sub:`Referente a ${nomeMesAtual()} · ${DATA.contasReceber.length} título(s) em aberto — venda da Cristal é majoritariamente à vista`})}
   `;
 }
 
@@ -1692,6 +1725,50 @@ function openSaldoPanel(){
   `);
 }
 
+function openFechamentoSemanaPanel(){
+  const fs = computeFechamentoSemana();
+  const linhaMaquininha = Object.entries(fs.porMaquininha).map(([mq,v])=>`<tr><td>${escapeHtml(mq)}</td><td>${fmtBRL(v)}</td></tr>`).join('');
+  const linhaContaPix = Object.entries(fs.porContaPix).map(([ct,v])=>`<tr><td>${escapeHtml(ct)}</td><td>${fmtBRL(v)}</td></tr>`).join('');
+  openOverlay(`
+    <div class="panel-head">
+      <div><h2>Fechamento de caixa da semana</h2><p>De ${fmtDate(fs.inicio.toISOString().slice(0,10))} até hoje, ${fmtDate(todayISO())}.</p></div>
+      <button class="close-x" onclick="closeOverlay()">✕</button>
+    </div>
+    <div class="panel-actions">
+      <button class="btn gold" onclick="closeOverlay(); openForm('caixa')">+ Adicionar movimento de caixa</button>
+      <button class="btn" onclick="window.print()">Imprimir</button>
+    </div>
+    <table class="report"><thead><tr><th>Resumo da semana</th><th>Valor</th></tr></thead><tbody>
+      <tr><td>Total de entradas</td><td>${fmtBRL(fs.totalEntradas)}</td></tr>
+      <tr><td>Total de saídas</td><td>${fmtBRL(fs.totalSaidas)}</td></tr>
+      <tr><td><strong>Saldo da semana</strong></td><td><strong>${fmtBRL(fs.saldo)}</strong></td></tr>
+    </tbody></table>
+    <p style="font-size:12px; color:var(--ink-soft); margin:22px 0 6px;">Por forma de pagamento</p>
+    <table class="report"><thead><tr><th>Forma</th><th>Valor líquido</th></tr></thead><tbody>
+      <tr><td>Dinheiro</td><td>${fmtBRL(fs.porForma.Dinheiro)}</td></tr>
+      <tr><td>Cartão</td><td>${fmtBRL(fs.porForma['Cartão'])}</td></tr>
+      <tr><td>PIX</td><td>${fmtBRL(fs.porForma.PIX)}</td></tr>
+      ${fs.porForma.Outros ? `<tr><td>Outros / não classificado</td><td>${fmtBRL(fs.porForma.Outros)}</td></tr>` : ''}
+    </tbody></table>
+    ${linhaMaquininha ? `
+      <p style="font-size:12px; color:var(--ink-soft); margin:22px 0 6px;">Cartão — por maquininha</p>
+      <table class="report"><thead><tr><th>Maquininha</th><th>Valor</th></tr></thead><tbody>${linhaMaquininha}</tbody></table>
+    ` : ''}
+    ${linhaContaPix ? `
+      <p style="font-size:12px; color:var(--ink-soft); margin:22px 0 6px;">PIX — por conta</p>
+      <table class="report"><thead><tr><th>Conta</th><th>Valor</th></tr></thead><tbody>${linhaContaPix}</tbody></table>
+    ` : ''}
+    ${fs.movs.length ? `
+      <p style="font-size:12px; color:var(--ink-soft); margin:22px 0 6px;">Lançamentos da semana</p>
+      <table class="report"><thead><tr><th>Data</th><th>Conta</th><th>Descrição</th><th>Forma</th><th>Entrada</th><th>Saída</th></tr></thead>
+      <tbody>${fs.movs.slice().reverse().map(m=>`
+        <tr><td>${fmtDate(m.data)}</td><td>${escapeHtml(m.conta)}</td><td>${escapeHtml(m.descricao)||'—'}</td>
+        <td>${escapeHtml(m.forma_pagamento)||'—'}${m.maquininha?' ('+escapeHtml(m.maquininha)+')':''}</td>
+        <td>${m.entrada?fmtBRL(m.entrada):'—'}</td><td>${m.saida?fmtBRL(m.saida):'—'}</td></tr>`).join('')}</tbody></table>
+    ` : '<p style="font-size:13px; color:var(--ink-soft); margin-top:16px;">Nenhum lançamento de caixa nesta semana ainda.</p>'}
+  `);
+}
+
 function openAgingPanel(){
   const aging = computeAging();
   const rows = Object.entries(aging).map(([faixa,v])=>`<tr><td>${faixa} dias</td><td>${fmtBRL(v)}</td></tr>`).join('');
@@ -1931,6 +2008,8 @@ const FIELD_SETS = {
     {name:'entrada', label:'Entrada (R$)', type:'number'},
     {name:'saida', label:'Saída (R$)', type:'number'},
     {name:'data', label:'Data', type:'date'},
+    {name:'forma_pagamento', label:'Forma de pagamento', type:'select', options:['Dinheiro','Cartão','PIX']},
+    {name:'maquininha', label:'Maquininha (se Cartão)', type:'select', options:['','Mercado Pago','Getnet']},
     {name:'observacoes', label:'Observações', type:'text', full:true},
   ],
 };
@@ -2163,6 +2242,7 @@ document.getElementById('entryForm').addEventListener('submit', async e=>{
       await apiFetch('/api/caixa', {method:'POST', body: JSON.stringify({
         conta_bancaria_id: resolved.conta, descricao: obj.descricao, data_mov: obj.data,
         entrada: parseFloat(obj.entrada)||0, saida: parseFloat(obj.saida)||0, observacoes: obj.observacoes,
+        forma_pagamento: obj.forma_pagamento || null, maquininha: obj.maquininha || null,
       })});
     }
     closeForm();
@@ -2424,6 +2504,7 @@ document.getElementById('btnLogout').addEventListener('click', ()=>{
 async function init(){
   document.getElementById('kpiGrid').addEventListener('click', e=>{
     if(e.target.closest('#cardReceber')) openReceberPanel();
+    if(e.target.closest('#cardFechamentoSemana')) openFechamentoSemanaPanel();
     if(e.target.closest('#cardPagar')) openPagarPanel();
     if(e.target.closest('#cardSaldo')) openSaldoPanel();
     if(e.target.closest('#cardPagarSemana')) openPagarSemanaPanel();
