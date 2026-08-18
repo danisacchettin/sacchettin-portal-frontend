@@ -734,8 +734,13 @@ function computeKPIs(){
   const inicioSemana = new Date(); const fimSemana = new Date(); fimSemana.setDate(fimSemana.getDate()+6);
   const mesAtual = new Date().getMonth();
 
-  const movCaixa = DATA.caixaMovimentos.reduce((s,m)=>s+(m.entrada-m.saida),0);
-  const saldoCaixa = DATA.saldoContas.reduce((s,c)=>s+c.saldo,0) + movCaixa;
+  // Correção (18/08/2026): "Saldo atual em contas bancárias" somava DATA.saldoContas (que já é
+  // saldo_inicial + soma histórica de entradas/saídas de cada conta, calculado no backend) E ainda
+  // somava de novo o líquido dos últimos 300 lançamentos de caixaMovimentos por cima — contagem em
+  // duplicidade. Ficou mascarado enquanto o backend tinha o bug do LIMIT 300 (retornava só os
+  // lançamentos mais antigos); ao corrigir o LIMIT, o saldo passou a ficar visivelmente inflado.
+  // saldoContas já é a fonte da verdade por conta — não somar caixaMovimentos aqui de novo.
+  const saldoCaixa = DATA.saldoContas.reduce((s,c)=>s+c.saldo,0);
 
   const receberMes = DATA.contasReceber.filter(x=> new Date(x.vencimento).getMonth()===mesAtual)
     .reduce((s,x)=>s+saldoAberto(x,'receber'),0);
