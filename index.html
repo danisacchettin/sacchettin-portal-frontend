@@ -817,13 +817,58 @@ function reportTable(list, tipo){
         const btns = [];
         if(aberto) btns.push(`<button type="button" class="btn-mini" onclick="openBaixaForItem('${tipo}','${x.id}','${tipo}')">${acaoLbl}</button>`);
         if(tipo==='pagar' && x.forma_pagamento==='Dinheiro') btns.push(`<button type="button" class="btn-mini" onclick="openReciboForm('${x.id}')">🧾 Recibo</button>`);
-        return btns.length ? btns.join(' ') : '—';
+        btns.push(`<button type="button" class="btn-mini" onclick="openDetalhesForItem('${tipo}','${x.id}')">👁 Detalhes</button>`);
+        return btns.join(' ');
       })()}</td>
     </tr>`;
   }).join('');
   return `<table class="report"><thead><tr>
     <th>${nomeCol}</th><th>Categoria</th><th>Vencimento</th><th>Valor</th><th>Saldo em aberto</th><th>Status</th><th>Origem</th><th>Ação</th>
   </tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+/* ---------- tela de detalhes de um lançamento (pago ou em aberto) ---------- */
+function openDetalhesForItem(tipo, id){
+  const arr = tipo==='pagar' ? DATA.contasPagar : DATA.contasReceber;
+  const item = arr.find(x=>String(x.id)===String(id));
+  if(!item) return;
+  const nome = tipo==='pagar' ? item.credor : item.cliente;
+  const nomeLbl = tipo==='pagar' ? 'Fornecedor' : 'Cliente';
+  const forma = tipo==='pagar' ? item.forma_pagamento : item.forma_recebimento;
+  const dataQuitacao = tipo==='pagar' ? item.data_pagamento : item.data_recebimento;
+  const valorQuitado = tipo==='pagar' ? item.valor_pago : item.valor_recebido;
+  const lblQuitado = tipo==='pagar' ? 'Valor pago' : 'Valor recebido';
+  const lblDataQuitacao = tipo==='pagar' ? 'Data do pagamento' : 'Data do recebimento';
+  const aberto = saldoAberto(item,tipo) > 0;
+  const acaoLbl = tipo==='pagar' ? '💳 Pagar' : '✅ Receber';
+
+  const campo = (label, valor, full) => `<div class="field${full?' full':''}"><label>${escapeHtml(label)}</label><div style="font-size:14px; padding:6px 0;">${valor==null || valor==='' ? '—' : valor}</div></div>`;
+
+  openOverlay(`
+    <div class="panel-head">
+      <div><h2>${escapeHtml(nome || (tipo==='pagar'?'Fornecedor não informado':'Cliente não informado'))}</h2><p>${escapeHtml(item.codigo || '')} — ${statusTag(item,tipo)} · ${origemTag(item)}</p></div>
+      <button class="close-x" onclick="closeOverlay()">✕</button>
+    </div>
+    <div class="form-grid">
+      ${campo(nomeLbl, escapeHtml(nome))}
+      ${campo('Categoria', escapeHtml(item.categoria))}
+      ${campo('Documento', escapeHtml(item.documento))}
+      ${campo('Vencimento', fmtDate(item.vencimento))}
+      ${campo('Valor original', fmtBRL(item.valor_original))}
+      ${campo(lblQuitado, fmtBRL(valorQuitado))}
+      ${campo('Saldo em aberto', fmtBRL(saldoAberto(item,tipo)))}
+      ${campo('Forma de pagamento', escapeHtml(forma))}
+      ${campo(lblDataQuitacao, dataQuitacao ? fmtDate(dataQuitacao) : null)}
+      ${campo('Conta bancária', escapeHtml(item.conta_bancaria))}
+      ${item.credor_cnpj ? campo('CNPJ/CPF do fornecedor', escapeHtml(item.credor_cnpj)) : ''}
+      ${campo('Observações', item.observacoes ? escapeHtml(item.observacoes) : null, true)}
+    </div>
+    <div class="panel-actions" style="margin-top:18px;">
+      ${aberto ? `<button type="button" class="btn gold" onclick="openBaixaForItem('${tipo}','${item.id}','${tipo}')">${acaoLbl}</button>` : ''}
+      ${tipo==='pagar' && forma==='Dinheiro' ? `<button type="button" class="btn gold" onclick="openReciboForm('${item.id}')">🧾 Recibo</button>` : ''}
+      <button type="button" class="btn ghost" onclick="closeOverlay()">Fechar</button>
+    </div>
+  `);
 }
 
 /* ---------- recibo de pagamento em dinheiro ---------- */
