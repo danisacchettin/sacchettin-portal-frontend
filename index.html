@@ -685,9 +685,9 @@ function inicioSemanaAtual(){
   return seg;
 }
 
-function computeFechamentoSemana(){
-  const inicio = inicioSemanaAtual();
-  const movs = DATA.caixaMovimentos.filter(m=> new Date(m.data) >= inicio);
+// Resume um conjunto de movimentos de caixa (já filtrados por período) em totais e quebras —
+// reaproveitado tanto pelo fechamento da semana quanto pelo fechamento de um dia específico.
+function resumirMovimentos(movs){
   const porForma = {Dinheiro:0, 'Cartão':0, PIX:0, Outros:0};
   const porMaquininha = {};
   const porContaPix = {};
@@ -703,7 +703,30 @@ function computeFechamentoSemana(){
       if(forma==='PIX'){ const ct = m.conta || 'Não informada'; porContaPix[ct] = (porContaPix[ct]||0) + liquido; }
     }
   });
-  return { inicio, movs, porForma, porMaquininha, porContaPix, totalEntradas, totalSaidas, saldo: totalEntradas-totalSaidas };
+  return { movs, porForma, porMaquininha, porContaPix, totalEntradas, totalSaidas, saldo: totalEntradas-totalSaidas };
+}
+
+function computeFechamentoSemana(){
+  const inicio = inicioSemanaAtual();
+  const movs = DATA.caixaMovimentos.filter(m=> new Date(m.data) >= inicio);
+  const resumo = resumirMovimentos(movs);
+
+  // Separação por dia — cada dia da semana corrente com seus próprios totais, para o painel
+  // mostrar o fechamento diário e permitir "tirar extrato" de um dia isolado.
+  const porDiaMap = {};
+  movs.forEach(m=>{
+    const diaISO = String(m.data).slice(0,10);
+    if(!porDiaMap[diaISO]) porDiaMap[diaISO] = [];
+    porDiaMap[diaISO].push(m);
+  });
+  const porDia = Object.keys(porDiaMap).sort().map(dia => ({ dia, ...resumirMovimentos(porDiaMap[dia]) }));
+
+  return Object.assign({ inicio, porDia }, resumo);
+}
+
+function computeFechamentoDia(diaISO){
+  const movs = DATA.caixaMovimentos.filter(m=> String(m.data).slice(0,10) === diaISO);
+  return Object.assign({ dia: diaISO }, resumirMovimentos(movs));
 }
 
 function computeKPIs(){
@@ -1729,6 +1752,12 @@ function openFechamentoSemanaPanel(){
   const fs = computeFechamentoSemana();
   const linhaMaquininha = Object.entries(fs.porMaquininha).map(([mq,v])=>`<tr><td>${escapeHtml(mq)}</td><td>${fmtBRL(v)}</td></tr>`).join('');
   const linhaContaPix = Object.entries(fs.porContaPix).map(([ct,v])=>`<tr><td>${escapeHtml(ct)}</td><td>${fmtBRL(v)}</td></tr>`).join('');
+  const linhasPorDia = fs.porDia.map(d=>`
+    <tr>
+      <td>${fmtDate(d.dia)} (${DIAS_SEMANA_PT[new Date(d.dia+'T12:00:00').getDay()]})</td>
+      <td>${fmtBRL(d.totalEntradas)}</td><td>${fmtBRL(d.totalSaidas)}</td><td>${fmtBRL(d.saldo)}</td>
+      <td><button type="button" class="btn-mini" onclick="openFechamentoDiaPanel('${d.dia}')">Ver / imprimir extrato do dia</button></td>
+    </tr>`).join('');
   openOverlay(`
     <div class="panel-head">
       <div><h2>Fechamento de caixa da semana</h2><p>De ${fmtDate(fs.inicio.toISOString().slice(0,10))} até hoje, ${fmtDate(todayISO())}.</p></div>
@@ -1736,7 +1765,7 @@ function openFechamentoSemanaPanel(){
     </div>
     <div class="panel-actions">
       <button class="btn gold" onclick="closeOverlay(); openForm('caixa')">+ Adicionar movimento de caixa</button>
-      <button class="btn" onclick="window.print()">Imprimir</button>
+      <button class="btn" onclick="window.print()">Imprimir semana inteira</button>
     </div>
     <table class="report"><thead><tr><th>Resumo da semana</th><th>Valor</th></tr></thead><tbody>
       <tr><td>Total de entradas</td><td>${fmtBRL(fs.totalEntradas)}</td></tr>
@@ -1758,14 +1787,55 @@ function openFechamentoSemanaPanel(){
       <p style="font-size:12px; color:var(--ink-soft); margin:22px 0 6px;">PIX — por conta</p>
       <table class="report"><thead><tr><th>Conta</th><th>Valor</th></tr></thead><tbody>${linhaContaPix}</tbody></table>
     ` : ''}
-    ${fs.movs.length ? `
-      <p style="font-size:12px; color:var(--ink-soft); margin:22px 0 6px;">Lançamentos da semana</p>
-      <table class="report"><thead><tr><th>Data</th><th>Conta</th><th>Descrição</th><th>Forma</th><th>Entrada</th><th>Saída</th></tr></thead>
-      <tbody>${fs.movs.slice().reverse().map(m=>`
-        <tr><td>${fmtDate(m.data)}</td><td>${escapeHtml(m.conta)}</td><td>${escapeHtml(m.descricao)||'—'}</td>
+    ${fs.porDia.length ? `
+      <p style="font-size:12px; color:var(--ink-soft); margin:22px 0 6px;">Fechamento dia a dia</p>
+      <table class="report"><thead><tr><th>Dia</th><th>Entradas</th><th>Saídas</th><th>Saldo</th><th></th></tr></thead>
+      <tbody>${linhasPorDia}</tbody></table>
+    ` : '<p style="font-size:13px; color:var(--ink-soft); margin-top:16px;">Nenhum lançamento de caixa nesta semana ainda.</p>'}
+  `);
+}
+
+function openFechamentoDiaPanel(diaISO){
+  const fd = computeFechamentoDia(diaISO);
+  const linhaMaquininha = Object.entries(fd.porMaquininha).map(([mq,v])=>`<tr><td>${escapeHtml(mq)}</td><td>${fmtBRL(v)}</td></tr>`).join('');
+  const linhaContaPix = Object.entries(fd.porContaPix).map(([ct,v])=>`<tr><td>${escapeHtml(ct)}</td><td>${fmtBRL(v)}</td></tr>`).join('');
+  openOverlay(`
+    <div class="panel-head">
+      <div><h2>Extrato de caixa do dia</h2><p>${fmtDate(diaISO)} (${DIAS_SEMANA_PT[new Date(diaISO+'T12:00:00').getDay()]}).</p></div>
+      <button class="close-x" onclick="closeOverlay()">✕</button>
+    </div>
+    <div class="panel-actions">
+      <button class="btn" onclick="openFechamentoSemanaPanel()">← Voltar para a semana</button>
+      <button class="btn gold" onclick="window.print()">Imprimir extrato do dia</button>
+    </div>
+    <table class="report"><thead><tr><th>Resumo do dia</th><th>Valor</th></tr></thead><tbody>
+      <tr><td>Total de entradas</td><td>${fmtBRL(fd.totalEntradas)}</td></tr>
+      <tr><td>Total de saídas</td><td>${fmtBRL(fd.totalSaidas)}</td></tr>
+      <tr><td><strong>Saldo do dia</strong></td><td><strong>${fmtBRL(fd.saldo)}</strong></td></tr>
+    </tbody></table>
+    <p style="font-size:12px; color:var(--ink-soft); margin:22px 0 6px;">Por forma de pagamento</p>
+    <table class="report"><thead><tr><th>Forma</th><th>Valor líquido</th></tr></thead><tbody>
+      <tr><td>Dinheiro</td><td>${fmtBRL(fd.porForma.Dinheiro)}</td></tr>
+      <tr><td>Cartão</td><td>${fmtBRL(fd.porForma['Cartão'])}</td></tr>
+      <tr><td>PIX</td><td>${fmtBRL(fd.porForma.PIX)}</td></tr>
+      ${fd.porForma.Outros ? `<tr><td>Outros / não classificado</td><td>${fmtBRL(fd.porForma.Outros)}</td></tr>` : ''}
+    </tbody></table>
+    ${linhaMaquininha ? `
+      <p style="font-size:12px; color:var(--ink-soft); margin:22px 0 6px;">Cartão — por maquininha</p>
+      <table class="report"><thead><tr><th>Maquininha</th><th>Valor</th></tr></thead><tbody>${linhaMaquininha}</tbody></table>
+    ` : ''}
+    ${linhaContaPix ? `
+      <p style="font-size:12px; color:var(--ink-soft); margin:22px 0 6px;">PIX — por conta</p>
+      <table class="report"><thead><tr><th>Conta</th><th>Valor</th></tr></thead><tbody>${linhaContaPix}</tbody></table>
+    ` : ''}
+    ${fd.movs.length ? `
+      <p style="font-size:12px; color:var(--ink-soft); margin:22px 0 6px;">Lançamentos do dia</p>
+      <table class="report"><thead><tr><th>Conta</th><th>Descrição</th><th>Forma</th><th>Entrada</th><th>Saída</th></tr></thead>
+      <tbody>${fd.movs.slice().reverse().map(m=>`
+        <tr><td>${escapeHtml(m.conta)}</td><td>${escapeHtml(m.descricao)||'—'}</td>
         <td>${escapeHtml(m.forma_pagamento)||'—'}${m.maquininha?' ('+escapeHtml(m.maquininha)+')':''}</td>
         <td>${m.entrada?fmtBRL(m.entrada):'—'}</td><td>${m.saida?fmtBRL(m.saida):'—'}</td></tr>`).join('')}</tbody></table>
-    ` : '<p style="font-size:13px; color:var(--ink-soft); margin-top:16px;">Nenhum lançamento de caixa nesta semana ainda.</p>'}
+    ` : '<p style="font-size:13px; color:var(--ink-soft); margin-top:16px;">Nenhum lançamento de caixa neste dia.</p>'}
   `);
 }
 
