@@ -152,6 +152,15 @@
 
   .card.tone-gold{border-color:var(--gold-line);}
   .card.tone-red{border-color:rgba(193,85,75,.26);}
+  /* "A pagar hoje" (19/08/2026) — pedido da Danielle para destacar esse card com fundo
+     próprio, diferente dos demais (que são todos brancos/--surface). Usa --red-wash, a
+     mesma cor já usada nas tags "Atrasado" e no aviso de sem-conexão, então o card fica
+     chamativo sem introduzir uma cor nova fora da paleta do portal. */
+  .card.tone-urgent{
+    background:linear-gradient(160deg, var(--red-wash), var(--surface) 72%);
+    border-color:rgba(193,85,75,.30);
+  }
+  .card.tone-urgent .lbl{color:var(--red);}
 
   /* ---------- painel expandido ---------- */
   .overlay{
@@ -817,7 +826,7 @@ function renderKPIs(){
       sub:`${k.vencidosCount} título(s) em atraso, de qualquer mês · para negociação com fornecedor`})}
     ${cardHTML({label:'A pagar na semana', value:fmtBRL(k.pagarSemana), tone:'gold', expandable:true, id:'cardPagarSemana',
       sub:`De ${fmtDate(todayISO())} a ${fmtDate(fimSemana.toISOString().slice(0,10))}`})}
-    ${cardHTML({label:'A pagar hoje', value:fmtBRL(k.pagarHoje), tone: k.pagarHoje>0?'red':'', valueClass:k.pagarHoje>0?'neg':'', expandable:true, id:'cardPagarHoje',
+    ${cardHTML({label:'A pagar hoje', value:fmtBRL(k.pagarHoje), tone: k.pagarHoje>0?'urgent':'', valueClass:k.pagarHoje>0?'neg':'', expandable:true, id:'cardPagarHoje',
       sub:`Hoje, ${fmtDate(todayISO())} (${nomeDiaSemanaHoje()})`})}
     ${cardHTML({label:'A receber no mês', value:fmtBRL(k.receberMes), expandable:true, id:'cardReceber',
       sub:`Referente a ${nomeMesAtual()} · ${DATA.contasReceber.length} título(s) em aberto — venda da Cristal é majoritariamente à vista`})}
