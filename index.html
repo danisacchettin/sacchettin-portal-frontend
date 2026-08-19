@@ -367,6 +367,7 @@
     <select class="client-select" id="clientSelect">
       <option>Casa de Carnes Cristal</option>
     </select>
+    <button type="button" class="btn-mini" id="btnClientes" style="display:none;">Clientes</button>
     <button type="button" class="btn-mini" id="btnMenu">Menu</button>
     <button type="button" class="btn-mini" id="btnLogout">Sair</button>
   </div>
@@ -516,6 +517,11 @@ async function tentarSessaoSalva(){
     document.getElementById('clientSelect').innerHTML = `<option>${me.empresa}</option>`;
     setClientLogo(me.logo_url, me.empresa);
     setUsuario(me);
+    // "Clientes" só aparece para o escritório (admin) — é o atalho rápido para abrir o
+    // dashboard de um cliente específico, sem precisar entrar no Menu completo. Cliente
+    // final não vê esse botão porque só tem acesso à própria empresa mesmo.
+    const btnClientes = document.getElementById('btnClientes');
+    if(btnClientes) btnClientes.style.display = (me.papel === 'escritorio') ? '' : 'none';
     return true;
   }catch(e){
     authToken = null; localStorage.removeItem('portalToken');
@@ -853,14 +859,21 @@ function statusTag(item, tipo){
   return `<span class="tag-status tag-aberto">${item.status}</span>`;
 }
 
+// Tag de origem em cada lançamento — pedido explícito da Danielle (18/08/2026): toda
+// alteração manual precisa deixar claro quem mexeu (o nome do cliente, "Admin" quando é
+// o escritório — inclusive quando o escritório está logado "como" o cliente via Entrar
+// como cliente/aba Clientes, já que o token de impersonação carrega papel:'escritorio' —
+// ou "Lote exportado" quando veio de importação em massa). Usa USUARIO.empresa (o nome
+// da empresa de quem está com a sessão aberta) em vez de escrever "Cristal" fixo no
+// código, para continuar certo automaticamente quando houver mais clientes no futuro.
 function origemTag(x){
   const papel = x.criado_por_papel;
   const origem = x.origem;
   let label, cls;
-  if(origem === 'Importação'){ label = 'Importação em lote'; cls = 'tag-sistema'; }
+  if(origem === 'Importação'){ label = 'Lote exportado'; cls = 'tag-sistema'; }
   else if(origem === 'Documento'){ label = 'Documento (auto)'; cls = 'tag-sistema'; }
-  else if(papel === 'escritorio'){ label = 'Escritório'; cls = 'tag-escritorio'; }
-  else if(papel === 'cliente'){ label = 'Cliente'; cls = 'tag-cliente'; }
+  else if(papel === 'escritorio'){ label = 'Admin'; cls = 'tag-escritorio'; }
+  else if(papel === 'cliente'){ label = (USUARIO && USUARIO.empresa) ? USUARIO.empresa : 'Cliente'; cls = 'tag-cliente'; }
   else { label = '—'; cls = ''; }
   return `<span class="origem-tag ${cls}">${label}</span>`;
 }
@@ -1606,6 +1619,46 @@ async function handleNovoCliente(e){
     msg.textContent = err.message || 'Não foi possível criar o cliente.';
     msg.style.color = 'var(--red)';
     msg.style.display = 'block';
+  }
+}
+
+// Painel "Clientes" — aba de acesso rápido ao lado do Menu (18/08/2026), pedida pela
+// Danielle porque, logada como escritório, o dashboard dela mesma vem sempre zerado (a
+// conta do escritório não tem contas a pagar/receber/caixa reais — só as empresas-cliente
+// têm). Clicar no nome do cliente já entra direto no dashboard dele (reusa entrarComoCliente,
+// a mesma troca de token do "Entrar como cliente" que já existia dentro do Menu).
+async function openClientesPanel(){
+  openOverlay(`
+    <div class="panel-head">
+      <div><h2>Clientes</h2><p>Clique no nome do cliente para abrir o dashboard dele. Qualquer lançamento feito a partir daqui fica marcado como "Admin" (ver a tag de origem em cada lançamento).</p></div>
+      <button class="close-x" onclick="closeOverlay()">✕</button>
+    </div>
+    <div id="listaClientesTab" class="notes-box" style="border-top:none; padding-top:0;">Carregando clientes…</div>
+    ${localStorage.getItem('portalAdminToken') ? `
+    <div class="panel-actions" style="margin-top:20px;">
+      <button type="button" class="btn ghost" onclick="voltarParaMinhaConta()">Voltar para minha conta</button>
+    </div>` : ''}
+  `);
+  await carregarListaClientesTab();
+}
+
+async function carregarListaClientesTab(){
+  const container = document.getElementById('listaClientesTab');
+  if(!container) return;
+  try{
+    const empresas = await apiFetch('/api/admin/empresas');
+    if(!empresas.length){
+      container.innerHTML = '<p style="font-size:12.5px; color:var(--ink-faint); margin:0;">Nenhum cliente cadastrado ainda.</p>';
+      return;
+    }
+    container.innerHTML = empresas.map(emp => `
+      <div class="cliente-tab-item" style="display:flex; align-items:center; justify-content:space-between; padding:12px 4px; border-bottom:1px solid var(--border); cursor:pointer;" onclick="entrarComoCliente(${emp.id})">
+        <span style="font-size:14.5px; font-weight:600; color:var(--ink);">${escapeHtml(emp.nome_fantasia || emp.razao_social)}</span>
+        <span style="font-size:12px; color:var(--ink-faint);">Abrir dashboard →</span>
+      </div>
+    `).join('');
+  }catch(err){
+    container.innerHTML = '<p style="font-size:12.5px; color:var(--red); margin:0;">' + (err.message || 'Erro ao carregar clientes.') + '</p>';
   }
 }
 
@@ -2687,6 +2740,7 @@ document.getElementById('loginForm').addEventListener('submit', async e=>{
 });
 
 document.getElementById('btnMenu').addEventListener('click', openMenuPanel);
+document.getElementById('btnClientes').addEventListener('click', openClientesPanel);
 
 document.getElementById('btnLogout').addEventListener('click', ()=>{
   authToken = null; localStorage.removeItem('portalToken');
