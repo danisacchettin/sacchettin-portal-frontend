@@ -738,7 +738,9 @@ function computeFechamentoDia(diaISO){
 function computeKPIs(){
   const hoje = todayISO();
   const inicioSemana = new Date(); const fimSemana = new Date(); fimSemana.setDate(fimSemana.getDate()+6);
-  const mesAtual = new Date().getMonth();
+  const agora = new Date();
+  const mesAtual = agora.getMonth();
+  const anoAtual = agora.getFullYear();
 
   // Correção (18/08/2026): "Saldo atual em contas bancárias" somava DATA.saldoContas (que já é
   // saldo_inicial + soma histórica de entradas/saídas de cada conta, calculado no backend) E ainda
@@ -748,9 +750,14 @@ function computeKPIs(){
   // saldoContas já é a fonte da verdade por conta — não somar caixaMovimentos aqui de novo.
   const saldoCaixa = DATA.saldoContas.reduce((s,c)=>s+c.saldo,0);
 
-  const receberMes = DATA.contasReceber.filter(x=> new Date(x.vencimento).getMonth()===mesAtual)
+  // Correção (19/08/2026): comparava só getMonth(), sem o ano — um título de agosto/2025 caía
+  // junto com agosto/2026 no card "no mês". Agora exige mês E ano batendo com hoje.
+  const receberMes = DATA.contasReceber.filter(x=>{ const d=new Date(x.vencimento); return d.getMonth()===mesAtual && d.getFullYear()===anoAtual; })
     .reduce((s,x)=>s+saldoAberto(x,'receber'),0);
-  const pagarMes = DATA.contasPagar.filter(x=> new Date(x.vencimento).getMonth()===mesAtual)
+  // "A pagar no mês" é só o que vence no mês corrente — de propósito não inclui vencidos de
+  // meses anteriores (isso agora vive no card "Vencidos", separado, pensado para negociação
+  // com fornecedor — ver computeVencidos()).
+  const pagarMes = DATA.contasPagar.filter(x=>{ const d=new Date(x.vencimento); return d.getMonth()===mesAtual && d.getFullYear()===anoAtual; })
     .reduce((s,x)=>s+saldoAberto(x,'pagar'),0);
   const pagarSemana = DATA.contasPagar.filter(x=>{
     const d=new Date(x.vencimento); return d>=inicioSemana && d<=fimSemana;
@@ -763,7 +770,14 @@ function computeKPIs(){
   const pagarHoje = DATA.contasPagar.filter(x=>String(x.vencimento).slice(0,10)===hoje).reduce((s,x)=>s+saldoAberto(x,'pagar'),0);
   const fechamentoSemana = computeFechamentoSemana();
 
-  return {saldoCaixa, receberMes, pagarMes, pagarSemana, pagarHoje, fechamentoSemana};
+  // Card "Vencidos" (19/08/2026) — pedido da Danielle para dar visão de TODOS os títulos de
+  // contas a pagar em atraso, de qualquer mês (não só o mês corrente), como ponto de partida
+  // para estratégias de renegociação com fornecedor.
+  const vencidosLista = DATA.contasPagar.filter(x=>emAtraso(x,'pagar'));
+  const vencidosTotal = vencidosLista.reduce((s,x)=>s+saldoAberto(x,'pagar'),0);
+  const vencidosCount = vencidosLista.length;
+
+  return {saldoCaixa, receberMes, pagarMes, pagarSemana, pagarHoje, fechamentoSemana, vencidosTotal, vencidosCount};
 }
 
 function computeAging(){
@@ -799,6 +813,8 @@ function renderKPIs(){
       sub:`Desde ${fmtDate(fs.inicio.toISOString().slice(0,10))} · Dinheiro ${fmtBRL(fs.porForma.Dinheiro)} · Cartão ${fmtBRL(fs.porForma['Cartão'])} · PIX ${fmtBRL(fs.porForma.PIX)}`})}
     ${cardHTML({label:'A pagar no mês', value:fmtBRL(k.pagarMes), tone:'gold', expandable:true, id:'cardPagar',
       sub:`Referente a ${nomeMesAtual()} · ${DATA.contasPagar.length} título(s) em aberto`})}
+    ${cardHTML({label:'Vencidos', value:fmtBRL(k.vencidosTotal), tone: k.vencidosTotal>0?'red':'', valueClass:k.vencidosTotal>0?'neg':'', expandable:true, id:'cardVencidos',
+      sub:`${k.vencidosCount} título(s) em atraso, de qualquer mês · para negociação com fornecedor`})}
     ${cardHTML({label:'A pagar na semana', value:fmtBRL(k.pagarSemana), tone:'gold', expandable:true, id:'cardPagarSemana',
       sub:`De ${fmtDate(todayISO())} a ${fmtDate(fimSemana.toISOString().slice(0,10))}`})}
     ${cardHTML({label:'A pagar hoje', value:fmtBRL(k.pagarHoje), tone: k.pagarHoje>0?'red':'', valueClass:k.pagarHoje>0?'neg':'', expandable:true, id:'cardPagarHoje',
@@ -1833,6 +1849,62 @@ function openPagarPanel(mesFiltro){
     </div>
   `);
 }
+// Card "Vencidos" (19/08/2026) — todos os títulos de contas a pagar em atraso, de qualquer
+// mês, com filtro por fornecedor e por faixa de atraso, para dar base a estratégias de
+// renegociação. Estado do filtro fica em módulo (filtroVencidos) e a tela se redesenha a
+// cada troca de filtro — evita ter que embutir nome de fornecedor (que pode ter aspas/
+// acentos) dentro de atributo onchange, mesmo padrão de outras telas de edição do sistema.
+let filtroVencidos = { credor: 'todos', faixa: 'todos' };
+
+function credoresVencidos(){
+  const nomes = new Set(DATA.contasPagar.filter(x=>emAtraso(x,'pagar')).map(x=>x.credor || 'Fornecedor não informado'));
+  return Array.from(nomes).sort((a,b)=>a.localeCompare(b,'pt-BR'));
+}
+
+function openVencidosPanel(){
+  filtroVencidos = { credor: 'todos', faixa: 'todos' };
+  renderVencidosPanel();
+}
+
+function renderVencidosPanel(){
+  const { credor, faixa } = filtroVencidos;
+  let lista = DATA.contasPagar.filter(x=>emAtraso(x,'pagar'));
+  if(credor !== 'todos') lista = lista.filter(x=>(x.credor || 'Fornecedor não informado')===credor);
+  if(faixa !== 'todos'){
+    const minDias = Number(faixa);
+    lista = lista.filter(x=>Math.abs(diffDays(x.vencimento)) > minDias);
+  }
+  lista = lista.slice().sort((a,b)=> new Date(a.vencimento) - new Date(b.vencimento));
+  const total = lista.reduce((s,x)=>s+saldoAberto(x,'pagar'),0);
+  const optsCredor = credoresVencidos().map(c=>`<option value="${escapeHtml(c)}" ${c===credor?'selected':''}>${escapeHtml(c)}</option>`).join('');
+  const estiloSelect = 'width:auto; margin-top:0; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:var(--paper-2); font-family:inherit; font-size:13px; color:var(--ink);';
+
+  openOverlay(`
+    <div class="panel-head">
+      <div><h2>Vencidos</h2><p>Todos os títulos de contas a pagar em atraso, de qualquer mês — para priorizar cobranças e negociações com fornecedor. Filtre por fornecedor ou por tempo de atraso.</p></div>
+      <button class="close-x" onclick="closeOverlay()">✕</button>
+    </div>
+    <div class="panel-actions" style="flex-wrap:wrap; gap:10px;">
+      <button class="btn" onclick="window.print()">Imprimir</button>
+      <select id="filtroCredorVencidos" style="${estiloSelect}">
+        <option value="todos" ${credor==='todos'?'selected':''}>Todos os fornecedores</option>
+        ${optsCredor}
+      </select>
+      <select id="filtroFaixaVencidos" style="${estiloSelect}">
+        <option value="todos" ${faixa==='todos'?'selected':''}>Qualquer atraso</option>
+        <option value="30" ${faixa==='30'?'selected':''}>Vencidos há mais de 30 dias</option>
+        <option value="60" ${faixa==='60'?'selected':''}>Vencidos há mais de 60 dias</option>
+        <option value="90" ${faixa==='90'?'selected':''}>Vencidos há mais de 90 dias</option>
+      </select>
+    </div>
+    <p style="font-size:12px; color:var(--ink-soft); margin:18px 0 6px;">${lista.length} título(s) — ${fmtBRL(total)}</p>
+    ${lista.length ? reportTable(lista,'pagar') : '<p style="font-size:13px; color:var(--ink-soft);">Nenhum título vencido para esse filtro.</p>'}
+  `);
+
+  document.getElementById('filtroCredorVencidos').addEventListener('change', e=>{ filtroVencidos.credor = e.target.value; renderVencidosPanel(); });
+  document.getElementById('filtroFaixaVencidos').addEventListener('change', e=>{ filtroVencidos.faixa = e.target.value; renderVencidosPanel(); });
+}
+
 function openPagarSemanaPanel(){
   const inicioSemana = new Date(); const fimSemana = new Date(); fimSemana.setDate(fimSemana.getDate()+6);
   const lista = DATA.contasPagar.filter(x=>{
@@ -2752,6 +2824,7 @@ async function init(){
     if(e.target.closest('#cardReceber')) openReceberPanel();
     if(e.target.closest('#cardFechamentoSemana')) openFechamentoSemanaPanel();
     if(e.target.closest('#cardPagar')) openPagarPanel();
+    if(e.target.closest('#cardVencidos')) openVencidosPanel();
     if(e.target.closest('#cardSaldo')) openSaldoPanel();
     if(e.target.closest('#cardPagarSemana')) openPagarSemanaPanel();
     if(e.target.closest('#cardPagarHoje')) openPagarHojePanel();
