@@ -749,7 +749,12 @@ function computeKPIs(){
   const pagarSemana = DATA.contasPagar.filter(x=>{
     const d=new Date(x.vencimento); return d>=inicioSemana && d<=fimSemana;
   }).reduce((s,x)=>s+saldoAberto(x,'pagar'),0);
-  const pagarHoje = DATA.contasPagar.filter(x=>x.vencimento===hoje).reduce((s,x)=>s+saldoAberto(x,'pagar'),0);
+  // Correção (19/08/2026): vencimento vem da API como timestamp ISO completo
+  // ("2026-08-19T00:00:00.000Z"), então comparar com igualdade estrita contra "hoje" (só a
+  // data, "2026-08-19") nunca batia — o card "A pagar hoje" ficava sempre R$0,00 mesmo
+  // havendo título vencendo no dia. Comparação agora usa só os 10 primeiros caracteres (a
+  // data), ignorando o horário.
+  const pagarHoje = DATA.contasPagar.filter(x=>String(x.vencimento).slice(0,10)===hoje).reduce((s,x)=>s+saldoAberto(x,'pagar'),0);
   const fechamentoSemana = computeFechamentoSemana();
 
   return {saldoCaixa, receberMes, pagarMes, pagarSemana, pagarHoje, fechamentoSemana};
@@ -1125,6 +1130,19 @@ function openMenuPanel(){
 
     <div class="section-title">Entrar como cliente</div>
     <div id="listaClientesAdmin" class="notes-box" style="border-top:none; padding-top:0;">Carregando empresas…</div>
+
+    <div class="section-title">Criar login de usuário</div>
+    <p style="font-size:12px; color:var(--ink-soft); margin:0 0 4px;">Para dar um acesso rápido a alguém — um segundo login para um cliente que já existe, ou mais um usuário do escritório — sem passar pelo formulário completo de "Adicionar cliente".</p>
+    <form id="formNovoUsuario" class="notes-box" style="border-top:none; padding-top:0;">
+      ${campoMenu('Empresa', '<select name="empresa_id" required style="' + ESTILO_INPUT_MENU + '"><option value="">Carregando…</option></select>')}
+      ${campoMenu('Nome do usuário', '<input type="text" name="nome" required style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('E-mail de login', '<input type="email" name="email" required style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Senha inicial (mín. 8 caracteres)', '<input type="text" name="senha" required minlength="8" style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Papel', '<select name="papel" style="' + ESTILO_INPUT_MENU + '"><option value="cliente">Cliente</option><option value="escritorio">Escritório</option></select>')}
+      <div id="novoUsuarioMsg" style="font-size:12px; margin-top:12px; display:none;"></div>
+      <button type="submit" class="btn gold" style="margin-top:14px;">Criar login</button>
+    </form>
+    <div id="listaUsuariosAdmin" class="notes-box" style="border-top:none; padding-top:0;">Carregando usuários…</div>
     ` : ''}
   `);
 
@@ -1133,6 +1151,9 @@ function openMenuPanel(){
   if(isAdmin){
     document.getElementById('formNovoCliente').addEventListener('submit', handleNovoCliente);
     carregarListaClientesAdmin();
+    document.getElementById('formNovoUsuario').addEventListener('submit', handleNovoUsuario);
+    carregarListaUsuariosAdmin();
+    carregarEmpresasParaSelect();
   }
 }
 
@@ -1608,6 +1629,64 @@ async function carregarListaClientesAdmin(){
   }
 }
 
+async function carregarEmpresasParaSelect(){
+  const select = document.querySelector('#formNovoUsuario [name=empresa_id]');
+  if(!select) return;
+  try{
+    const empresas = await apiFetch('/api/admin/empresas');
+    select.innerHTML = '<option value="">Selecione…</option>' + empresas.map(emp =>
+      `<option value="${emp.id}">${escapeHtml(emp.nome_fantasia || emp.razao_social)}</option>`
+    ).join('');
+  }catch(err){
+    select.innerHTML = '<option value="">Erro ao carregar empresas</option>';
+  }
+}
+
+async function handleNovoUsuario(e){
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const msg = document.getElementById('novoUsuarioMsg');
+  msg.style.display = 'none';
+  try{
+    await apiFetch('/api/admin/usuarios', {method:'POST', body: JSON.stringify({
+      empresa_id: fd.get('empresa_id'),
+      nome: fd.get('nome'),
+      email: fd.get('email'),
+      senha: fd.get('senha'),
+      papel: fd.get('papel'),
+    })});
+    msg.textContent = 'Login criado com sucesso.';
+    msg.style.color = 'var(--olive-strong)';
+    msg.style.display = 'block';
+    e.target.reset();
+    carregarListaUsuariosAdmin();
+  }catch(err){
+    msg.textContent = err.message || 'Não foi possível criar o login.';
+    msg.style.color = 'var(--red)';
+    msg.style.display = 'block';
+  }
+}
+
+async function carregarListaUsuariosAdmin(){
+  const container = document.getElementById('listaUsuariosAdmin');
+  if(!container) return;
+  try{
+    const usuarios = await apiFetch('/api/admin/usuarios');
+    if(!usuarios.length){
+      container.innerHTML = '<p style="font-size:12.5px; color:var(--ink-faint); margin:0;">Nenhum usuário cadastrado ainda.</p>';
+      return;
+    }
+    container.innerHTML = '<p style="font-size:11px; letter-spacing:1px; text-transform:uppercase; color:var(--ink-faint); margin:0 0 8px;">Logins existentes</p>' + usuarios.map(u => `
+      <div style="padding:8px 0; border-bottom:1px solid var(--border);">
+        <div style="font-size:13px;">${escapeHtml(u.nome)} <span style="color:var(--ink-faint); font-size:11px;">(${u.papel === 'escritorio' ? 'escritório' : 'cliente'}${u.ativo === false ? ' · inativo' : ''})</span></div>
+        <div style="font-size:12px; color:var(--ink-soft);">${escapeHtml(u.email)} — ${escapeHtml(u.empresa || 'sem empresa')}</div>
+      </div>
+    `).join('');
+  }catch(err){
+    container.innerHTML = '<p style="font-size:12.5px; color:var(--red); margin:0;">' + (err.message || 'Erro ao carregar usuários.') + '</p>';
+  }
+}
+
 async function entrarComoCliente(id){
   const container = document.getElementById('listaClientesAdmin');
   try{
@@ -1653,17 +1732,48 @@ function openReceberPanel(){
     </div>
   `);
 }
-function openPagarPanel(){
+function mesesDisponiveisPagar(){
+  const meses = new Set(DATA.contasPagar.map(x=> x.vencimento ? String(x.vencimento).slice(0,7) : null).filter(Boolean));
+  return Array.from(meses).sort();
+}
+
+function labelMes(m){
+  const [ano,mesNum] = m.split('-');
+  const l = new Date(Number(ano), Number(mesNum)-1, 1).toLocaleDateString('pt-BR',{month:'long', year:'numeric'});
+  return l.charAt(0).toUpperCase()+l.slice(1);
+}
+
+function openPagarPanel(mesFiltro){
+  const hoje = todayISO();
+  const meses = mesesDisponiveisPagar();
+  const mes = mesFiltro || hoje.slice(0,7);
+  const lista = mes === 'todos' ? DATA.contasPagar : DATA.contasPagar.filter(x=> x.vencimento && String(x.vencimento).slice(0,7)===mes);
+  const vencidos = lista.filter(x=> saldoAberto(x,'pagar')>0 && String(x.vencimento).slice(0,10) < hoje);
+  const aVencer = lista.filter(x=> saldoAberto(x,'pagar')>0 && String(x.vencimento).slice(0,10) >= hoje);
+  const pagos = lista.filter(x=> saldoAberto(x,'pagar')<=0);
+  const optsMes = meses.map(m=>`<option value="${m}" ${m===mes?'selected':''}>${labelMes(m)}</option>`).join('');
+
   openOverlay(`
     <div class="panel-head">
-      <div><h2>Contas a pagar</h2><p>Títulos em aberto — clique em "Adicionar" para lançar uma nova conta.</p></div>
+      <div><h2>Contas a pagar</h2><p>Filtre por mês de vencimento para ver o que está vencido ou a vencer nesse período. Clique em "Adicionar" para lançar uma nova conta.</p></div>
       <button class="close-x" onclick="closeOverlay()">✕</button>
     </div>
-    <div class="panel-actions">
+    <div class="panel-actions" style="flex-wrap:wrap; gap:10px;">
       <button class="btn gold" onclick="closeOverlay(); openForm('pagar')">+ Adicionar conta a pagar</button>
       <button class="btn" onclick="window.print()">Imprimir</button>
+      <select id="filtroMesPagar" style="width:auto; margin-top:0; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:var(--paper-2); font-family:inherit; font-size:13px; color:var(--ink);" onchange="openPagarPanel(this.value)">
+        <option value="todos" ${mes==='todos'?'selected':''}>Todos os meses</option>
+        ${optsMes}
+      </select>
     </div>
-    ${reportTable(DATA.contasPagar,'pagar')}
+    <p style="font-size:12px; color:var(--ink-soft); margin:18px 0 6px;">Vencidos (${vencidos.length}) — ${fmtBRL(vencidos.reduce((s,x)=>s+saldoAberto(x,'pagar'),0))}</p>
+    ${vencidos.length ? reportTable(vencidos,'pagar') : '<p style="font-size:13px; color:var(--ink-soft);">Nenhum título vencido neste período.</p>'}
+    <p style="font-size:12px; color:var(--ink-soft); margin:22px 0 6px;">A vencer (${aVencer.length}) — ${fmtBRL(aVencer.reduce((s,x)=>s+saldoAberto(x,'pagar'),0))}</p>
+    ${aVencer.length ? reportTable(aVencer,'pagar') : '<p style="font-size:13px; color:var(--ink-soft);">Nenhum título a vencer neste período.</p>'}
+    ${pagos.length ? `
+      <p style="font-size:12px; color:var(--ink-soft); margin:22px 0 6px;">Já pagos/quitados neste período (${pagos.length})</p>
+      ${reportTable(pagos,'pagar')}
+    ` : ''}
     <div class="notes-box">
       <label style="font-size:11px; letter-spacing:1px; text-transform:uppercase; color:var(--ink-faint);">Notas do cliente</label>
       <textarea placeholder="Observações sobre estas contas — sincroniza com a planilha ao salvar."></textarea>
@@ -1689,7 +1799,7 @@ function openPagarSemanaPanel(){
 }
 function openPagarHojePanel(){
   const hoje = todayISO();
-  const lista = DATA.contasPagar.filter(x=>x.vencimento===hoje);
+  const lista = DATA.contasPagar.filter(x=>String(x.vencimento).slice(0,10)===hoje);
   openOverlay(`
     <div class="panel-head">
       <div><h2>A pagar hoje</h2><p>Vencimentos de hoje, ${fmtDate(hoje)} (${nomeDiaSemanaHoje()}).</p></div>
@@ -1761,6 +1871,7 @@ function openFechamentoSemanaPanel(){
     <tr>
       <td>${fmtDate(d.dia)} (${DIAS_SEMANA_PT[new Date(d.dia+'T12:00:00').getDay()]})</td>
       <td>${fmtBRL(d.totalEntradas)}</td><td>${fmtBRL(d.totalSaidas)}</td><td>${fmtBRL(d.saldo)}</td>
+      <td>${fmtBRL((DATA.caixaSaldoInicial||0) + d.porForma.Dinheiro)}</td>
       <td><button type="button" class="btn-mini" onclick="openFechamentoDiaPanel('${d.dia}')">Ver / imprimir extrato do dia</button></td>
     </tr>`).join('');
   openOverlay(`
@@ -1794,7 +1905,7 @@ function openFechamentoSemanaPanel(){
     ` : ''}
     ${fs.porDia.length ? `
       <p style="font-size:12px; color:var(--ink-soft); margin:22px 0 6px;">Fechamento dia a dia</p>
-      <table class="report"><thead><tr><th>Dia</th><th>Entradas</th><th>Saídas</th><th>Saldo</th><th></th></tr></thead>
+      <table class="report"><thead><tr><th>Dia</th><th>Entradas</th><th>Saídas</th><th>Saldo</th><th>Fechamento em dinheiro<br><span style="font-weight:400; font-size:10.5px; color:var(--ink-faint);">(com troco de ${fmtBRL(DATA.caixaSaldoInicial||0)})</span></th><th></th></tr></thead>
       <tbody>${linhasPorDia}</tbody></table>
     ` : '<p style="font-size:13px; color:var(--ink-soft); margin-top:16px;">Nenhum lançamento de caixa nesta semana ainda.</p>'}
   `);
@@ -1824,6 +1935,12 @@ function openFechamentoDiaPanel(diaISO){
       <tr><td>Cartão</td><td>${fmtBRL(fd.porForma['Cartão'])}</td></tr>
       <tr><td>PIX</td><td>${fmtBRL(fd.porForma.PIX)}</td></tr>
       ${fd.porForma.Outros ? `<tr><td>Outros / não classificado</td><td>${fmtBRL(fd.porForma.Outros)}</td></tr>` : ''}
+    </tbody></table>
+    <p style="font-size:12px; color:var(--ink-soft); margin:22px 0 6px;">Conferência do caixa físico (dinheiro)</p>
+    <table class="report"><thead><tr><th></th><th>Valor</th></tr></thead><tbody>
+      <tr><td>Saldo inicial em caixa (troco — não é venda)</td><td>${fmtBRL(DATA.caixaSaldoInicial||0)}</td></tr>
+      <tr><td>Vendas em dinheiro do dia</td><td>${fmtBRL(fd.porForma.Dinheiro)}</td></tr>
+      <tr><td><strong>Saldo de fechamento em dinheiro</strong></td><td><strong>${fmtBRL((DATA.caixaSaldoInicial||0) + fd.porForma.Dinheiro)}</strong></td></tr>
     </tbody></table>
     ${linhaMaquininha ? `
       <p style="font-size:12px; color:var(--ink-soft); margin:22px 0 6px;">Cartão — por maquininha</p>
