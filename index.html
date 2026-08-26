@@ -969,10 +969,74 @@ function openDetalhesForItem(tipo, id){
     </div>
     <div class="panel-actions" style="margin-top:18px;">
       ${aberto ? `<button type="button" class="btn gold" onclick="openBaixaForItem('${tipo}','${item.id}','${tipo}')">${acaoLbl}</button>` : ''}
+      ${tipo==='pagar' && Number(item.valor_pago) > 0 ? `<button type="button" class="btn ghost" onclick="openEditarBaixaForm('${item.id}')">✏️ Editar baixa</button>` : ''}
       ${tipo==='pagar' && forma==='Dinheiro' ? `<button type="button" class="btn gold" onclick="openReciboForm('${item.id}')">🧾 Recibo</button>` : ''}
       <button type="button" class="btn ghost" onclick="closeOverlay()">Fechar</button>
     </div>
   `);
+}
+
+/* ---------- editar uma baixa já registrada (contas a pagar) ---------- */
+async function openEditarBaixaForm(id){
+  const item = DATA.contasPagar.find(x=>String(x.id)===String(id));
+  if(!item) return;
+  await carregarCadastros();
+  const statusOpcoes = ['Pago Total','Pago Parcial','Em Aberto','Adiantado','Cancelado'];
+  openOverlay(`
+    <div class="panel-head">
+      <div><h2>Editar baixa</h2><p>${escapeHtml(item.credor || 'Fornecedor não informado')} — ${escapeHtml(item.documento || item.codigo || '')}</p></div>
+      <button class="close-x" onclick="closeOverlay()">✕</button>
+    </div>
+    <p style="font-size:12.5px; color:var(--ink-soft); margin:0 0 16px;">Use isto para corrigir um título que já foi baixado (valor pago, data, forma ou conta bancária), sem mexer no valor original do documento. A correção fica registrada nas observações do lançamento.</p>
+    <div class="form-grid">
+      <div class="field"><label>Valor original</label><input type="text" value="${fmtBRL(item.valor_original)}" disabled></div>
+      <div class="field"><label>Valor pago (R$)</label><input type="number" step="0.01" id="editBaixaValor" value="${Number(item.valor_pago||0).toFixed(2)}"></div>
+      <div class="field"><label>Data do pagamento</label><input type="date" id="editBaixaData" value="${item.data_pagamento ? String(item.data_pagamento).slice(0,10) : todayISO()}"></div>
+      <div class="field"><label>Forma de pagamento</label>
+        <select id="editBaixaForma">
+          ${['PIX','Boleto','TED','Cartão','Dinheiro'].map(f=>`<option ${item.forma_pagamento===f?'selected':''}>${f}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field"><label>Conta bancária</label>
+        <select id="editBaixaConta">${optionsContaBancaria(item.conta_bancaria_id)}</select>
+      </div>
+      <div class="field"><label>Status</label>
+        <select id="editBaixaStatus">
+          ${statusOpcoes.map(s=>`<option ${item.status===s?'selected':''}>${s}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field full"><label>Observação sobre a correção (opcional)</label><input type="text" id="editBaixaObs" placeholder="Ex: desconto de R$ 62,62 por pagamento à vista"></div>
+    </div>
+    <div class="panel-actions" style="margin-top:18px;">
+      <button type="button" class="btn gold" id="editBaixaSalvarBtn">Salvar correção</button>
+      <button type="button" class="btn ghost" onclick="closeOverlay()">Cancelar</button>
+    </div>
+  `);
+  document.getElementById('editBaixaSalvarBtn').addEventListener('click', ()=>salvarEdicaoBaixa(item.id));
+}
+
+async function salvarEdicaoBaixa(id){
+  const valor = parseFloat(document.getElementById('editBaixaValor').value);
+  const data = document.getElementById('editBaixaData').value;
+  const forma = document.getElementById('editBaixaForma').value;
+  const contaEl = document.getElementById('editBaixaConta');
+  const status = document.getElementById('editBaixaStatus').value;
+  const obs = document.getElementById('editBaixaObs').value;
+  if(!Number.isFinite(valor) || valor < 0){ alert('Informe um valor pago válido.'); return; }
+  try{
+    await apiFetch(`/api/contas-pagar/${id}/baixa`, {method:'PATCH', body: JSON.stringify({
+      valor_pago: valor,
+      data_pagamento: data || null,
+      forma_pagamento: forma || null,
+      conta_bancaria_id: contaEl.value || null,
+      status,
+      observacoes: obs || undefined,
+    })});
+    closeOverlay();
+    await carregarDados();
+  }catch(err){
+    alert('Não foi possível salvar a correção: ' + err.message);
+  }
 }
 
 /* ---------- recibo de pagamento em dinheiro ---------- */
@@ -2657,10 +2721,10 @@ function renderBaixaPicker(){
 // Select de "de qual conta saiu/entrou o dinheiro" — alimentado pelo mesmo cadastro de contas
 // bancárias usado no lançamento manual (CADASTROS.contasBancarias), para saber qual banco
 // movimentou cada baixa (importante com mais de uma conta ativa).
-function optionsContaBancaria(){
+function optionsContaBancaria(selecionadoId){
   const lista = CADASTROS.contasBancarias || [];
-  const opts = lista.map(c=>`<option value="${c.id}">${escapeHtml(c.nome_conta)}</option>`).join('');
-  return `<option value="">— Não informado —</option>${opts}`;
+  const opts = lista.map(c=>`<option value="${c.id}" ${selecionadoId!=null && String(c.id)===String(selecionadoId)?'selected':''}>${escapeHtml(c.nome_conta)}</option>`).join('');
+  return `<option value="" ${selecionadoId==null?'selected':''}>— Não informado —</option>${opts}`;
 }
 
 function renderBaixaForm(fase, saldo){
