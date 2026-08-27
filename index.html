@@ -1885,27 +1885,50 @@ function labelMes(m){
   return l.charAt(0).toUpperCase()+l.slice(1);
 }
 
+// Estado do filtro fica em módulo (mesmo padrão do painel de Vencidos): a tela se
+// redesenha a cada troca de filtro (mês ou credor), sem embutir nome de fornecedor
+// (que pode ter aspas/acentos) dentro de atributo onchange.
+let filtroPagar = { mes: null, credor: 'todos' };
+
+function credoresPagar(){
+  const nomes = new Set(DATA.contasPagar.map(x=>x.credor || 'Fornecedor não informado'));
+  return Array.from(nomes).sort((a,b)=>a.localeCompare(b,'pt-BR'));
+}
+
 function openPagarPanel(mesFiltro){
   const hoje = todayISO();
+  filtroPagar = { mes: mesFiltro || hoje.slice(0,7), credor: 'todos' };
+  renderPagarPanel();
+}
+
+function renderPagarPanel(){
+  const hoje = todayISO();
   const meses = mesesDisponiveisPagar();
-  const mes = mesFiltro || hoje.slice(0,7);
-  const lista = mes === 'todos' ? DATA.contasPagar : DATA.contasPagar.filter(x=> x.vencimento && String(x.vencimento).slice(0,7)===mes);
+  const { mes, credor } = filtroPagar;
+  let lista = mes === 'todos' ? DATA.contasPagar : DATA.contasPagar.filter(x=> x.vencimento && String(x.vencimento).slice(0,7)===mes);
+  if(credor !== 'todos') lista = lista.filter(x=>(x.credor || 'Fornecedor não informado')===credor);
   const vencidos = lista.filter(x=> saldoAberto(x,'pagar')>0 && String(x.vencimento).slice(0,10) < hoje);
   const aVencer = lista.filter(x=> saldoAberto(x,'pagar')>0 && String(x.vencimento).slice(0,10) >= hoje);
   const pagos = lista.filter(x=> saldoAberto(x,'pagar')<=0);
   const optsMes = meses.map(m=>`<option value="${m}" ${m===mes?'selected':''}>${labelMes(m)}</option>`).join('');
+  const optsCredor = credoresPagar().map(c=>`<option value="${escapeHtml(c)}" ${c===credor?'selected':''}>${escapeHtml(c)}</option>`).join('');
+  const estiloSelect = 'width:auto; margin-top:0; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:var(--paper-2); font-family:inherit; font-size:13px; color:var(--ink);';
 
   openOverlay(`
     <div class="panel-head">
-      <div><h2>Contas a pagar</h2><p>Filtre por mês de vencimento para ver o que está vencido ou a vencer nesse período. Clique em "Adicionar" para lançar uma nova conta.</p></div>
+      <div><h2>Contas a pagar</h2><p>Filtre por mês de vencimento e/ou por credor para ver o que está vencido ou a vencer nesse período. Clique em "Adicionar" para lançar uma nova conta.</p></div>
       <button class="close-x" onclick="closeOverlay()">✕</button>
     </div>
     <div class="panel-actions" style="flex-wrap:wrap; gap:10px;">
       <button class="btn gold" onclick="closeOverlay(); openForm('pagar')">+ Adicionar conta a pagar</button>
       <button class="btn" onclick="window.print()">Imprimir</button>
-      <select id="filtroMesPagar" style="width:auto; margin-top:0; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:var(--paper-2); font-family:inherit; font-size:13px; color:var(--ink);" onchange="openPagarPanel(this.value)">
+      <select id="filtroMesPagar" style="${estiloSelect}">
         <option value="todos" ${mes==='todos'?'selected':''}>Todos os meses</option>
         ${optsMes}
+      </select>
+      <select id="filtroCredorPagar" style="${estiloSelect}">
+        <option value="todos" ${credor==='todos'?'selected':''}>Todos os credores</option>
+        ${optsCredor}
       </select>
     </div>
     <p style="font-size:12px; color:var(--ink-soft); margin:18px 0 6px;">Vencidos (${vencidos.length}) — ${fmtBRL(vencidos.reduce((s,x)=>s+saldoAberto(x,'pagar'),0))}</p>
@@ -1921,6 +1944,9 @@ function openPagarPanel(mesFiltro){
       <textarea placeholder="Observações sobre estas contas — sincroniza com a planilha ao salvar."></textarea>
     </div>
   `);
+
+  document.getElementById('filtroMesPagar').addEventListener('change', e=>{ filtroPagar.mes = e.target.value; renderPagarPanel(); });
+  document.getElementById('filtroCredorPagar').addEventListener('change', e=>{ filtroPagar.credor = e.target.value; renderPagarPanel(); });
 }
 // Card "Vencidos" (19/08/2026) — todos os títulos de contas a pagar em atraso, de qualquer
 // mês, com filtro por fornecedor e por faixa de atraso, para dar base a estratégias de
@@ -2267,9 +2293,9 @@ function baixarModeloImportacao(){
   const folhas = [
     {
       nome: 'Contas a Pagar',
-      instrucao: 'Preencha uma linha por conta a pagar. Vencimento deve ser uma data real do Excel (não texto). Forma de Pagamento sugerida: PIX, Boleto, TED, Cartão ou Dinheiro. Fornecedor e Categoria são criados automaticamente se ainda não existirem.',
-      cabecalho: ['Fornecedor', 'Categoria', 'Vencimento', 'Valor Original (R$)', 'Forma de Pagamento', 'Documento', 'Observações'],
-      larguras: [28, 20, 14, 18, 14, 14, 40],
+      instrucao: 'Preencha uma linha por conta a pagar. Vencimento deve ser uma data real do Excel (não texto). Forma de Pagamento sugerida: PIX, Boleto, TED, Cartão ou Dinheiro. Fornecedor e Categoria são criados automaticamente se ainda não existirem. "ID Fornecedor" é opcional: preencha só se já souber o ID exato do fornecedor cadastrado (evita duplicar cadastro por causa de grafia diferente) — deixe em branco para fornecedor novo. Uma observação começando com "NAO IMPORTAR" faz a linha ser pulada (sem erro).',
+      cabecalho: ['Fornecedor', 'Categoria', 'Vencimento', 'Valor Original (R$)', 'Forma de Pagamento', 'Documento', 'Observações', 'ID Fornecedor (opcional)'],
+      larguras: [28, 20, 14, 18, 14, 14, 40, 20],
     },
     {
       nome: 'Contas a Receber',
@@ -2341,7 +2367,7 @@ async function handleImportUpload(file){
     ];
     document.getElementById('importResultado').innerHTML = secoes.map(s => `
       <div style="margin-top:14px;">
-        <p style="font-size:12.5px; color:var(--ink); margin:0 0 6px;"><strong>${s.label}</strong> — ${s.r.inseridos} lançamento(s) importado(s)${s.r.baixados ? `, ${s.r.baixados} baixado(s) automaticamente` : ''}${s.r.duplicados ? `, ${s.r.duplicados} já existiam (não duplicado)` : ''}${s.r.erros.length ? `, ${s.r.erros.length} linha(s) com problema` : ''}.</p>
+        <p style="font-size:12.5px; color:var(--ink); margin:0 0 6px;"><strong>${s.label}</strong> — ${s.r.inseridos} lançamento(s) importado(s)${s.r.baixados ? `, ${s.r.baixados} baixado(s) automaticamente` : ''}${s.r.duplicados ? `, ${s.r.duplicados} já existiam (não duplicado)` : ''}${s.r.pulados ? `, ${s.r.pulados} pulado(s) por observação "NAO IMPORTAR"` : ''}${s.r.erros.length ? `, ${s.r.erros.length} linha(s) com problema` : ''}.</p>
         ${s.r.erros.length ? `<ul style="font-size:11.5px; color:var(--red); margin:0; padding-left:18px;">${s.r.erros.map(e=>`<li>${e}</li>`).join('')}</ul>` : ''}
       </div>
     `).join('') + `<div class="panel-actions" style="margin-top:18px;"><button class="btn gold" onclick="closeOverlay()">Fechar</button></div>`;
