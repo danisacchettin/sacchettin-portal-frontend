@@ -409,6 +409,11 @@
       <div class="val" style="font-size:19px;">Empréstimos e financiamentos</div>
       <div class="sub">Parcelas, juros, vencimentos e cópia de cada contrato</div>
     </div>
+    <div class="card" id="btnDespesasFinanceiras">
+      <div class="lbl">Despesas Financeiras</div>
+      <div class="val" style="font-size:19px;">Juros e encargos bancários</div>
+      <div class="sub">Cheque especial e financiamentos — separado de Compras/COGS</div>
+    </div>
     <div class="card" id="btnFuncionarios">
       <div class="lbl">Funcionários</div>
       <div class="val" style="font-size:19px;">Cadastro de RH</div>
@@ -1528,6 +1533,223 @@ async function baixarAnexo(id, nome){
     URL.revokeObjectURL(url);
   }catch(err){ alert('Erro ao baixar anexo: ' + err.message); }
 }
+  /* ==========================================================================================
+     DESPESAS FINANCEIRAS — juros e encargos bancários (financiamentos/empréstimos), separados
+        de Compras/COGS no plano de contas. Alimentado pelas tabelas contratos_financiamento e
+           parcelas_financiamento (ver src/routes/financiamentos.js no backend), populadas por upload
+              dos CSVs preparados pela Danielle — mesmo princípio das demais importações: o cliente nunca
+                 tem escrita direta no banco, tudo passa pelo próprio login dele no portal.
+                    Cheque Especial ainda não tem fonte de dados (aguardando extratos) — mostra "aguardando
+                       dados" em vez de zerar, pra não sugerir que não há custo. Cessão de Títulos fica em standby
+                          por decisão da Danielle (31/08/2026) e não tem card nesta entrega.
+                             ========================================================================================== */
+  const CORES_CONTRATOS_FIN = ['#C9A961','#B08A3E','#8C6A2E','#C1554B','#556B2F','#6B8339'];
+
+  function mesVizinho(chave, delta){
+    const [a, m] = chave.split('-').map(Number);
+    const d = new Date(Date.UTC(a, m - 1 + delta, 1));
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+  }
+  function labelMesExtenso(chave){
+    const [a, m] = chave.split('-').map(Number);
+    const d = new Date(Date.UTC(a, m - 1, 1));
+    return d.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+  }
+
+  async function openDespesasFinanceirasPanel(mes){
+    openOverlay(`<div class="panel-head"><div><h2>Despesas Financeiras</h2><p>Carregando…</p></div><button class="close-x" onclick="closeOverlay()">✕</button></div>`);
+    try{
+      const qs = mes ? ('?mes=' + encodeURIComponent(mes)) : '';
+      const resumo = await apiFetch('/api/financiamentos/resumo' + qs);
+      renderDespesasFinanceirasPanel(resumo);
+    }catch(err){
+      openOverlay(`
+      <div class="panel-head"><div><h2>Despesas Financeiras</h2><p style="color:var(--red);">Erro ao carregar: ${err.message}</p></div><button class="close-x" onclick="closeOverlay()">✕</button></div>
+      `);
+    }
+  }
+  function renderDespesasFinanceirasPanel(resumo){
+    const mesAtual = resumo.mesReferencia;
+    const fin = resumo.financiamentos || { mesAtual: 0, mesAnterior: 0 };
+    const delta = fin.mesAtual - fin.mesAnterior;
+    const deltaCor = delta > 0 ? 'var(--red)' : (delta < 0 ? 'var(--olive)' : 'var(--ink-faint)');
+    const deltaSeta = delta > 0 ? '▲' : (delta < 0 ? '▼' : '—');
+    const deltaTxt = fin.mesAnterior != null
+    ? `${deltaSeta} ${fmtBRL(Math.abs(delta))} vs. mês anterior (${fmtBRL(fin.mesAnterior)})`
+      : 'sem dado do mês anterior';
+
+    const contratosPJ = resumo.contratosPJ || [];
+    const contratosPF = resumo.contratosPF || [];
+    const contratosChart = resumo.contratos || [];
+    const serieMensal = resumo.serieMensal || [];
+
+    const linhasPJ = contratosPJ.map((c, i) => `
+    <tr>
+    <td>
+    <div style="display:flex; align-items:center; gap:6px;">
+    <span style="width:10px; height:10px; border-radius:3px; background:${CORES_CONTRATOS_FIN[i % CORES_CONTRATOS_FIN.length]}; flex:none;"></span>
+    <div>
+    <div style="font-weight:600;">${escapeHtml(c.credor)} — ${escapeHtml(c.modalidade || '')}</div>
+    <div style="font-size:11px; color:var(--ink-faint);">nº ...${escapeHtml(String(c.contrato_numero).slice(-5))}</div>
+    </div>
+    </div>
+    </td>
+    <td style="text-align:center;">
+    ${c.observacoes ? `<button type="button" class="btn-mini df-obs-toggle" data-idx="${i}" title="Ver observação">⚠️</button>` : '—'}
+    ${c.observacoes ? `<div class="df-obs-texto" id="dfObs${i}" style="display:none; font-size:11px; color:var(--ink-soft); margin-top:6px; max-width:340px; text-align:left;">${escapeHtml(c.observacoes)}</div>` : ''}
+    </td>
+    </tr>
+    `).join('');
+
+    const linhasPF = contratosPF.map(c => `
+    <div class="pf-row" style="display:flex; justify-content:space-between; gap:14px; padding:10px 0; border-top:1px dashed var(--border);">
+    <div>
+    <div style="font-weight:600; font-size:13px;">${escapeHtml(c.modalidade || c.credor)} — ${escapeHtml(c.titular || '')}</div>
+    <div style="font-size:11.5px; color:var(--ink-faint);">${escapeHtml(c.credor)} · nº ...${escapeHtml(String(c.contrato_numero).slice(-5))}${c.taxa_juros_am != null ? ` · taxa ${c.taxa_juros_am.toLocaleString('pt-BR', {minimumFractionDigits:2})}% a.m.` : ''}${c.prazo_meses ? ` · ${c.prazo_meses} parcelas` : ''}</div>
+    ${c.observacoes ? `<div style="font-size:11px; color:var(--ink-soft); margin-top:6px; max-width:480px;">${escapeHtml(c.observacoes)}</div>` : ''}
+    </div>
+    <div style="font-size:12.5px; color:var(--ink-faint); white-space:nowrap;">${c.valor_financiado != null ? fmtBRL(c.valor_financiado) : '—'}</div>
+    </div>
+    `).join('');
+
+    const tabelaLinhas = serieMensal.map(m => `
+    <tr>
+    <td>${escapeHtml(m.label)}</td>
+    ${contratosChart.map(c => `<td>${fmtBRL(m.porContrato[c.id] || 0)}</td>`).join('')}
+    <td style="font-weight:600;">${fmtBRL(m.total)}</td>
+    </tr>
+    `).join('');
+    openOverlay(`
+    <div class="panel-head">
+    <div><h2>Despesas Financeiras</h2><p>Juros e encargos bancários — separado de Compras/COGS. Referência: ${escapeHtml(labelMesExtenso(mesAtual))}.</p></div>
+    <button class="close-x" onclick="closeOverlay()">✕</button>
+    </div>
+
+    <div class="panel-actions" style="margin-bottom:14px;">
+    <button type="button" class="btn ghost" onclick="openDespesasFinanceirasPanel('${mesVizinho(mesAtual, -1)}')">← Mês anterior</button>
+    <button type="button" class="btn ghost" onclick="openDespesasFinanceirasPanel('${mesVizinho(mesAtual, 1)}')">Mês seguinte →</button>
+    </div>
+
+    <div class="grid" style="grid-template-columns:repeat(2, minmax(220px, 1fr));">
+    <div class="card">
+    <div class="lbl">Juros de Cheque Especial <span style="font-size:10px; padding:2px 8px; border-radius:20px; background:var(--gold-wash); color:var(--gold); vertical-align:middle;">aguardando dados</span></div>
+    <div class="val" style="font-size:22px; color:var(--ink-faint);">— —</div>
+    <div class="sub">Pendente dos extratos bancários com a linha de juros de cheque especial discriminada.</div>
+    </div>
+    <div class="card">
+    <div class="lbl">Juros/Encargos de Financiamentos</div>
+    <div class="val" style="font-size:22px;">${fmtBRL(fin.mesAtual)}</div>
+    <div class="sub" style="color:${deltaCor};">${deltaTxt}</div>
+    <div class="sub">${contratosPJ.length} contrato(s) Santander ativo(s) (PJ).</div>
+    </div>
+    </div>
+
+    <div class="section-title">Juros de financiamentos por mês</div>
+    <div class="panel-actions" style="margin-bottom:10px;">
+    <button type="button" class="btn" onclick="const el=document.getElementById('dfTabela'); el.style.display = el.style.display==='none' ? 'block' : 'none';">Ver tabela</button>
+    </div>
+    <canvas id="dfChart" height="90"></canvas>
+
+    <div id="dfTabela" style="display:none; overflow-x:auto; margin-top:14px;">
+    <table class="report">
+    <thead><tr><th>Mês</th>${contratosChart.map(c => `<th>...${escapeHtml(String(c.contrato_numero).slice(-5))}</th>`).join('')}<th>Total</th></tr></thead>
+    <tbody>${tabelaLinhas}</tbody>
+    </table>
+    </div>
+
+    <div class="section-title">Contratos (PJ)</div>
+    <div style="overflow-x:auto;">
+    <table class="report"><thead><tr><th>Credor / contrato</th><th>Observações</th></tr></thead>
+    <tbody>${linhasPJ || '<tr><td colspan="2">Nenhum contrato PJ importado ainda.</td></tr>'}</tbody></table>
+    </div>
+
+    <div class="notes-box" style="border:1px dashed var(--border); border-radius:14px; padding:16px; margin-top:22px;">
+    <div class="section-title" style="margin-top:0;">Dívida pessoal do sócio — informativo, fora do DRE da empresa</div>
+    ${linhasPF || '<p style="font-size:12.5px; color:var(--ink-faint);">Nenhum contrato PF-sócio importado ainda.</p>'}
+    </div>
+
+    <div class="section-title">Importar dados</div>
+    <p style="font-size:12px; color:var(--ink-soft); margin:0 0 10px;">Envie primeiro o arquivo de contratos e depois o de parcelas — o import de parcelas localiza o contrato pelo número, então precisa que o contrato já exista.</p>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px;">
+    <div class="dropzone" id="dzContratosFin">
+    <input type="file" id="dfInputContratos" accept=".csv,.xlsx">
+    <div class="dz-icon">📄</div>
+    <div class="dz-title">1. Contratos de financiamento</div>
+    <div class="dz-sub">contratos_financiamento_import.csv</div>
+    </div>
+    <div class="dropzone" id="dzParcelasFin">
+    <input type="file" id="dfInputParcelas" accept=".csv,.xlsx">
+    <div class="dz-icon">📄</div>
+    <div class="dz-title">2. Parcelas dos contratos</div>
+    <div class="dz-sub">parcelas_financiamento_import.csv</div>
+    </div>
+    </div>
+    <div id="dfImportResultado"></div>
+
+    <p style="font-size:11px; color:var(--ink-faint); margin-top:20px;">Cessão de Títulos ainda não tem card nesta entrega (em standby, aguardando confirmação da Danielle sobre antecipação de recebíveis com deságio próprio).</p>
+    `);
+    document.querySelectorAll('.df-obs-toggle').forEach(btn => {
+      btn.addEventListener('click', e => {
+        const el = document.getElementById('dfObs' + e.target.dataset.idx);
+        if(el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+      });
+    });
+
+    new Chart(document.getElementById('dfChart'), {
+      type: 'bar',
+      data: {
+        labels: serieMensal.map(m => m.label),
+        datasets: contratosChart.map((c, i) => ({
+          label: '...' + String(c.contrato_numero).slice(-5),
+          data: serieMensal.map(m => m.porContrato[c.id] || 0),
+          backgroundColor: CORES_CONTRATOS_FIN[i % CORES_CONTRATOS_FIN.length],
+        })),
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } },
+        scales: {
+          x: { stacked: true, ticks: { color: 'rgba(27,43,58,.5)', font: { size: 10 } }, grid: { display: false } },
+          y: { stacked: true, ticks: { color: 'rgba(27,43,58,.5)', font: { size: 10 }, callback: v => fmtBRL(v) } },
+        },
+      },
+    });
+
+    const setupDropzoneFin = (dzId, inputId, tipo) => {
+      const dz = document.getElementById(dzId);
+      const input = document.getElementById(inputId);
+      dz.addEventListener('click', () => input.click());
+      dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dragover'); });
+      dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
+      dz.addEventListener('drop', e => {
+        e.preventDefault(); dz.classList.remove('dragover');
+        if(e.dataTransfer.files[0]) handleFinanciamentosUpload(e.dataTransfer.files[0], tipo);
+      });
+      input.addEventListener('change', e => {
+        if(e.target.files[0]) handleFinanciamentosUpload(e.target.files[0], tipo);
+      });
+    };
+    setupDropzoneFin('dzContratosFin', 'dfInputContratos', 'contratos');
+    setupDropzoneFin('dzParcelasFin', 'dfInputParcelas', 'parcelas');
+  }
+  async function handleFinanciamentosUpload(file, tipo){
+    const resultadoEl = document.getElementById('dfImportResultado');
+    resultadoEl.innerHTML = `<div class="processing"><div class="spin"></div> Importando "${file.name}"... pode levar alguns segundos.</div>`;
+    try{
+      const fd = new FormData();
+      fd.append('arquivo', file);
+      const endpoint = tipo === 'contratos' ? '/api/financiamentos/importar-contratos' : '/api/financiamentos/importar-parcelas';
+      const resp = await apiFetch(endpoint, { method: 'POST', body: fd });
+      const rotulo = tipo === 'contratos' ? 'Contratos' : 'Parcelas';
+      resultadoEl.innerHTML = `
+      <p style="font-size:12.5px; color:var(--ink); margin:14px 0 6px;"><strong>${rotulo}</strong> — ${resp.inseridos} inserido(s), ${resp.atualizados} atualizado(s)${resp.erros.length ? `, ${resp.erros.length} linha(s) com problema` : ''}.</p>
+      ${resp.erros.length ? `<ul style="font-size:11.5px; color:var(--red); margin:0; padding-left:18px;">${resp.erros.map(e => `<li>${escapeHtml(e)}</li>`).join('')}</ul>` : ''}
+      `;
+      await openDespesasFinanceirasPanel();
+    }catch(err){
+      resultadoEl.innerHTML = `<div class="extract-badge" style="color:var(--red); background:var(--red-wash); margin-top:14px;">Erro ao importar: ${err.message}</div>`;
+    }
+  }
 
 /* ==========================================================================================
    FUNCIONÁRIOS — cadastro de RH com alertas automáticos (período aquisitivo de férias
@@ -2888,6 +3110,7 @@ document.getElementById('btnDRE').addEventListener('click', openDRE);
 document.getElementById('btnPrint').addEventListener('click', openPrintAll);
 document.getElementById('btnImportar').addEventListener('click', openImportPanel);
 document.getElementById('btnContratos').addEventListener('click', openContratosPanel);
+  document.getElementById('btnDespesasFinanceiras').addEventListener('click', ()=>openDespesasFinanceirasPanel());
 document.getElementById('btnFuncionarios').addEventListener('click', openFuncionariosPanel);
 
 document.getElementById('loginForm').addEventListener('submit', async e=>{
