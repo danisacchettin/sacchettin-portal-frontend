@@ -2975,8 +2975,71 @@ function optionsContaBancaria(selecionadoId){
   return `<option value="" ${selecionadoId==null?'selected':''}>— Não informado —</option>${opts}`;
 }
 
-function renderBaixaForm(fase, saldo){
+// Campo "Código de Barras / Linha Digitável" do boleto — só aparece quando a forma de
+// pagamento selecionada é "Boleto" e só faz sentido para contas a pagar (o valor mora na
+// própria conta_pagar, não no cadastro do fornecedor, pois muda a cada boleto emitido).
+// Escritório: input editável + botão "Salvar código" (grava na hora, sem marcar como pago).
+// Cliente: somente leitura, com botão de copiar; se ainda não houver valor, aviso específico.
+function campoCodigoBarrasHTML(item){
+  if(!item) return '';
+  const isAdmin = USUARIO && USUARIO.papel === 'escritorio';
+  const valor = item.codigo_barras_boleto || '';
+  let inner;
+  if(isAdmin){
+    inner = `
+      <div style="display:flex; gap:8px; align-items:center;">
+        <input type="text" name="codigo_barras_boleto" value="${escapeHtml(valor)}" placeholder="Somente números do boleto" style="flex:1;">
+        <button type="button" class="btn-mini" id="salvarCodigoBarrasBtn">Salvar código</button>
+      </div>`;
+  } else if(valor){
+    inner = `
+      <div style="font-family:monospace; font-size:11px; background:var(--paper-2); border:1px solid var(--border); border-radius:10px; padding:10px 12px; word-break:break-all; display:flex; align-items:center; gap:8px; justify-content:space-between;">
+        <span>${escapeHtml(valor)}</span>
+        <button type="button" class="btn-mini" onclick="copyToClipboard('${escapeHtml(valor)}', this)">Copiar</button>
+      </div>`;
+  } else {
+    inner = `
+      <div style="font-size:11.5px; color:var(--ink-faint); background:var(--paper-2); border:1px solid var(--border); border-radius:10px; padding:10px 12px;">Código de barras deste boleto ainda não foi informado pelo escritório.</div>`;
+  }
+  return `<div class="field full campo-codigo-barras" style="display:none;"><label>Código de Barras / Linha Digitável</label>${inner}</div>`;
+}
+
+// Mostra/esconde o campo de código de barras conforme a forma de pagamento selecionada, e
+// wira o botão "Salvar código" (quando presente, só para escritório) para persistir o valor
+// direto na conta a pagar via PATCH /:id/codigo-barras — independente de confirmar o pagamento.
+function wireCodigoBarrasField(item){
   const wrap = document.getElementById('baixaFormWrap');
+  const campo = wrap.querySelector('.campo-codigo-barras');
+  const formaEl = wrap.querySelector('[name=forma]');
+  if(!campo || !formaEl) return;
+  const toggle = () => { campo.style.display = (formaEl.value === 'Boleto') ? '' : 'none'; };
+  toggle();
+  formaEl.addEventListener('change', toggle);
+  const salvarBtn = document.getElementById('salvarCodigoBarrasBtn');
+  if(salvarBtn) salvarBtn.addEventListener('click', ()=> salvarCodigoBarrasBoleto(item));
+}
+
+async function salvarCodigoBarrasBoleto(item){
+  const wrap = document.getElementById('baixaFormWrap');
+  const el = wrap.querySelector('[name=codigo_barras_boleto]');
+  if(!el) return;
+  const btn = document.getElementById('salvarCodigoBarrasBtn');
+  const orig = btn ? btn.textContent : '';
+  try{
+    const atualizado = await apiFetch(`/api/contas-pagar/${item.id}/codigo-barras`, {
+      method:'PATCH',
+      body: JSON.stringify({ codigo_barras_boleto: el.value }),
+    });
+    item.codigo_barras_boleto = atualizado.codigo_barras_boleto;
+    if(btn){ btn.textContent = 'Salvo!'; setTimeout(()=>{ btn.textContent = orig; }, 1200); }
+  }catch(err){
+    alert('Não foi possível salvar o código: ' + err.message);
+  }
+}
+
+function renderBaixaForm(fase, saldo, item){
+  const wrap = document.getElementById('baixaFormWrap');
+  const campoCodigo = (baixaState.tipo==='pagar') ? campoCodigoBarrasHTML(item) : '';
   if(fase==='total'){
     wrap.innerHTML = `
       <div class="form-grid">
@@ -2985,6 +3048,7 @@ function renderBaixaForm(fase, saldo){
         <div class="field"><label>Forma de pagamento</label>
           <select name="forma"><option>PIX</option><option>Boleto</option><option>TED</option><option>Cartão</option><option>Dinheiro</option></select>
         </div>
+        ${campoCodigo}
         <div class="field full"><label>Conta bancária (de onde saiu/entrou)</label>
           <select name="conta_bancaria_id">${optionsContaBancaria()}</select>
         </div>
@@ -2997,6 +3061,7 @@ function renderBaixaForm(fase, saldo){
         <div class="field"><label>Forma de pagamento</label>
           <select name="forma"><option>PIX</option><option>Boleto</option><option>TED</option><option>Cartão</option><option>Dinheiro</option></select>
         </div>
+        ${campoCodigo}
         <div class="field"><label>Conta bancária (de onde saiu/entrou)</label>
           <select name="conta_bancaria_id">${optionsContaBancaria()}</select>
         </div>
@@ -3004,6 +3069,7 @@ function renderBaixaForm(fase, saldo){
         <div class="field full"><label>Observações da renegociação</label><input type="text" name="observacoes" placeholder="Ex: acordo verbal, parcela 1 de 2..."></div>
       </div>`;
   }
+  if(baixaState.tipo==='pagar') wireCodigoBarrasField(item);
 }
 
 function renderBaixaDetail(){
@@ -3049,7 +3115,7 @@ function renderBaixaDetail(){
     renderBaixaDetail();
   });
 
-  renderBaixaForm(fase, saldo);
+  renderBaixaForm(fase, saldo, item);
 
   document.getElementById('baixaConfirmarBtn').addEventListener('click', ()=>{
     const f = document.getElementById('baixaFormWrap');
@@ -3058,12 +3124,14 @@ function renderBaixaDetail(){
     const obsEl = f.querySelector('[name=observacoes]');
     const vencEl = f.querySelector('[name=nova_venc]');
     const contaEl = f.querySelector('[name=conta_bancaria_id]');
+    const codigoEl = f.querySelector('[name=codigo_barras_boleto]');
     const valor = fase==='total' ? saldo : (parseFloat(f.querySelector('[name=valor]').value)||0);
     applyBaixa(baixaState.tipo, item.id, {
       valor, data, forma,
       observacoes: obsEl ? obsEl.value : '',
       novaDataVenc: vencEl && vencEl.value ? vencEl.value : null,
       contaBancariaId: contaEl && contaEl.value ? contaEl.value : null,
+      codigoBarrasBoleto: codigoEl ? codigoEl.value : undefined,
       parcial: fase==='parcial',
     });
   });
@@ -3073,11 +3141,13 @@ async function applyBaixa(tipo, id, payload){
   if(!payload.valor){ closeBaixa(); return; }
   try{
     const path = tipo==='pagar' ? `/api/contas-pagar/${id}/baixa` : `/api/contas-receber/${id}/baixa`;
-    await apiFetch(path, {method:'POST', body: JSON.stringify({
+    const corpo = {
       valor: payload.valor, data: payload.data, forma: payload.forma,
       observacoes: payload.observacoes, nova_data_vencimento: payload.novaDataVenc,
       conta_bancaria_id: payload.contaBancariaId,
-    })});
+    };
+    if(tipo==='pagar' && payload.codigoBarrasBoleto !== undefined) corpo.codigo_barras_boleto = payload.codigoBarrasBoleto;
+    await apiFetch(path, {method:'POST', body: JSON.stringify(corpo)});
     closeBaixa();
     await carregarDados();
     if(baixaState.origin==='pagar') openPagarPanel();
