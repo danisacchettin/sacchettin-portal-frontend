@@ -2978,35 +2978,25 @@ function optionsContaBancaria(selecionadoId){
 // Campo "Código de Barras / Linha Digitável" do boleto — só aparece quando a forma de
 // pagamento selecionada é "Boleto" e só faz sentido para contas a pagar (o valor mora na
 // própria conta_pagar, não no cadastro do fornecedor, pois muda a cada boleto emitido).
-// Escritório: input editável + botão "Salvar código" (grava na hora, sem marcar como pago).
-// Cliente: somente leitura, com botão de copiar; se ainda não houver valor, aviso específico.
+// Editável tanto para escritório quanto para cliente (as duas executam pagamento por este
+// card), com botão "Salvar código" (grava na hora, sem marcar como pago) e, quando já há
+// valor salvo, botão "Copiar" para colar direto no aplicativo do banco.
 function campoCodigoBarrasHTML(item){
   if(!item) return '';
-  const isAdmin = USUARIO && USUARIO.papel === 'escritorio';
   const valor = item.codigo_barras_boleto || '';
-  let inner;
-  if(isAdmin){
-    inner = `
-      <div style="display:flex; gap:8px; align-items:center;">
-        <input type="text" name="codigo_barras_boleto" value="${escapeHtml(valor)}" placeholder="Somente números do boleto" style="flex:1;">
-        <button type="button" class="btn-mini" id="salvarCodigoBarrasBtn">Salvar código</button>
-      </div>`;
-  } else if(valor){
-    inner = `
-      <div style="font-family:monospace; font-size:11px; background:var(--paper-2); border:1px solid var(--border); border-radius:10px; padding:10px 12px; word-break:break-all; display:flex; align-items:center; gap:8px; justify-content:space-between;">
-        <span>${escapeHtml(valor)}</span>
-        <button type="button" class="btn-mini" onclick="copyToClipboard('${escapeHtml(valor)}', this)">Copiar</button>
-      </div>`;
-  } else {
-    inner = `
-      <div style="font-size:11.5px; color:var(--ink-faint); background:var(--paper-2); border:1px solid var(--border); border-radius:10px; padding:10px 12px;">Código de barras deste boleto ainda não foi informado pelo escritório.</div>`;
-  }
+  const inner = `
+    <div style="display:flex; gap:8px; align-items:center;">
+      <input type="text" name="codigo_barras_boleto" value="${escapeHtml(valor)}" placeholder="Somente números do boleto" style="flex:1;">
+      <button type="button" class="btn-mini" id="salvarCodigoBarrasBtn">Salvar código</button>
+      ${valor ? `<button type="button" class="btn-mini" id="copiarCodigoBarrasBtn">Copiar</button>` : ''}
+    </div>`;
   return `<div class="field full campo-codigo-barras" style="display:none;"><label>Código de Barras / Linha Digitável</label>${inner}</div>`;
 }
 
-// Mostra/esconde o campo de código de barras conforme a forma de pagamento selecionada, e
-// wira o botão "Salvar código" (quando presente, só para escritório) para persistir o valor
-// direto na conta a pagar via PATCH /:id/codigo-barras — independente de confirmar o pagamento.
+// Mostra/esconde o campo de código de barras conforme a forma de pagamento selecionada, wira
+// o botão "Salvar código" (grava direto na conta a pagar via PATCH /:id/codigo-barras,
+// independente de confirmar o pagamento) e o botão "Copiar" (usa o valor atual do campo, para
+// facilitar colar no aplicativo do banco mesmo que ainda não tenha sido salvo).
 function wireCodigoBarrasField(item){
   const wrap = document.getElementById('baixaFormWrap');
   const campo = wrap.querySelector('.campo-codigo-barras');
@@ -3017,6 +3007,11 @@ function wireCodigoBarrasField(item){
   formaEl.addEventListener('change', toggle);
   const salvarBtn = document.getElementById('salvarCodigoBarrasBtn');
   if(salvarBtn) salvarBtn.addEventListener('click', ()=> salvarCodigoBarrasBoleto(item));
+  const copiarBtn = document.getElementById('copiarCodigoBarrasBtn');
+  if(copiarBtn) copiarBtn.addEventListener('click', ()=>{
+    const el = wrap.querySelector('[name=codigo_barras_boleto]');
+    if(el) copyToClipboard(el.value, copiarBtn);
+  });
 }
 
 async function salvarCodigoBarrasBoleto(item){
