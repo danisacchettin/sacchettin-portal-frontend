@@ -292,6 +292,11 @@
     border:1px solid var(--border); border-radius:10px; padding:10px 12px;
   }
   .field select option{background:var(--surface); color:var(--ink);}
+  .pwd-wrap{position:relative;}
+  .pwd-wrap input.pwd-input{padding-right:38px;}
+  .pwd-toggle{position:absolute; right:6px; top:50%; transform:translateY(-50%); background:none; border:none; padding:4px; margin:0; cursor:pointer; color:var(--ink-faint); display:flex; align-items:center; justify-content:center; border-radius:6px; line-height:0;}
+  .pwd-toggle:hover{color:var(--ink); background:var(--paper-2);}
+  .pwd-toggle svg{display:block;}
   .novo-cadastro{flex-direction:column; gap:8px; margin-top:8px; padding:10px 12px; background:var(--paper-2); border:1px dashed var(--border); border-radius:10px;}
   .type-toggle{display:flex; gap:8px; margin-bottom:18px;}
   .type-toggle button{
@@ -352,7 +357,7 @@
     <div class="login-erro" id="loginErro"></div>
     <form id="loginForm">
       <div class="field full"><label>E-mail</label><input type="email" name="email" required autocomplete="username"></div>
-      <div class="field full"><label>Senha</label><input type="password" name="senha" required autocomplete="current-password"></div>
+      <div class="field full"><label>Senha</label><div class="pwd-wrap"><input type="password" name="senha" class="pwd-input" required autocomplete="current-password"><button type="button" class="pwd-toggle" aria-label="Mostrar senha" onclick="togglePasswordVisibility(this)"><svg class="icon-eye" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg><svg class="icon-eye-off" style="display:none" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a21.8 21.8 0 0 1 5.06-6.06M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a21.77 21.77 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg></button></div></div>
       <button type="submit" class="btn olive" style="width:100%; justify-content:center; margin-top:6px;">Entrar</button>
     </form>
     <p style="text-align:center; margin-top:14px;">
@@ -377,8 +382,8 @@
     <div class="login-erro" id="resetSenhaErro"></div>
     <div id="resetSenhaSucesso" style="display:none; font-size:13px; color:var(--olive-strong); text-align:center; margin-bottom:14px;"></div>
     <form id="formRedefinirSenha">
-      <div class="field full"><label>Nova senha (mín. 8 caracteres)</label><input type="password" name="novaSenha" required minlength="8" autocomplete="new-password"></div>
-      <div class="field full"><label>Confirmar nova senha</label><input type="password" name="confirmarSenha" required minlength="8" autocomplete="new-password"></div>
+      <div class="field full"><label>Nova senha (mín. 8 caracteres)</label><div class="pwd-wrap"><input type="password" name="novaSenha" class="pwd-input" required minlength="8" autocomplete="new-password"><button type="button" class="pwd-toggle" aria-label="Mostrar senha" onclick="togglePasswordVisibility(this)"><svg class="icon-eye" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg><svg class="icon-eye-off" style="display:none" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a21.8 21.8 0 0 1 5.06-6.06M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a21.77 21.77 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg></button></div></div>
+      <div class="field full"><label>Confirmar nova senha</label><div class="pwd-wrap"><input type="password" name="confirmarSenha" class="pwd-input" required minlength="8" autocomplete="new-password"><button type="button" class="pwd-toggle" aria-label="Mostrar senha" onclick="togglePasswordVisibility(this)"><svg class="icon-eye" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg><svg class="icon-eye-off" style="display:none" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a21.8 21.8 0 0 1 5.06-6.06M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a21.77 21.77 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg></button></div></div>
       <button type="submit" class="btn olive" style="width:100%; justify-content:center; margin-top:6px;">Salvar nova senha</button>
     </form>
     <p style="text-align:center; margin-top:14px;">
@@ -1204,6 +1209,22 @@ function campoMenu(label, inputHtml){
   return '<label style="font-size:11px; letter-spacing:1px; text-transform:uppercase; color:var(--ink-faint); display:block; margin-top:12px;">' + label + '</label>' + inputHtml;
 }
 const ESTILO_INPUT_MENU = 'width:100%; margin-top:6px; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:var(--paper-2); font-family:inherit; font-size:13px; color:var(--ink);';
+const ESTILO_INPUT_MENU_SENHA = ESTILO_INPUT_MENU + ' padding-right:38px;';
+const BOTAO_TOGGLE_SENHA = '<button type="button" class="pwd-toggle" aria-label="Mostrar senha" onclick="togglePasswordVisibility(this)"><svg class="icon-eye" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg><svg class="icon-eye-off" style="display:none" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a21.8 21.8 0 0 1 5.06-6.06M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a21.77 21.77 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg></button>';
+
+function togglePasswordVisibility(btn){
+  const wrap = btn.closest('.pwd-wrap');
+  if(!wrap) return;
+  const input = wrap.querySelector('input');
+  if(!input) return;
+  const mostrando = input.type === 'text';
+  input.type = mostrando ? 'password' : 'text';
+  const iconEye = wrap.querySelector('.icon-eye');
+  const iconEyeOff = wrap.querySelector('.icon-eye-off');
+  if(iconEye) iconEye.style.display = mostrando ? '' : 'none';
+  if(iconEyeOff) iconEyeOff.style.display = mostrando ? 'none' : '';
+  btn.setAttribute('aria-label', mostrando ? 'Mostrar senha' : 'Ocultar senha');
+}
 
 function sugerirSenhaCliente(nomeFantasia){
   const limpo = (nomeFantasia || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]/g, '');
@@ -1229,8 +1250,8 @@ function openMenuPanel(){
 
     <div class="section-title" style="margin-top:${impersonando ? '24px' : '4px'};">Trocar senha</div>
     <form id="formSenha" class="notes-box" style="border-top:none; padding-top:0;">
-      ${campoMenu('Senha atual', '<input type="password" name="senhaAtual" required style="' + ESTILO_INPUT_MENU + '">')}
-      ${campoMenu('Nova senha (mín. 8 caracteres)', '<input type="password" name="novaSenha" required minlength="8" style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Senha atual', '<div class="pwd-wrap"><input type="password" name="senhaAtual" class="pwd-input" required style="' + ESTILO_INPUT_MENU_SENHA + '">' + BOTAO_TOGGLE_SENHA + '</div>')}
+      ${campoMenu('Nova senha (mín. 8 caracteres)', '<div class="pwd-wrap"><input type="password" name="novaSenha" class="pwd-input" required minlength="8" style="' + ESTILO_INPUT_MENU_SENHA + '">' + BOTAO_TOGGLE_SENHA + '</div>')}
       <div id="senhaMsg" style="font-size:12px; margin-top:12px; display:none;"></div>
       <button type="submit" class="btn olive" style="margin-top:14px;">Salvar nova senha</button>
     </form>
