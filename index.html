@@ -1315,6 +1315,7 @@ function openMenuPanel(){
     <div class="section-title">Editar cadastros</div>
     <div class="notes-box" style="border-top:none; padding-top:0; display:flex; gap:10px; flex-wrap:wrap;">
       <button type="button" class="btn" onclick="openEditFornecedores()">Fornecedores</button>
+      <button type="button" class="btn" onclick="openEditSacados()">Clientes/Sacados</button>
       <button type="button" class="btn" onclick="openEditCategorias()">Categorias</button>
       <button type="button" class="btn" onclick="openEditContasBancarias()">Contas bancárias</button>
     </div>
@@ -1379,9 +1380,9 @@ async function openEditFornecedores(){
   const linhas = (lista||[]).map(f => `
     <tr data-id="${f.id}">
       <td><input type="text" class="ec-nome" value="${escapeHtml(f.nome)}" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
-      <td><input type="text" class="ec-cnpj" value="${escapeHtml(f.cnpj_cpf||'')}" placeholder="CNPJ/CPF" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
+      <td><input type="text" class="ec-cnpj" data-mask="cnpjCpf" value="${escapeHtml(f.cnpj_cpf||'')}" placeholder="CNPJ/CPF" style="width:100%; ${ESTILO_INPUT_MENU}"><span class="doc-feedback" style="font-size:10px; display:block; margin-top:2px;"></span></td>
       <td><select class="ec-tipo-pessoa" style="width:100%; ${ESTILO_INPUT_MENU}">${optTipoPessoa(f.tipo_pessoa)}</select></td>
-      <td><input type="text" class="ec-contato" value="${escapeHtml(f.contato||'')}" placeholder="Contato" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
+      <td><input type="text" class="ec-contato" data-mask="telefone" value="${escapeHtml(f.contato||'')}" placeholder="Contato" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
       <td><input type="text" class="ec-pix" value="${escapeHtml(f.chave_pix||'')}" placeholder="Chave PIX" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
       <td><input type="text" class="ec-banco" value="${escapeHtml(f.dados_bancarios||'')}" placeholder="Dados bancários" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
       <td><button type="button" class="btn-mini ec-salvar">Salvar</button><span class="ec-msg" style="font-size:10.5px; margin-left:6px;"></span></td>
@@ -1409,6 +1410,48 @@ async function openEditFornecedores(){
           contato: tr.querySelector('.ec-contato').value || null,
           chave_pix: tr.querySelector('.ec-pix').value || null,
           dados_bancarios: tr.querySelector('.ec-banco').value || null,
+        })});
+        msg.textContent = 'Salvo ✓'; msg.style.color = 'var(--olive)';
+        await carregarCadastros();
+      }catch(err){ msg.textContent = 'Erro: ' + err.message; msg.style.color = 'var(--red)'; }
+    });
+  });
+}
+
+/* Editar clientes/sacados — mesmo padrão de openEditFornecedores(), usando o PATCH
+   /api/cadastros/sacados/:id que já existia no backend (edição por id, sem duplicar). */
+async function openEditSacados(){
+  openOverlay(`<div class="panel-head"><div><h2>Editar clientes/sacados</h2><p>Carregando…</p></div><button class="close-x" onclick="closeOverlay()">✕</button></div>`);
+  const lista = await apiFetch('/api/cadastros/sacados').catch(()=>[]);
+  const linhas = (lista||[]).map(s => `
+    <tr data-id="${s.id}">
+      <td><input type="text" class="ec-nome" value="${escapeHtml(s.nome)}" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
+      <td><input type="text" class="ec-cnpj" data-mask="cnpjCpf" value="${escapeHtml(s.cnpj_cpf||'')}" placeholder="CNPJ/CPF" style="width:100%; ${ESTILO_INPUT_MENU}"><span class="doc-feedback" style="font-size:10px; display:block; margin-top:2px;"></span></td>
+      <td><input type="text" class="ec-contato" data-mask="telefone" value="${escapeHtml(s.contato||'')}" placeholder="Contato" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
+      <td><input type="text" class="ec-endereco" value="${escapeHtml(s.endereco||'')}" placeholder="Endereço" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
+      <td><button type="button" class="btn-mini ec-salvar">Salvar</button><span class="ec-msg" style="font-size:10.5px; margin-left:6px;"></span></td>
+    </tr>`).join('');
+  openOverlay(`
+    <div class="panel-head">
+      <div><h2>Editar clientes/sacados</h2><p>Corrija nome, documento, contato ou endereço de um cliente/sacado já cadastrado.</p></div>
+      <button class="close-x" onclick="closeOverlay()">✕</button>
+    </div>
+    <div style="overflow-x:auto;">
+    <table class="report"><thead><tr><th>Nome</th><th>CNPJ/CPF</th><th>Contato</th><th>Endereço</th><th></th></tr></thead>
+    <tbody id="ecSacadosBody">${linhas || '<tr><td colspan="5">Nenhum cliente/sacado cadastrado ainda.</td></tr>'}</tbody></table>
+    </div>
+    <div class="panel-actions" style="margin-top:20px;"><button type="button" class="btn ghost" onclick="openMenuPanel()">Voltar ao menu</button></div>
+  `);
+  document.querySelectorAll('#ecSacadosBody .ec-salvar').forEach(btn=>{
+    btn.addEventListener('click', async e=>{
+      const tr = e.target.closest('tr'); const id = tr.dataset.id;
+      const msg = tr.querySelector('.ec-msg');
+      try{
+        await apiFetch(`/api/cadastros/sacados/${id}`, {method:'PATCH', body: JSON.stringify({
+          nome: tr.querySelector('.ec-nome').value,
+          cnpj_cpf: tr.querySelector('.ec-cnpj').value || null,
+          contato: tr.querySelector('.ec-contato').value || null,
+          endereco: tr.querySelector('.ec-endereco').value || null,
         })});
         msg.textContent = 'Salvo ✓'; msg.style.color = 'var(--olive)';
         await carregarCadastros();
@@ -2175,7 +2218,46 @@ async function voltarParaMinhaConta(){
   await carregarDados();
 }
 
+// Período do card "Recebimentos Distribuidora" (10/09/2026, pedido da Danielle) — acompanha
+// a data de hoje dinamicamente (recalculado a cada render, não é um intervalo fixo).
+let filtroRecebDistrib = 'mes';
+const LABELS_PERIODO_RECEB_DISTRIB = { dia:'Hoje', semana:'Esta semana', mes:'Este mês', trimestre:'Este trimestre', semestre:'Este semestre', ano:'Este ano' };
+
+// Só compara strings de data ("AAAA-MM-DD"), nunca Date+timezone — mesmo cuidado do bug já
+// corrigido em "A pagar hoje" (19/08/2026): comparar Date object vira UTC e pode cair no dia
+// errado perto da meia-noite em fuso negativo.
+function periodoAbrange(dataISO, periodo){
+  if(!dataISO) return false;
+  const dataStr = String(dataISO).slice(0,10);
+  const hoje = todayISO();
+  const [anoD, mesD] = dataStr.split('-').map(Number);
+  const [anoH, mesH] = hoje.split('-').map(Number);
+  if(periodo==='dia') return dataStr === hoje;
+  if(periodo==='semana'){
+    const inicioStr = inicioSemanaAtual().toISOString().slice(0,10);
+    return dataStr >= inicioStr && dataStr <= hoje;
+  }
+  if(periodo==='mes') return anoD===anoH && mesD===mesH;
+  if(periodo==='trimestre') return anoD===anoH && Math.ceil(mesD/3)===Math.ceil(mesH/3);
+  if(periodo==='semestre') return anoD===anoH && Math.ceil(mesD/6)===Math.ceil(mesH/6);
+  if(periodo==='ano') return anoD===anoH;
+  return false;
+}
+
+function computeRecebDistribuidora(periodo){
+  const lista = (DATA.recebimentosDistribuidora||[]).filter(r => periodoAbrange(r.data_recebimento, periodo));
+  return { total: lista.reduce((s,r)=>s+Number(r.valor_recebido||0),0), count: lista.length };
+}
+
 function openReceberPanel(){
+  filtroRecebDistrib = 'mes';
+  renderReceberPanel();
+}
+
+function renderReceberPanel(){
+  const estiloSelect = 'width:auto; margin-top:0; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:var(--paper-2); font-family:inherit; font-size:13px; color:var(--ink);';
+  const rd = computeRecebDistribuidora(filtroRecebDistrib);
+  const optsPeriodo = Object.entries(LABELS_PERIODO_RECEB_DISTRIB).map(([v,l])=>`<option value="${v}" ${v===filtroRecebDistrib?'selected':''}>${l}</option>`).join('');
   openOverlay(`
     <div class="panel-head">
       <div><h2>Contas a receber</h2><p>Títulos em aberto — clique em "Adicionar" para lançar um novo recebimento previsto.</p></div>
@@ -2185,12 +2267,19 @@ function openReceberPanel(){
       <button class="btn gold" onclick="closeOverlay(); openForm('receber')">+ Adicionar recebimento</button>
       <button class="btn" onclick="window.print()">Imprimir</button>
     </div>
+    <div style="position:relative; border-radius:20px; padding:22px; background:var(--surface); border:1px solid var(--border); box-shadow:var(--shadow-soft); margin:18px 0;">
+      <div style="font-size:11.5px; letter-spacing:1.5px; text-transform:uppercase; color:var(--ink-soft); margin-bottom:10px;">Recebimentos Distribuidora</div>
+      <select id="filtroPeriodoRecebDistrib" style="${estiloSelect}">${optsPeriodo}</select>
+      <div style="font-family:'Playfair Display',serif; font-size:26px; font-weight:600; color:var(--ink); margin-top:12px;">${fmtBRL(rd.total)}</div>
+      <div style="font-size:12px; color:var(--ink-faint); margin-top:6px;">${rd.count} recebimento(s) — categoria "Cliente Distribuidora", por data de recebimento</div>
+    </div>
     ${reportTable(DATA.contasReceber,'receber')}
     <div class="notes-box">
       <label style="font-size:11px; letter-spacing:1px; text-transform:uppercase; color:var(--ink-faint);">Notas do cliente</label>
       <textarea placeholder="Observações sobre estes recebimentos — sincroniza com a planilha ao salvar."></textarea>
     </div>
   `);
+  document.getElementById('filtroPeriodoRecebDistrib').addEventListener('change', e=>{ filtroRecebDistrib = e.target.value; renderReceberPanel(); });
 }
 function mesesDisponiveisPagar(){
   const meses = new Set(DATA.contasPagar.map(x=> x.vencimento ? String(x.vencimento).slice(0,7) : null).filter(Boolean));
@@ -2722,7 +2811,7 @@ function openPrintAll(){
 const FIELD_SETS = {
   pagar:[
     {name:'credor', label:'Fornecedor/Credor', type:'cadastro', cadastro:'fornecedores', full:true},
-    {name:'categoria', label:'Categoria', type:'cadastro', cadastro:'categoriasDespesa', full:true},
+    {name:'categoria', label:'Categoria', type:'cadastro', cadastro:'categoriasDespesa', full:true, required:true},
     {name:'valor_original', label:'Valor (R$)', type:'number'},
     {name:'vencimento', label:'Vencimento', type:'date'},
     {name:'forma', label:'Forma de pagamento', type:'select', options:['PIX','Boleto','TED','Cartão','Dinheiro']},
@@ -2730,7 +2819,8 @@ const FIELD_SETS = {
   ],
   receber:[
     {name:'cliente', label:'Cliente/Sacado', type:'cadastro', cadastro:'sacados', full:true},
-    {name:'categoria', label:'Categoria', type:'cadastro', cadastro:'categoriasReceita', full:true},
+    {name:'categoria', label:'Categoria', type:'cadastro', cadastro:'categoriasReceita', full:true, required:true},
+    {name:'data_compra', label:'Data da compra', type:'date'},
     {name:'valor_original', label:'Valor (R$)', type:'number'},
     {name:'vencimento', label:'Vencimento', type:'date'},
     {name:'forma', label:'Forma de recebimento', type:'select', options:['PIX','Boleto','TED','Cartão','Dinheiro']},
@@ -2756,9 +2846,9 @@ let entryMode = 'manual';
 // aparecem no mini-formulário de criação inline.
 const CADASTRO_META = {
   fornecedores:{ endpoint:'/api/cadastros/fornecedores', nomeKey:'nome', novoLabel:'fornecedor',
-    extraFields:[{name:'cnpj_cpf', label:'CNPJ/CPF (opcional)'}, {name:'contato', label:'Contato (opcional)'}] },
+    extraFields:[{name:'cnpj_cpf', label:'CNPJ/CPF (opcional)', mask:'cnpjCpf'}, {name:'contato', label:'Contato (opcional)', mask:'telefone'}] },
   sacados:{ endpoint:'/api/cadastros/sacados', nomeKey:'nome', novoLabel:'cliente/sacado',
-    extraFields:[{name:'cnpj_cpf', label:'CNPJ/CPF (opcional)'}, {name:'contato', label:'Contato (opcional)'}, {name:'endereco', label:'Endereço (opcional)'}] },
+    extraFields:[{name:'cnpj_cpf', label:'CNPJ/CPF (opcional)', mask:'cnpjCpf'}, {name:'contato', label:'Contato (opcional)', mask:'telefone'}, {name:'endereco', label:'Endereço (opcional)'}] },
   categoriasDespesa:{ endpoint:'/api/cadastros/categorias', nomeKey:'nome_categoria', novoLabel:'categoria',
     postExtra:{tipo:'despesa'}, extraFields:[] },
   categoriasReceita:{ endpoint:'/api/cadastros/categorias', nomeKey:'nome_categoria', novoLabel:'categoria',
@@ -2773,6 +2863,91 @@ let CADASTROS = { fornecedores:[], sacados:[], categoriasDespesa:[], categoriasR
 function escapeHtml(s){
   return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
+
+/* ---------- máscara de telefone e CNPJ/CPF (com validação de dígito verificador) ----------
+   Reaproveitado em qualquer <input data-mask="telefone|cnpjCpf">, tanto no mini-formulário
+   "+ Cadastrar novo" (fornecedor/cliente-sacado) quanto na tela Menu > Editar > Fornecedores.
+   Um único listener delegado no document cobre inputs criados dinamicamente sem precisar
+   religar o listener a cada renderização. */
+function maskTelefone(value){
+  const d = String(value||'').replace(/\D/g,'').slice(0,11);
+  if(!d) return '';
+  let out = '(' + d.slice(0,2);
+  if(d.length>=2) out += ') ';
+  if(d.length>2){
+    // Heurística: 9 como 1º dígito após o DDD indica celular (5+4); senão, fixo (4+4).
+    // Decidir pelo total de dígitos (10 vs 11) faz o traço "pular" de lugar no meio da
+    // digitação de um celular — decidir pelo dígito evita esse reformate visível.
+    const celular = d.length>=3 ? d[2]==='9' : d.length===11;
+    if(celular){ out += d.slice(2,7); if(d.length>7) out += '-'+d.slice(7,11); }
+    else { out += d.slice(2,6); if(d.length>6) out += '-'+d.slice(6,10); }
+  }
+  return out;
+}
+function maskCnpjCpf(value){
+  const d = String(value||'').replace(/\D/g,'').slice(0,14);
+  if(d.length<=11){
+    let out = d.slice(0,3);
+    if(d.length>3) out += '.'+d.slice(3,6);
+    if(d.length>6) out += '.'+d.slice(6,9);
+    if(d.length>9) out += '-'+d.slice(9,11);
+    return out;
+  }
+  let out = d.slice(0,2);
+  if(d.length>2) out += '.'+d.slice(2,5);
+  if(d.length>5) out += '.'+d.slice(5,8);
+  if(d.length>8) out += '/'+d.slice(8,12);
+  if(d.length>12) out += '-'+d.slice(12,14);
+  return out;
+}
+// Algoritmo padrão de dígito verificador (módulo 11) da Receita Federal para CPF/CNPJ.
+function validarCPF(cpf){
+  const d = String(cpf||'').replace(/\D/g,'');
+  if(d.length!==11 || /^(\d)\1{10}$/.test(d)) return false;
+  let soma=0; for(let i=0;i<9;i++) soma += Number(d[i])*(10-i);
+  let resto=(soma*10)%11; if(resto>=10) resto=0;
+  if(resto!==Number(d[9])) return false;
+  soma=0; for(let i=0;i<10;i++) soma += Number(d[i])*(11-i);
+  resto=(soma*10)%11; if(resto>=10) resto=0;
+  return resto===Number(d[10]);
+}
+function validarCNPJ(cnpj){
+  const d = String(cnpj||'').replace(/\D/g,'');
+  if(d.length!==14 || /^(\d)\1{13}$/.test(d)) return false;
+  const calc = base => {
+    const pesos = base.length===12 ? [5,4,3,2,9,8,7,6,5,4,3,2] : [6,5,4,3,2,9,8,7,6,5,4,3,2];
+    let soma=0; for(let i=0;i<base.length;i++) soma += Number(base[i])*pesos[i];
+    const resto = soma%11; return resto<2?0:11-resto;
+  };
+  const d1 = calc(d.slice(0,12));
+  if(d1!==Number(d[12])) return false;
+  const d2 = calc(d.slice(0,12)+d1);
+  return d2===Number(d[13]);
+}
+// Documento vazio não é "inválido" (campo é opcional em todos os fluxos que usam isso) — só dá
+// feedback quando algo foi digitado.
+function feedbackCnpjCpf(value){
+  const d = String(value||'').replace(/\D/g,'');
+  if(!d) return {texto:'', valido:null};
+  if(d.length===11) return validarCPF(d) ? {texto:'CPF válido ✓', valido:true} : {texto:'CPF inválido — confira os números', valido:false};
+  if(d.length===14) return validarCNPJ(d) ? {texto:'CNPJ válido ✓', valido:true} : {texto:'CNPJ inválido — confira os números', valido:false};
+  return {texto:'Documento incompleto', valido:false};
+}
+document.addEventListener('input', e=>{
+  const el = e.target;
+  if(!(el instanceof HTMLInputElement) || !el.dataset || !el.dataset.mask) return;
+  if(el.dataset.mask==='telefone'){
+    el.value = maskTelefone(el.value);
+  } else if(el.dataset.mask==='cnpjCpf'){
+    el.value = maskCnpjCpf(el.value);
+    const fb = el.parentElement ? el.parentElement.querySelector('.doc-feedback') : null;
+    if(fb){
+      const r = feedbackCnpjCpf(el.value);
+      fb.textContent = r.texto;
+      fb.style.color = r.valido===false ? 'var(--red)' : r.valido===true ? 'var(--olive)' : 'var(--ink-faint)';
+    }
+  }
+});
 
 async function carregarCadastros(){
   try{
@@ -2807,17 +2982,20 @@ function renderCadastroField(f, prefill){
     else if(nomeExtraido){ selectedValue = '__novo__'; novoNome = nomeExtraido; }
   }
   const optionsHtml = [
-    `<option value="" ${selectedValue===''?'selected':''}>— Selecione —</option>`,
+    `<option value="" ${selectedValue===''?'selected':''} disabled>— Selecione —</option>`,
     ...lista.map(item => `<option value="${item.id}" ${selectedValue===String(item.id)?'selected':''}>${escapeHtml(item[meta.nomeKey])}</option>`),
     `<option value="__novo__" ${selectedValue==='__novo__'?'selected':''}>+ Cadastrar novo ${meta.novoLabel}</option>`,
   ].join('');
-  const extraFieldsHtml = (meta.extraFields||[]).map(extra =>
-    `<input name="novo_${f.name}_${extra.name}" type="text" placeholder="${escapeHtml(extra.label)}" />`
-  ).join('');
+  const extraFieldsHtml = (meta.extraFields||[]).map(extra => {
+    const maskAttr = extra.mask ? ` data-mask="${extra.mask}"` : '';
+    const feedback = extra.mask==='cnpjCpf' ? `<span class="doc-feedback" style="font-size:10.5px; display:block;"></span>` : '';
+    return `<input name="novo_${f.name}_${extra.name}" type="text" placeholder="${escapeHtml(extra.label)}"${maskAttr} />${feedback}`;
+  }).join('');
+  const requiredAttr = f.required ? ' required' : '';
   return `
     <div class="field ${f.full?'full':''}">
-      <label>${f.label}</label>
-      <select name="${f.name}" onchange="toggleCadastroNovo('${f.name}', this.value)">${optionsHtml}</select>
+      <label>${f.label}${f.required ? ' *' : ''}</label>
+      <select name="${f.name}" onchange="toggleCadastroNovo('${f.name}', this.value)"${requiredAttr}>${optionsHtml}</select>
       <div id="novo_${f.name}" class="novo-cadastro" style="display:${selectedValue==='__novo__'?'flex':'none'};">
         <input name="novo_${f.name}" type="text" placeholder="Nome do novo ${meta.novoLabel}" value="${escapeHtml(novoNome)}" />
         ${extraFieldsHtml}
@@ -2972,7 +3150,7 @@ document.getElementById('entryForm').addEventListener('submit', async e=>{
       await apiFetch('/api/contas-receber', {method:'POST', body: JSON.stringify({
         sacado_id: resolved.cliente, categoria_id: resolved.categoria, vencimento: obj.vencimento,
         valor_original: parseFloat(obj.valor_original)||0, forma_recebimento: obj.forma, observacoes: obj.observacoes,
-        data_recebimento: obj.data_recebimento || null,
+        data_recebimento: obj.data_recebimento || null, data_compra: obj.data_compra || null,
       })});
     } else {
       await apiFetch('/api/caixa', {method:'POST', body: JSON.stringify({
