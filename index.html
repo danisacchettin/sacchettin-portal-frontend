@@ -532,9 +532,12 @@
       </div>
       <div id="dropzoneWrap"></div>
       <div class="form-grid" id="formFields"></div>
-      <div style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end;">
+      <div id="parcelasWrap"></div>
+      <div id="salvoFeedback" style="display:none; margin-top:14px; padding:10px 14px; border-radius:8px; background:var(--olive-wash, rgba(96,120,80,.15)); color:var(--olive); font-size:13px;">✓ Lançamento salvo. Pode continuar preenchendo o próximo.</div>
+      <div style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap;">
         <button type="button" class="btn ghost" data-close-form>Cancelar</button>
-        <button type="submit" class="btn olive">Salvar lançamento</button>
+        <button type="submit" class="btn ghost" id="btnSalvarNovo">Salvar e adicionar novo</button>
+        <button type="submit" class="btn olive" id="btnSalvarFechar">Salvar lançamento</button>
       </div>
     </form>
   </div>
@@ -2700,9 +2703,9 @@ function baixarModeloImportacao(){
   const folhas = [
     {
       nome: 'Contas a Pagar',
-      instrucao: 'Preencha uma linha por conta a pagar. Vencimento deve ser uma data real do Excel (não texto). Forma de Pagamento sugerida: PIX, Boleto, TED, Cartão ou Dinheiro. Fornecedor e Categoria são criados automaticamente se ainda não existirem. "ID Fornecedor" é opcional: preencha só se já souber o ID exato do fornecedor cadastrado (evita duplicar cadastro por causa de grafia diferente) — deixe em branco para fornecedor novo. Uma observação começando com "NAO IMPORTAR" faz a linha ser pulada (sem erro).',
-      cabecalho: ['Fornecedor', 'Categoria', 'Vencimento', 'Valor Original (R$)', 'Forma de Pagamento', 'Documento', 'Observações', 'ID Fornecedor (opcional)'],
-      larguras: [28, 20, 14, 18, 14, 14, 40, 20],
+      instrucao: 'Preencha uma linha por conta a pagar (ou por boleto, quando uma mesma NF gerar vários boletos parcelados — repita a linha trocando só Vencimento/Valor/Nº do Boleto). Vencimento deve ser uma data real do Excel (não texto). Forma de Pagamento sugerida: PIX, Boleto, TED, Cartão ou Dinheiro. Fornecedor e Categoria são criados automaticamente se ainda não existirem. "Nº da NF/Pedido" é o número da Nota Fiscal — se o fornecedor não emitir NF, informe o número do Pedido no mesmo campo. "Nº do Boleto/Duplicata" é opcional e identifica cada boleto individualmente quando há mais de um por NF. "ID Fornecedor" é opcional: preencha só se já souber o ID exato do fornecedor cadastrado (evita duplicar cadastro por causa de grafia diferente) — deixe em branco para fornecedor novo. Uma observação começando com "NAO IMPORTAR" faz a linha ser pulada (sem erro).',
+      cabecalho: ['Fornecedor', 'Categoria', 'Vencimento', 'Valor Original (R$)', 'Forma de Pagamento', 'Nº da NF/Pedido', 'Observações', 'ID Fornecedor (opcional)', 'Nº do Boleto/Duplicata (opcional)'],
+      larguras: [28, 20, 14, 18, 14, 18, 40, 20, 22],
     },
     {
       nome: 'Contas a Receber',
@@ -2812,9 +2815,10 @@ const FIELD_SETS = {
   pagar:[
     {name:'credor', label:'Fornecedor/Credor', type:'cadastro', cadastro:'fornecedores', full:true},
     {name:'categoria', label:'Categoria', type:'cadastro', cadastro:'categoriasDespesa', full:true, required:true},
-    {name:'valor_original', label:'Valor (R$)', type:'number'},
-    {name:'vencimento', label:'Vencimento', type:'date'},
+    {name:'documento', label:'Número da NF (ou do Pedido, se não houver NF)', type:'text', full:true},
     {name:'forma', label:'Forma de pagamento', type:'select', options:['PIX','Boleto','TED','Cartão','Dinheiro']},
+    {name:'data_pagamento', label:'Data de pagamento (opcional, se já foi pago agora)', type:'date', optionalDate:true},
+    {name:'conta_bancaria', label:'Conta bancária / PIX / Caixa (se já foi pago)', type:'cadastro', cadastro:'contasBancarias', full:true},
     {name:'observacoes', label:'Observações', type:'text', full:true},
   ],
   receber:[
@@ -2825,6 +2829,7 @@ const FIELD_SETS = {
     {name:'vencimento', label:'Vencimento', type:'date'},
     {name:'forma', label:'Forma de recebimento', type:'select', options:['PIX','Boleto','TED','Cartão','Dinheiro']},
     {name:'data_recebimento', label:'Data de recebimento (opcional)', type:'date', optionalDate:true},
+    {name:'conta_bancaria', label:'Conta bancária / PIX / Caixa (se já recebido)', type:'cadastro', cadastro:'contasBancarias', full:true},
     {name:'observacoes', label:'Observações', type:'text', full:true},
   ],
   caixa:[
@@ -2840,6 +2845,10 @@ const FIELD_SETS = {
 };
 let currentType = 'pagar';
 let entryMode = 'manual';
+// Parcelas/boletos de uma Conta a Pagar: array de {valor, vencimento, numero_boleto} — permite
+// lançar de uma vez vários boletos originados da mesma NF (mesmo fornecedor/categoria/documento),
+// cada um com seu próprio valor, vencimento e número de boleto/orçamento.
+let parcelasPagar = [];
 
 // Metadados de cada lista de cadastro: endpoint da API, qual campo do JSON traz o "nome" a
 // exibir/gravar, rótulo usado em "+ Cadastrar novo ___" e quais campos extras (opcionais)
@@ -3017,6 +3026,63 @@ function renderFormFields(prefill){
     return `<div class="field ${f.full?'full':''}"><label>${f.label}</label>${inputHTML}</div>`;
   }).join('');
   document.getElementById('formFields').style.display = 'grid';
+  if(currentType === 'pagar'){
+    renderParcelasPagar(prefill);
+  } else {
+    document.getElementById('parcelasWrap').innerHTML = '';
+  }
+}
+
+/* Parcelas/boletos de Conta a Pagar — em vez de um único campo Valor + Vencimento, permite
+   lançar N parcelas (cada uma com seu valor, vencimento e nº de boleto/orçamento) de uma vez,
+   todas compartilhando o mesmo Fornecedor/Categoria/Documento(NF)/Forma/Observações do card. */
+function renderParcelasPagar(prefill){
+  prefill = prefill || {};
+  if(!parcelasPagar.length){
+    parcelasPagar = [{
+      valor: prefill.valor_original !== undefined ? prefill.valor_original : '',
+      vencimento: prefill.vencimento || todayISO(),
+      numero_boleto: '',
+    }];
+  }
+  const linhas = parcelasPagar.map((p, i) => `
+    <div class="parcela-row" data-idx="${i}" style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; margin-bottom:8px;">
+      <div class="field" style="flex:1; min-width:120px; margin:0;">
+        <label>${i===0 ? 'Valor (R$)' : `Valor parcela ${i+1} (R$)`}</label>
+        <input type="number" step="0.01" class="parcela-valor" value="${escapeHtml(String(p.valor))}" />
+      </div>
+      <div class="field" style="flex:1; min-width:130px; margin:0;">
+        <label>${i===0 ? 'Vencimento' : `Vencimento parcela ${i+1}`}</label>
+        <input type="date" class="parcela-vencimento" value="${escapeHtml(p.vencimento)}" />
+      </div>
+      <div class="field" style="flex:1; min-width:150px; margin:0;">
+        <label>Nº do boleto ou orçamento</label>
+        <input type="text" class="parcela-boleto" value="${escapeHtml(p.numero_boleto)}" placeholder="opcional" />
+      </div>
+      ${parcelasPagar.length>1 ? `<button type="button" class="btn-mini parcela-remover" data-idx="${i}" title="Remover parcela" style="height:34px;">✕</button>` : ''}
+    </div>`).join('');
+  document.getElementById('parcelasWrap').innerHTML = `
+    <div class="section-title" style="margin-top:4px;">Parcelas / boletos</div>
+    ${linhas}
+    <button type="button" class="btn ghost" id="parcelaAdicionar" style="margin-top:4px;">+ Adicionar parcela</button>
+  `;
+  document.querySelectorAll('#parcelasWrap .parcela-row').forEach(row=>{
+    const idx = Number(row.dataset.idx);
+    row.querySelector('.parcela-valor').addEventListener('input', e=>{ parcelasPagar[idx].valor = e.target.value; });
+    row.querySelector('.parcela-vencimento').addEventListener('input', e=>{ parcelasPagar[idx].vencimento = e.target.value; });
+    row.querySelector('.parcela-boleto').addEventListener('input', e=>{ parcelasPagar[idx].numero_boleto = e.target.value; });
+  });
+  document.getElementById('parcelaAdicionar').addEventListener('click', ()=>{
+    parcelasPagar.push({valor:'', vencimento:'', numero_boleto:''});
+    renderParcelasPagar();
+  });
+  document.querySelectorAll('#parcelasWrap .parcela-remover').forEach(btn=>{
+    btn.addEventListener('click', e=>{
+      const idx = Number(e.currentTarget.dataset.idx);
+      parcelasPagar.splice(idx, 1);
+      renderParcelasPagar();
+    });
+  });
 }
 
 /* ---------- alternativa: enviar documento (NF, boleto, extrato) ---------- */
@@ -3067,6 +3133,7 @@ async function handleDocUpload(file){
     }
     const icone = resp.extraido ? '✅' : 'ℹ️';
     document.getElementById('dropzoneWrap').innerHTML = `<div class="extract-badge">${icone} ${resp.mensagem}</div>`;
+    if(currentType==='pagar') parcelasPagar = []; // reseta pra a 1ª parcela vir preenchida com o valor extraído do documento
     renderFormFields(prefill);
   }catch(err){
     document.getElementById('dropzoneWrap').innerHTML = `<div class="extract-badge" style="color:var(--red); background:var(--red-wash);">Não consegui enviar o documento: ${err.message}</div>`;
@@ -3077,6 +3144,9 @@ async function handleDocUpload(file){
 async function openForm(type){
   currentType = type || 'pagar';
   entryMode = 'manual';
+  parcelasPagar = [];
+  const feedbackEl = document.getElementById('salvoFeedback');
+  if(feedbackEl) feedbackEl.style.display = 'none';
   document.querySelectorAll('#typeToggle button').forEach(b=>b.classList.toggle('active', b.dataset.type===currentType));
   document.querySelectorAll('#entryModeToggle button').forEach(b=>b.classList.toggle('active', b.dataset.mode==='manual'));
   document.getElementById('dropzoneWrap').innerHTML = '';
@@ -3091,14 +3161,17 @@ function closeForm(){ document.getElementById('overlayForm').classList.remove('o
 document.getElementById('typeToggle').addEventListener('click', e=>{
   const btn = e.target.closest('button'); if(!btn) return;
   currentType = btn.dataset.type;
+  parcelasPagar = [];
+  document.getElementById('salvoFeedback').style.display = 'none';
   document.querySelectorAll('#typeToggle button').forEach(b=>b.classList.toggle('active', b===btn));
-  if(entryMode==='documento'){ renderDropzone(); document.getElementById('formFields').style.display='none'; document.getElementById('formFields').innerHTML=''; }
+  if(entryMode==='documento'){ renderDropzone(); document.getElementById('formFields').style.display='none'; document.getElementById('formFields').innerHTML=''; document.getElementById('parcelasWrap').innerHTML=''; }
   else renderFormFields();
 });
 
 document.getElementById('entryModeToggle').addEventListener('click', e=>{
   const btn = e.target.closest('button'); if(!btn) return;
   entryMode = btn.dataset.mode;
+  document.getElementById('salvoFeedback').style.display = 'none';
   document.querySelectorAll('#entryModeToggle button').forEach(b=>b.classList.toggle('active', b===btn));
   if(entryMode==='documento'){
     document.getElementById('formFields').style.display='none';
@@ -3129,12 +3202,22 @@ async function resolverCadastro(f, obj){
   return criado.id;
 }
 
+// Guarda qual dos dois botões de submit foi clicado ("Salvar lançamento" fecha o painel;
+// "Salvar e adicionar novo" mantém o painel aberto e limpo pra digitar o próximo lançamento
+// em seguida, sem precisar reabrir o card toda vez).
+let acaoSalvar = 'fechar';
+document.getElementById('btnSalvarFechar').addEventListener('click', ()=>{ acaoSalvar = 'fechar'; });
+document.getElementById('btnSalvarNovo').addEventListener('click', ()=>{ acaoSalvar = 'novo'; });
+
 document.getElementById('entryForm').addEventListener('submit', async e=>{
   e.preventDefault();
   const fd = new FormData(e.target);
   const obj = Object.fromEntries(fd.entries());
-  const btn = document.getElementById('entryForm').querySelector('button[type=submit]');
-  btn.disabled = true;
+  const btnFechar = document.getElementById('btnSalvarFechar');
+  const btnNovo = document.getElementById('btnSalvarNovo');
+  btnFechar.disabled = true;
+  btnNovo.disabled = true;
+  document.getElementById('salvoFeedback').style.display = 'none';
 
   try{
     const resolved = {};
@@ -3142,15 +3225,34 @@ document.getElementById('entryForm').addEventListener('submit', async e=>{
       resolved[f.name] = await resolverCadastro(f, obj);
     }
     if(currentType==='pagar'){
-      await apiFetch('/api/contas-pagar', {method:'POST', body: JSON.stringify({
-        fornecedor_id: resolved.credor, categoria_id: resolved.categoria, vencimento: obj.vencimento,
-        valor_original: parseFloat(obj.valor_original)||0, forma_pagamento: obj.forma, observacoes: obj.observacoes,
-      })});
+      // Lança uma parcela por linha preenchida em "Parcelas / boletos" — todas compartilham
+      // fornecedor/categoria/documento(NF)/forma/observações; cada uma tem seu próprio valor,
+      // vencimento e nº de boleto/orçamento (suporta múltiplos boletos vindos da mesma NF).
+      const linhasParcelas = Array.from(document.querySelectorAll('#parcelasWrap .parcela-row')).map(row=>({
+        valor: parseFloat(row.querySelector('.parcela-valor').value) || 0,
+        vencimento: row.querySelector('.parcela-vencimento').value,
+        numero_boleto: row.querySelector('.parcela-boleto').value.trim() || null,
+      })).filter(p => p.valor > 0 && p.vencimento);
+      if(!linhasParcelas.length){
+        throw new Error('Informe ao menos uma parcela com valor e vencimento.');
+      }
+      // "Data de pagamento" + "Conta bancária" (quando preenchidas) marcam TODAS as parcelas
+      // deste lançamento como já pagas na hora, alimentando o Fluxo de Caixa automaticamente —
+      // uso típico: pagamento único feito na hora (ex.: PIX), não boletos futuros a vencer.
+      for(const p of linhasParcelas){
+        await apiFetch('/api/contas-pagar', {method:'POST', body: JSON.stringify({
+          fornecedor_id: resolved.credor, categoria_id: resolved.categoria, documento: obj.documento || null,
+          numero_boleto: p.numero_boleto, vencimento: p.vencimento, valor_original: p.valor,
+          forma_pagamento: obj.forma, observacoes: obj.observacoes,
+          data_pagamento: obj.data_pagamento || null, conta_bancaria_id: resolved.conta_bancaria || null,
+        })});
+      }
     } else if(currentType==='receber'){
       await apiFetch('/api/contas-receber', {method:'POST', body: JSON.stringify({
         sacado_id: resolved.cliente, categoria_id: resolved.categoria, vencimento: obj.vencimento,
         valor_original: parseFloat(obj.valor_original)||0, forma_recebimento: obj.forma, observacoes: obj.observacoes,
         data_recebimento: obj.data_recebimento || null, data_compra: obj.data_compra || null,
+        conta_bancaria_id: resolved.conta_bancaria || null,
       })});
     } else {
       await apiFetch('/api/caixa', {method:'POST', body: JSON.stringify({
@@ -3159,12 +3261,22 @@ document.getElementById('entryForm').addEventListener('submit', async e=>{
         forma_pagamento: obj.forma_pagamento || null, maquininha: obj.maquininha || null,
       })});
     }
-    closeForm();
-    await carregarDados();
+    parcelasPagar = [];
+    if(acaoSalvar === 'novo'){
+      // Mantém o painel aberto, no mesmo tipo/modo, com os campos limpos — pra digitar o
+      // próximo lançamento em seguida sem precisar reabrir o card "Novo lançamento" toda vez.
+      document.getElementById('salvoFeedback').style.display = 'block';
+      renderFormFields();
+      await carregarDados();
+    } else {
+      closeForm();
+      await carregarDados();
+    }
   }catch(err){
     alert('Não foi possível salvar: ' + err.message);
   }finally{
-    btn.disabled = false;
+    btnFechar.disabled = false;
+    btnNovo.disabled = false;
   }
 });
 
