@@ -355,6 +355,35 @@
       <div class="field full"><label>Senha</label><input type="password" name="senha" required autocomplete="current-password"></div>
       <button type="submit" class="btn olive" style="width:100%; justify-content:center; margin-top:6px;">Entrar</button>
     </form>
+    <p style="text-align:center; margin-top:14px;">
+      <a href="#" id="linkEsqueciSenha" style="font-size:12px; color:var(--ink-faint); text-decoration:underline;">Esqueci minha senha</a>
+    </p>
+    <div id="esqueciSenhaBox" style="display:none; margin-top:14px;">
+      <p style="font-size:12px; color:var(--ink-soft); text-align:center; margin:0 0 12px;">Informe o e-mail cadastrado — se ele existir no sistema, enviaremos um link para você definir uma nova senha.</p>
+      <form id="formEsqueciSenha">
+        <div class="field full"><label>E-mail</label><input type="email" name="email" required autocomplete="username"></div>
+        <div id="esqueciSenhaMsg" style="font-size:12px; display:none; margin-bottom:10px; text-align:center;"></div>
+        <button type="submit" class="btn" style="width:100%; justify-content:center;">Enviar link de redefinição</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="login-screen" id="resetSenhaScreen" style="display:none;">
+  <div class="login-card">
+    <div class="mono-center">DS</div>
+    <h2>Definir nova senha</h2>
+    <p>Escolha uma nova senha para acessar o Portal do Cliente.</p>
+    <div class="login-erro" id="resetSenhaErro"></div>
+    <div id="resetSenhaSucesso" style="display:none; font-size:13px; color:var(--olive-strong); text-align:center; margin-bottom:14px;"></div>
+    <form id="formRedefinirSenha">
+      <div class="field full"><label>Nova senha (mín. 8 caracteres)</label><input type="password" name="novaSenha" required minlength="8" autocomplete="new-password"></div>
+      <div class="field full"><label>Confirmar nova senha</label><input type="password" name="confirmarSenha" required minlength="8" autocomplete="new-password"></div>
+      <button type="submit" class="btn olive" style="width:100%; justify-content:center; margin-top:6px;">Salvar nova senha</button>
+    </form>
+    <p style="text-align:center; margin-top:14px;">
+      <a href="#" id="linkVoltarLogin" style="font-size:12px; color:var(--ink-faint); text-decoration:underline;">Voltar para o login</a>
+    </p>
   </div>
 </div>
 
@@ -3198,6 +3227,82 @@ document.getElementById('loginForm').addEventListener('submit', async e=>{
   }
 });
 
+/* ---------- Esqueci minha senha / redefinir senha ---------- */
+
+document.getElementById('linkEsqueciSenha').addEventListener('click', (e)=>{
+  e.preventDefault();
+  const box = document.getElementById('esqueciSenhaBox');
+  box.style.display = (box.style.display === 'none') ? 'block' : 'none';
+});
+
+document.getElementById('formEsqueciSenha').addEventListener('submit', async e=>{
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const msg = document.getElementById('esqueciSenhaMsg');
+  msg.style.display = 'none';
+  try{
+    const resp = await apiFetch('/api/auth/esqueci-senha', {method:'POST', body: JSON.stringify({email: fd.get('email')})});
+    msg.textContent = resp.mensagem || 'Se este e-mail estiver cadastrado, enviaremos um link de redefinição em instantes.';
+    msg.style.color = 'var(--olive-strong)';
+    msg.style.display = 'block';
+    e.target.reset();
+  }catch(err){
+    msg.textContent = err.message || 'Não foi possível processar sua solicitação. Tente novamente em instantes.';
+    msg.style.color = 'var(--red)';
+    msg.style.display = 'block';
+  }
+});
+
+function showResetSenhaScreen(token){
+  document.body.classList.add('not-authed');
+  document.getElementById('loginScreen').style.display = 'none';
+  const tela = document.getElementById('resetSenhaScreen');
+  tela.style.display = 'flex';
+  document.getElementById('formRedefinirSenha').dataset.token = token;
+}
+
+function limparTokenDaUrl(){
+  const url = new URL(window.location.href);
+  url.searchParams.delete('redefinir');
+  window.history.replaceState({}, '', url.toString());
+}
+
+document.getElementById('linkVoltarLogin').addEventListener('click', (e)=>{
+  e.preventDefault();
+  limparTokenDaUrl();
+  document.getElementById('resetSenhaScreen').style.display = 'none';
+  showLogin();
+});
+
+document.getElementById('formRedefinirSenha').addEventListener('submit', async e=>{
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const erroEl = document.getElementById('resetSenhaErro');
+  const sucessoEl = document.getElementById('resetSenhaSucesso');
+  erroEl.style.display = 'none';
+  sucessoEl.style.display = 'none';
+
+  const novaSenha = fd.get('novaSenha');
+  const confirmarSenha = fd.get('confirmarSenha');
+  if(novaSenha !== confirmarSenha){
+    erroEl.textContent = 'As senhas digitadas não coincidem.';
+    erroEl.style.display = 'block';
+    return;
+  }
+
+  const token = e.target.dataset.token;
+  try{
+    await apiFetch('/api/auth/redefinir-senha', {method:'POST', body: JSON.stringify({token, novaSenha})});
+    e.target.style.display = 'none';
+    sucessoEl.textContent = 'Senha redefinida com sucesso! Você já pode entrar com a nova senha.';
+    sucessoEl.style.display = 'block';
+    limparTokenDaUrl();
+  }catch(err){
+    erroEl.textContent = err.message || 'Não foi possível redefinir a senha. Solicite um novo link.';
+    erroEl.style.display = 'block';
+  }
+});
+
 document.getElementById('btnMenu').addEventListener('click', openMenuPanel);
 document.getElementById('btnClientes').addEventListener('click', openClientesPanel);
 
@@ -3220,6 +3325,12 @@ async function init(){
     if(e.target.closest('#cardFluxo')) openFluxoPanel();
     if(e.target.closest('#cardAging')) openAgingPanel();
   });
+
+  const tokenRedefinir = new URLSearchParams(window.location.search).get('redefinir');
+  if(tokenRedefinir){
+    showResetSenhaScreen(tokenRedefinir);
+    return;
+  }
 
   const sessaoValida = await tentarSessaoSalva();
   if(sessaoValida){
