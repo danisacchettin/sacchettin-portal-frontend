@@ -365,6 +365,12 @@
     .client-logo-slot{align-self:flex-end;}
   }
 
+  /* cabeçalho de impressão — normalmente invisível, só aparece quando a página é impressa
+  (ver @media print abaixo). Fica FORA de .wrap de propósito (.wrap inteiro é escondido na
+  impressão), pra poder mostrar a logo do cliente em qualquer extrato/relatório impresso
+  (pedido da Danielle: "os extratos em todos os cards" com a logo, se estiver cadastrada). */
+  .print-header{display:none;}
+
   @media print{
     body{background:#fff !important;}
     .frame,.blob,.fab,.fab-label,.fab-baixa,.fab-baixa-label,.subbar,.section-title::after{display:none !important;}
@@ -373,6 +379,17 @@
         .overlay:not(.open){display:none !important;}
         .panel{box-shadow:none; border:1px solid #ddd; transform:none !important; opacity:1 !important;}
         .panel-actions,.close-x{display:none !important;}
+        /* pedido da Danielle (12/09/2026): a impressão dos extratos (fornecedor, categoria,
+        vencimento, valor, saldo em aberto etc.) saía em cinza claro (--ink-soft/--ink-faint,
+        pensados pra tela, com opacidade baixa) — no papel/PDF isso lê como cinza claro demais.
+        Força TODO o texto do conteúdo impresso para preto puro, sem tocar nas variáveis de tela. */
+        .panel, .panel *{color:#000 !important;}
+        .print-header{
+          display:flex !important; align-items:center; gap:14px; margin-bottom:20px;
+          padding-bottom:14px; border-bottom:1px solid #ddd;
+        }
+        .print-header img{max-height:52px; max-width:220px; object-fit:contain;}
+        .print-header .print-header-empresa{font-family:'Playfair Display',serif; font-size:16px; font-weight:600; color:#000 !important;}
   }
 </style>
 </head>
@@ -381,6 +398,13 @@
 <div class="blob blob-1"></div>
 <div class="blob blob-2"></div>
 <div class="frame"></div>
+
+<!-- Cabeçalho só de impressão — logo do cliente (quando cadastrada) + nome da empresa.
+Fica fora de .wrap para continuar visível quando .wrap é escondido em @media print. -->
+<div class="print-header" id="printHeader">
+  <img id="printHeaderLogo" alt="" style="display:none;">
+  <div class="print-header-empresa" id="printHeaderEmpresa"></div>
+</div>
 
 <div class="login-screen" id="loginScreen">
   <div class="login-card">
@@ -595,6 +619,17 @@ function showLogin(){ document.body.classList.add('not-authed'); document.body.c
 
 function setClientLogo(logoUrl, nomeEmpresa){
   const slot = document.getElementById('clientLogoSlot');
+  // Espelha a mesma logo/nome no cabeçalho de impressão (pedido da Danielle: a logo do
+  // cliente, quando cadastrada, deve aparecer nos extratos/relatórios impressos de todos
+  // os cards — esse cabeçalho normalmente fica invisível, só aparece em @media print).
+  const printLogo = document.getElementById('printHeaderLogo');
+  const printEmpresa = document.getElementById('printHeaderEmpresa');
+  if(printEmpresa) printEmpresa.textContent = nomeEmpresa || '';
+  if(logoUrl){
+    if(printLogo){ printLogo.src = logoUrl; printLogo.alt = nomeEmpresa || 'Logo do cliente'; printLogo.style.display = ''; }
+  } else if(printLogo){
+    printLogo.removeAttribute('src'); printLogo.style.display = 'none';
+  }
   if(!slot) return;
   if(logoUrl){
     slot.classList.remove('placeholder');
