@@ -2824,6 +2824,7 @@ const FIELD_SETS = {
   receber:[
     {name:'cliente', label:'Cliente/Sacado', type:'cadastro', cadastro:'sacados', full:true},
     {name:'categoria', label:'Categoria', type:'cadastro', cadastro:'categoriasReceita', full:true, required:true},
+    {name:'documento', label:'Número do Pedido', type:'text', full:true},
     {name:'data_compra', label:'Data da compra', type:'date'},
     {name:'valor_original', label:'Valor (R$)', type:'number'},
     {name:'vencimento', label:'Vencimento', type:'date'},
@@ -3251,6 +3252,7 @@ document.getElementById('entryForm').addEventListener('submit', async e=>{
       await apiFetch('/api/contas-receber', {method:'POST', body: JSON.stringify({
         sacado_id: resolved.cliente, categoria_id: resolved.categoria, vencimento: obj.vencimento,
         valor_original: parseFloat(obj.valor_original)||0, forma_recebimento: obj.forma, observacoes: obj.observacoes,
+        documento: obj.documento || null,
         data_recebimento: obj.data_recebimento || null, data_compra: obj.data_compra || null,
         conta_bancaria_id: resolved.conta_bancaria || null,
       })});
