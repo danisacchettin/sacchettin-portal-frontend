@@ -1096,9 +1096,116 @@ function openDetalhesForItem(tipo, id){
       ${aberto ? `<button type="button" class="btn gold" onclick="openBaixaForItem('${tipo}','${item.id}','${tipo}')">${acaoLbl}</button>` : ''}
       ${tipo==='pagar' && Number(item.valor_pago) > 0 ? `<button type="button" class="btn ghost" onclick="openEditarBaixaForm('${item.id}')">✏️ Editar baixa</button>` : ''}
       ${tipo==='pagar' && forma==='Dinheiro' ? `<button type="button" class="btn gold" onclick="openReciboForm('${item.id}')">🧾 Recibo</button>` : ''}
+      <button type="button" class="btn ghost" onclick="closeOverlay(); openEditarLancamentoForm('${tipo}','${item.id}')">✏️ Editar lançamento</button>
+      ${Number(valorQuitado||0) === 0 ? `<button type="button" class="btn ghost" onclick="closeOverlay(); openExcluirLancamentoForm('${tipo}','${item.id}')">🗑 Excluir lançamento</button>` : ''}
       <button type="button" class="btn ghost" onclick="closeOverlay()">Fechar</button>
     </div>
   `);
+}
+
+/* ---------- editar os dados de cadastro de um lançamento (fornecedor/cliente, categoria,
+   documento, vencimento, valor original, observações) — diferente de "Editar baixa" acima, que
+   só corrige o que já foi pago/recebido. Funciona também para um título ainda "Em Aberto", sem
+   nenhuma baixa registrada (pedido da Danielle, 15/09/2026). ---------- */
+async function openEditarLancamentoForm(tipo, id){
+  const arr = tipo==='pagar' ? DATA.contasPagar : DATA.contasReceber;
+  const item = arr.find(x=>String(x.id)===String(id));
+  if(!item) return;
+  await carregarCadastros();
+  const nomeCampo = tipo==='pagar'
+    ? {name:'credor', label:'Fornecedor/Credor', type:'cadastro', cadastro:'fornecedores', full:true}
+    : {name:'cliente', label:'Cliente/Sacado', type:'cadastro', cadastro:'sacados', full:true};
+  const categoriaCampo = {name:'categoria', label:'Categoria', type:'cadastro', cadastro: tipo==='pagar'?'categoriasDespesa':'categoriasReceita', full:true};
+  const prefill = { [nomeCampo.name]: item[nomeCampo.name], categoria: item.categoria };
+  const valorPagoOuRecebido = Number(tipo==='pagar' ? item.valor_pago : item.valor_recebido || 0);
+  openOverlay(`
+    <div class="panel-head">
+      <div><h2>Editar lançamento</h2><p>${escapeHtml(item.codigo || '')} — corrige os dados de cadastro deste título (não altera pagamentos/recebimentos já registrados).</p></div>
+      <button class="close-x" onclick="closeOverlay()">✕</button>
+    </div>
+    ${valorPagoOuRecebido > 0 ? `<p style="font-size:12.5px; color:var(--red); margin:0 0 16px;">⚠ Este título já tem ${tipo==='pagar'?'pagamento':'recebimento'} parcial ou total registrado (R$ ${valorPagoOuRecebido.toFixed(2)}). Alterar o valor original abaixo muda o saldo em aberto calculado — confira antes de salvar.</p>` : ''}
+    <div class="form-grid">
+      ${renderCadastroField(nomeCampo, prefill)}
+      ${renderCadastroField(categoriaCampo, prefill)}
+      <div class="field full"><label>Documento (NF/Número do Pedido)</label><input type="text" id="editLancDocumento" value="${escapeHtml(item.documento||'')}"></div>
+      <div class="field"><label>Vencimento</label><input type="date" id="editLancVencimento" value="${item.vencimento ? String(item.vencimento).slice(0,10) : ''}"></div>
+      <div class="field"><label>Valor original (R$)</label><input type="number" step="0.01" id="editLancValor" value="${Number(item.valor_original||0).toFixed(2)}"></div>
+      <div class="field full"><label>Observações</label><input type="text" id="editLancObs" value="${escapeHtml(item.observacoes||'')}"></div>
+    </div>
+    <div class="panel-actions" style="margin-top:18px;">
+      <button type="button" class="btn gold" id="editLancSalvarBtn">Salvar correção</button>
+      <button type="button" class="btn ghost" onclick="closeOverlay(); openDetalhesForItem('${tipo}','${item.id}')">Cancelar</button>
+    </div>
+  `);
+  document.getElementById('editLancSalvarBtn').addEventListener('click', ()=>salvarEdicaoLancamento(tipo, item.id));
+}
+
+async function salvarEdicaoLancamento(tipo, id){
+  const form = document.querySelector('.form-grid');
+  const nomeSelect = form.querySelector(tipo==='pagar' ? '[name="credor"]' : '[name="cliente"]');
+  const nomeNovoInput = form.querySelector(tipo==='pagar' ? '[name="novo_credor"]' : '[name="novo_cliente"]');
+  const categoriaSelect = form.querySelector('[name="categoria"]');
+  const categoriaNovoInput = form.querySelector('[name="novo_categoria"]');
+  const documento = document.getElementById('editLancDocumento').value;
+  const vencimento = document.getElementById('editLancVencimento').value;
+  const valor = parseFloat(document.getElementById('editLancValor').value);
+  const obs = document.getElementById('editLancObs').value;
+  if(!vencimento){ alert('Informe o vencimento.'); return; }
+  if(!Number.isFinite(valor) || valor < 0){ alert('Informe um valor original válido.'); return; }
+  const body = { documento: documento || null, vencimento, valor_original: valor, observacoes: obs };
+  if(nomeSelect.value === '__novo__'){
+    body[tipo==='pagar' ? 'fornecedor_nome' : 'sacado_nome'] = nomeNovoInput.value;
+  } else if(nomeSelect.value){
+    body[tipo==='pagar' ? 'fornecedor_id' : 'sacado_id'] = nomeSelect.value;
+  }
+  if(categoriaSelect.value === '__novo__'){
+    body.categoria_nome = categoriaNovoInput.value;
+  } else if(categoriaSelect.value){
+    body.categoria_id = categoriaSelect.value;
+  }
+  try{
+    await apiFetch(`/api/contas-${tipo==='pagar'?'pagar':'receber'}/${id}`, {method:'PATCH', body: JSON.stringify(body)});
+    closeOverlay();
+    await carregarDados();
+  }catch(err){
+    alert('Não foi possível salvar a correção: ' + err.message);
+  }
+}
+
+/* ---------- excluir um lançamento (mantém o registro no banco para auditoria — só marca como
+   excluído e cancelado, e some das listas e dos totais). Bloqueado pelo backend quando o título
+   já tem pagamento/recebimento registrado. Pedido da Danielle (15/09/2026). ---------- */
+function openExcluirLancamentoForm(tipo, id){
+  const arr = tipo==='pagar' ? DATA.contasPagar : DATA.contasReceber;
+  const item = arr.find(x=>String(x.id)===String(id));
+  if(!item) return;
+  const nome = tipo==='pagar' ? item.credor : item.cliente;
+  openOverlay(`
+    <div class="panel-head">
+      <div><h2>Excluir lançamento</h2><p>${escapeHtml(item.codigo || '')} — ${escapeHtml(nome||'')}</p></div>
+      <button class="close-x" onclick="closeOverlay()">✕</button>
+    </div>
+    <p style="font-size:13px; color:var(--ink-soft); margin:0 0 16px;">Este lançamento vai sumir das listas e dos totais em aberto, mas o registro continua guardado no sistema para auditoria — nada é apagado de verdade. Essa ação não pode ser desfeita por aqui; se precisar reverter, me avise.</p>
+    <div class="form-grid">
+      <div class="field full"><label>Motivo da exclusão (opcional)</label><input type="text" id="excluirLancMotivo" placeholder="Ex: lançado em duplicidade"></div>
+    </div>
+    <div class="panel-actions" style="margin-top:18px;">
+      <button type="button" class="btn" style="background:var(--red); color:#fff;" id="excluirLancConfirmarBtn">Excluir definitivamente da lista</button>
+      <button type="button" class="btn ghost" onclick="closeOverlay(); openDetalhesForItem('${tipo}','${item.id}')">Cancelar</button>
+    </div>
+  `);
+  document.getElementById('excluirLancConfirmarBtn').addEventListener('click', ()=>confirmarExclusaoLancamento(tipo, item.id));
+}
+
+async function confirmarExclusaoLancamento(tipo, id){
+  const motivo = document.getElementById('excluirLancMotivo').value;
+  try{
+    await apiFetch(`/api/contas-${tipo==='pagar'?'pagar':'receber'}/${id}`, {method:'DELETE', body: JSON.stringify({motivo: motivo || undefined})});
+    closeOverlay();
+    await carregarDados();
+  }catch(err){
+    alert('Não foi possível excluir: ' + err.message);
+  }
 }
 
 /* ---------- editar uma baixa já registrada (contas a pagar) ---------- */
