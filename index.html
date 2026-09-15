@@ -3574,10 +3574,15 @@ function renderBaixaPicker(){
       <label>Título</label>
       <select id="baixaItemSelect">${opts || '<option value="">Nada em aberto neste tipo</option>'}</select>
     </div>
-    <p style="margin:-10px 0 18px;">
+    <p style="margin:-10px 0 4px;">
       ${baixaState.tipo==='pagar'
         ? `<a href="#" id="linkRenegCredor" style="font-size:12px; color:var(--gold);">Renegociar todos os títulos em aberto de um credor (várias datas e valores diferentes) →</a>`
         : `<a href="#" id="linkLoteCliente" style="font-size:12px; color:var(--gold);">Registrar um pagamento único cobrindo várias compras deste cliente →</a>`}
+    </p>
+    <p style="margin:0 0 18px;">
+      ${baixaState.tipo==='pagar'
+        ? `<a href="#" id="linkLoteCredor" style="font-size:12px; color:var(--gold);">Registrar um pagamento único cobrindo vários títulos deste credor (sem mudar vencimentos/valores) →</a>`
+        : ``}
     </p>
     <div style="display:flex; gap:10px; justify-content:flex-end;">
       <button type="button" class="btn ghost" onclick="closeBaixa()">Cancelar</button>
@@ -3599,6 +3604,8 @@ function renderBaixaPicker(){
   if(linkReneg) linkReneg.addEventListener('click', e=>{ e.preventDefault(); renderRenegociacaoCredorPicker(); });
   const linkLote = document.getElementById('linkLoteCliente');
   if(linkLote) linkLote.addEventListener('click', e=>{ e.preventDefault(); renderBaixaLoteClientePicker(); });
+  const linkLoteCredor = document.getElementById('linkLoteCredor');
+  if(linkLoteCredor) linkLoteCredor.addEventListener('click', e=>{ e.preventDefault(); renderBaixaLoteCredorPicker(); });
 }
 
 /* =====================================================================================
@@ -3846,6 +3853,158 @@ async function confirmarRenegociacaoCredor(){
     alert('Não foi possível concluir a renegociação: ' + err.message);
   }finally{
     btn.disabled = false; btn.textContent = 'Confirmar renegociação';
+  }
+}
+
+/* =====================================================================================
+   Pagamento único cobrindo vários títulos (Contas a Pagar) — quando a empresa paga vários
+   boletos/títulos em aberto de um mesmo credor de uma vez só, num PIX/TED único, SEM renegociar
+   nada (datas e valores de cada título continuam os mesmos — é só a forma de pagamento que junta
+   tudo numa transferência) (pedido da Danielle, 15/09/2026).
+
+   Espelha exatamente o "Pagamento único de várias compras" de Contas a Receber logo abaixo, só
+   que do lado credor/pagar: reaproveita titulosAbertosDoCredor()/credoresComTituloAberto() (já
+   usados na Renegociação por credor acima) e distribui o valor pago entre os títulos selecionados
+   (mais antigo primeiro — FIFO) via POST /api/contas-pagar/:id/baixa, uma chamada por título,
+   sequencial (nunca em paralelo, mesmo motivo: evitar corrida de atualização de saldo na mesma
+   linha). Nenhuma rota nova no backend, nenhum título novo é criado — diferença central em
+   relação à Renegociação por credor, que cria títulos novos com cronograma diferente.
+   ===================================================================================== */
+let baixaLotePagarState = { credorNome: null, selecionados: null, valorPago: undefined, data: null, forma: null, contaBancariaId: null, observacoes: '' };
+
+function renderBaixaLoteCredorPicker(){
+  const credores = credoresComTituloAberto();
+  const opts = credores.map(c=>`<option value="${escapeHtml(c.nome)}">${escapeHtml(c.nome)} — ${c.qtd} título(s) em aberto — ${fmtBRL(c.total)}</option>`).join('');
+  document.getElementById('panelBaixa').innerHTML = `
+    <div class="panel-head">
+      <div><h2>Pagamento único de vários títulos</h2><p>Escolha o credor cujos títulos em aberto foram pagos de uma vez (ex.: PIX único cobrindo vários boletos).</p></div>
+      <button class="close-x" onclick="closeBaixa()">✕</button>
+    </div>
+    <div class="field full" style="margin-bottom:18px;">
+      <label>Credor / Fornecedor</label>
+      <select id="loteCredorSelect">${opts || '<option value="">Nenhum credor com título em aberto</option>'}</select>
+    </div>
+    <div style="display:flex; gap:10px; justify-content:flex-end;">
+      <button type="button" class="btn ghost" onclick="renderBaixaPicker()">Voltar</button>
+      <button type="button" class="btn gold" id="loteCredorContinuarBtn">Continuar</button>
+    </div>
+  `;
+  document.getElementById('loteCredorContinuarBtn').addEventListener('click', ()=>{
+    const nome = document.getElementById('loteCredorSelect').value;
+    if(!nome) return;
+    baixaLotePagarState = { credorNome: nome, selecionados: null, valorPago: undefined, data: null, forma: null, contaBancariaId: null, observacoes: '' };
+    renderBaixaLoteCredorDetail();
+  });
+}
+
+function renderBaixaLoteCredorDetail(){
+  const titulos = titulosAbertosDoCredor(baixaLotePagarState.credorNome);
+  if(!titulos.length){ renderBaixaLoteCredorPicker(); return; }
+  if(!baixaLotePagarState.selecionados){
+    baixaLotePagarState.selecionados = {};
+    titulos.forEach(t=>{ baixaLotePagarState.selecionados[t.id] = true; });
+  }
+  const selecionados = titulos.filter(t=>baixaLotePagarState.selecionados[t.id]);
+  const totalSelecionado = selecionados.reduce((s,t)=>s+saldoAberto(t,'pagar'),0);
+  if(baixaLotePagarState.valorPago === undefined) baixaLotePagarState.valorPago = totalSelecionado.toFixed(2);
+
+  const linhas = titulos.map(t=>`
+    <tr>
+      <td><input type="checkbox" class="lote-titulo-pagar-check" data-id="${t.id}" ${baixaLotePagarState.selecionados[t.id]?'checked':''}></td>
+      <td>${escapeHtml(t.documento||t.codigo||'—')}</td>
+      <td>${fmtDate(t.vencimento)}</td>
+      <td style="text-align:right;">${fmtBRL(saldoAberto(t,'pagar'))}</td>
+    </tr>`).join('');
+
+  const valorPagoNum = parseFloat(baixaLotePagarState.valorPago) || 0;
+  const diff = Math.round((valorPagoNum - totalSelecionado)*100)/100;
+
+  document.getElementById('panelBaixa').innerHTML = `
+    <div class="panel-head">
+      <div><h2>${escapeHtml(baixaLotePagarState.credorNome)}</h2><p>Selecione os títulos cobertos por este pagamento único.</p></div>
+      <button class="close-x" onclick="closeBaixa()">✕</button>
+    </div>
+    <table class="report" style="margin-bottom:10px;">
+      <thead><tr><th style="width:30px;"></th><th>Documento</th><th>Vencimento</th><th style="text-align:right;">Saldo em aberto</th></tr></thead>
+      <tbody>${linhas}</tbody>
+    </table>
+    <p style="font-size:12.5px; color:var(--ink-soft); margin:0 0 18px;">Total dos títulos selecionados: <strong>${fmtBRL(totalSelecionado)}</strong></p>
+
+    <div class="form-grid">
+      <div class="field"><label>Valor total pago (R$)</label><input type="number" step="0.01" id="lotePagarValorPago" value="${escapeHtml(String(baixaLotePagarState.valorPago))}"></div>
+      <div class="field"><label>Data</label><input type="date" id="lotePagarData" value="${baixaLotePagarState.data||todayISO()}"></div>
+      <div class="field"><label>Forma de pagamento</label>
+        <select id="lotePagarForma">${['PIX','Boleto','TED','Cartão','Dinheiro'].map(f=>`<option ${((baixaLotePagarState.forma||'PIX')===f)?'selected':''}>${f}</option>`).join('')}</select>
+      </div>
+      <div class="field"><label>Conta bancária (de onde saiu)</label><select id="lotePagarConta">${optionsContaBancaria(baixaLotePagarState.contaBancariaId)}</select></div>
+      <div class="field full"><label>Observações</label><input type="text" id="lotePagarObservacoes" placeholder="opcional" value="${escapeHtml(baixaLotePagarState.observacoes||'')}"></div>
+    </div>
+    <p style="font-size:12.5px; margin:14px 0; color:${Math.abs(diff)<0.01?'var(--ink-soft)':'var(--gold)'};">
+      ${Math.abs(diff)<0.01
+        ? 'O valor cobre exatamente os títulos selecionados — todos ficam quitados.'
+        : (diff>0
+            ? `O valor é ${fmtBRL(diff)} maior que os títulos selecionados — o excedente fica registrado como pagamento a mais no último título.`
+            : `O valor é ${fmtBRL(Math.abs(diff))} menor — os títulos mais antigos são quitados primeiro (FIFO) e o mais recente fica parcialmente pago.`)}
+    </p>
+
+    <div style="display:flex; gap:10px; justify-content:flex-end;">
+      <button type="button" class="btn ghost" onclick="renderBaixaLoteCredorPicker()">Voltar</button>
+      <button type="button" class="btn olive" id="lotePagarConfirmarBtn">Confirmar pagamento</button>
+    </div>
+  `;
+
+  document.querySelectorAll('.lote-titulo-pagar-check').forEach(chk=>{
+    chk.addEventListener('change', e=>{
+      baixaLotePagarState.selecionados[e.target.dataset.id] = e.target.checked;
+      const novoTotal = titulos.filter(t=>baixaLotePagarState.selecionados[t.id]).reduce((s,t)=>s+saldoAberto(t,'pagar'),0);
+      baixaLotePagarState.valorPago = novoTotal.toFixed(2);
+      renderBaixaLoteCredorDetail();
+    });
+  });
+  document.getElementById('lotePagarValorPago').addEventListener('input', e=>{ baixaLotePagarState.valorPago = e.target.value; });
+  document.getElementById('lotePagarData').addEventListener('input', e=>{ baixaLotePagarState.data = e.target.value; });
+  document.getElementById('lotePagarForma').addEventListener('change', e=>{ baixaLotePagarState.forma = e.target.value; });
+  document.getElementById('lotePagarConta').addEventListener('change', e=>{ baixaLotePagarState.contaBancariaId = e.target.value; });
+  document.getElementById('lotePagarObservacoes').addEventListener('input', e=>{ baixaLotePagarState.observacoes = e.target.value; });
+  document.getElementById('lotePagarConfirmarBtn').addEventListener('click', confirmarBaixaLoteCredor);
+}
+
+async function confirmarBaixaLoteCredor(){
+  const titulos = titulosAbertosDoCredor(baixaLotePagarState.credorNome).filter(t=>baixaLotePagarState.selecionados[t.id]);
+  const valorTotal = parseFloat(baixaLotePagarState.valorPago) || 0;
+  const data = baixaLotePagarState.data || todayISO();
+  const forma = baixaLotePagarState.forma || 'PIX';
+  const contaBancariaId = baixaLotePagarState.contaBancariaId || null;
+  const observacoesBase = baixaLotePagarState.observacoes || '';
+  if(!titulos.length){ alert('Selecione ao menos um título.'); return; }
+  if(valorTotal<=0){ alert('Informe o valor pago.'); return; }
+
+  const btn = document.getElementById('lotePagarConfirmarBtn');
+  btn.disabled = true; btn.textContent = 'Salvando...';
+  try{
+    let restante = valorTotal;
+    const nota = `[Pagamento único de ${fmtBRL(valorTotal)} via ${forma}, cobrindo ${titulos.length} título(s) em ${data}]${observacoesBase?' — '+observacoesBase:''}`;
+    for(const t of titulos){
+      if(restante <= 0.005) break;
+      const saldo = saldoAberto(t,'pagar');
+      const valorAplicado = Math.min(saldo, restante);
+      restante = Math.round((restante - valorAplicado)*100)/100;
+      await apiFetch(`/api/contas-pagar/${t.id}/baixa`, {
+        method:'POST',
+        body: JSON.stringify({
+          valor: valorAplicado, data, forma,
+          conta_bancaria_id: contaBancariaId,
+          observacoes: nota,
+        }),
+      });
+    }
+    closeBaixa();
+    await carregarDados();
+    openPagarPanel();
+  }catch(err){
+    alert('Não foi possível registrar o pagamento: ' + err.message);
+  }finally{
+    btn.disabled = false; btn.textContent = 'Confirmar pagamento';
   }
 }
 
