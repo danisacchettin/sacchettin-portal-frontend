@@ -2287,15 +2287,63 @@ function computeRecebDistribuidora(periodo){
   return { total: lista.reduce((s,r)=>s+Number(r.valor_recebido||0),0), count: lista.length };
 }
 
+// Filtros da tabela de Contas a Receber (pedido da Danielle, 15/09/2026): por nome do cliente
+// (texto livre, mesmo padrão de filtroPagar.credor) e por período de vencimento (hoje/semana/
+// mês, reaproveitando periodoAbrange já usado no card "Recebimentos Distribuidora" acima — ali
+// o período é sobre data_recebimento, aqui é sobre vencimento). Os dois se combinam (E, não OU).
+// Ficam em módulo para sobreviver ao re-render.
+let filtroReceberNome = '';
+let filtroReceberVencimento = 'todos';
+const LABELS_VENC_RECEBER = { todos:'Todos os vencimentos', dia:'Vencimentos de hoje', semana:'Vencimentos desta semana', mes:'Vencimentos deste mês' };
+
 function openReceberPanel(){
   filtroRecebDistrib = 'mes';
+  filtroReceberNome = '';
+  filtroReceberVencimento = 'todos';
   renderReceberPanel();
+}
+
+// Remove acentos para a busca por nome não depender de digitar exatamente igual (ex.: "sabao"
+// deve achar "SABÃO"). Mesma normalização usada em buscas de texto livre no restante do app.
+function normalizarBusca(s){
+  return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim();
+}
+
+// Monta as três seções da tabela (Vencidas / Em aberto a vencer / Já recebidas), aplicando os
+// filtros de nome e de período de vencimento vigentes. Pedido da Danielle (15/09/2026): antes
+// tudo ficava numa lista só, diferenciado apenas pela tag de status — dava a impressão de que
+// estava tudo em aberto. Agora, como já era feito em Contas a Pagar, cada grupo fica em bloco
+// separado, com as já recebidas em bloco à parte e com o texto mais claro (opacity reduzida)
+// para não se confundir com o que ainda está pendente.
+function tabelasReceber(){
+  const hoje = todayISO();
+  const termo = normalizarBusca(filtroReceberNome);
+  let lista = DATA.contasReceber;
+  if(termo) lista = lista.filter(x => normalizarBusca(x.cliente || '').includes(termo));
+  if(filtroReceberVencimento !== 'todos') lista = lista.filter(x => periodoAbrange(x.vencimento, filtroReceberVencimento));
+  const vencidas = lista.filter(x => saldoAberto(x,'receber')>0 && String(x.vencimento).slice(0,10) < hoje);
+  const aVencer = lista.filter(x => saldoAberto(x,'receber')>0 && String(x.vencimento).slice(0,10) >= hoje);
+  const recebidas = lista.filter(x => saldoAberto(x,'receber')<=0);
+  if(!vencidas.length && !aVencer.length && !recebidas.length){
+    return `<p style="font-size:13px; color:var(--ink-soft);">Nenhum lançamento encontrado para esse filtro.</p>`;
+  }
+  return `
+    <p style="font-size:12px; color:var(--red); margin:18px 0 6px; font-weight:600;">Vencidas (${vencidas.length}) — ${fmtBRL(vencidas.reduce((s,x)=>s+saldoAberto(x,'receber'),0))}</p>
+    ${vencidas.length ? reportTable(vencidas,'receber') : '<p style="font-size:13px; color:var(--ink-soft);">Nenhum título vencido para esse filtro.</p>'}
+    <p style="font-size:12px; color:var(--ink-soft); margin:22px 0 6px; font-weight:600;">Em aberto — a vencer (${aVencer.length}) — ${fmtBRL(aVencer.reduce((s,x)=>s+saldoAberto(x,'receber'),0))}</p>
+    ${aVencer.length ? reportTable(aVencer,'receber') : '<p style="font-size:13px; color:var(--ink-soft);">Nenhum título a vencer para esse filtro.</p>'}
+    ${recebidas.length ? `
+      <p style="font-size:12px; color:var(--ink-faint); margin:26px 0 6px;">Já recebidas/quitadas (${recebidas.length}) — separadas aqui, fora do total em aberto</p>
+      <div style="opacity:.55;">${reportTable(recebidas,'receber')}</div>
+    ` : ''}
+  `;
 }
 
 function renderReceberPanel(){
   const estiloSelect = 'width:auto; margin-top:0; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:var(--paper-2); font-family:inherit; font-size:13px; color:var(--ink);';
   const rd = computeRecebDistribuidora(filtroRecebDistrib);
   const optsPeriodo = Object.entries(LABELS_PERIODO_RECEB_DISTRIB).map(([v,l])=>`<option value="${v}" ${v===filtroRecebDistrib?'selected':''}>${l}</option>`).join('');
+  const optsVenc = Object.entries(LABELS_VENC_RECEBER).map(([v,l])=>`<option value="${v}" ${v===filtroReceberVencimento?'selected':''}>${l}</option>`).join('');
   openOverlay(`
     <div class="panel-head">
       <div><h2>Contas a receber</h2><p>Títulos em aberto — clique em "Adicionar" para lançar um novo recebimento previsto.</p></div>
@@ -2311,13 +2359,30 @@ function renderReceberPanel(){
       <div style="font-family:'Playfair Display',serif; font-size:26px; font-weight:600; color:var(--ink); margin-top:12px;">${fmtBRL(rd.total)}</div>
       <div style="font-size:12px; color:var(--ink-faint); margin-top:6px;">${rd.count} recebimento(s) — categoria "Cliente Distribuidora", por data de recebimento</div>
     </div>
-    ${reportTable(DATA.contasReceber,'receber')}
+    <div class="panel-actions" style="flex-wrap:wrap; gap:10px; margin:0 0 6px;">
+      <div class="field" style="max-width:280px; margin:0;">
+        <label>Filtrar por nome do cliente</label>
+        <input type="text" id="filtroReceberNomeInput" placeholder="Digite o nome do cliente..." value="${escapeHtml(filtroReceberNome)}" style="padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:var(--paper-2); font-family:inherit; font-size:13px; color:var(--ink); width:100%;">
+      </div>
+      <select id="filtroReceberVencimentoSelect" style="${estiloSelect}">${optsVenc}</select>
+    </div>
+    <div id="receberTabelasContainer">${tabelasReceber()}</div>
     <div class="notes-box">
       <label style="font-size:11px; letter-spacing:1px; text-transform:uppercase; color:var(--ink-faint);">Notas do cliente</label>
       <textarea placeholder="Observações sobre estes recebimentos — sincroniza com a planilha ao salvar."></textarea>
     </div>
   `);
   document.getElementById('filtroPeriodoRecebDistrib').addEventListener('change', e=>{ filtroRecebDistrib = e.target.value; renderReceberPanel(); });
+  document.getElementById('filtroReceberVencimentoSelect').addEventListener('change', e=>{
+    filtroReceberVencimento = e.target.value;
+    document.getElementById('receberTabelasContainer').innerHTML = tabelasReceber();
+  });
+  // Mantém o foco/cursor no campo ao digitar: em vez de re-render completo a cada tecla (que
+  // reconstrói o innerHTML e perderia o foco), só refiltra e recria as tabelas abaixo do campo.
+  document.getElementById('filtroReceberNomeInput').addEventListener('input', e=>{
+    filtroReceberNome = e.target.value;
+    document.getElementById('receberTabelasContainer').innerHTML = tabelasReceber();
+  });
 }
 function mesesDisponiveisPagar(){
   const meses = new Set(DATA.contasPagar.map(x=> x.vencimento ? String(x.vencimento).slice(0,7) : null).filter(Boolean));
