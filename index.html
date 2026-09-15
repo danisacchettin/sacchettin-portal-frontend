@@ -1407,7 +1407,7 @@ function openMenuPanel(){
    Cadastrar novo" usado no formulário de lançamento). Nomes sempre gravados em maiúsculas
    (o backend já uniformiza no PATCH), para manter os dropdowns consistentes.
    ========================================================================================== */
-const GRUPOS_DRE = ['Receita','CMV','Despesas Fixas','Despesas Variáveis','Retiradas de Sócios','Cartao de Credito','Divida'];
+const GRUPOS_DRE = ['Receita','CMV','Despesas Fixas','Despesas Variáveis','Despesas Financeiras','Retiradas de Sócios','Cartao de Credito','Divida'];
 
 async function openEditFornecedores(){
   openOverlay(`<div class="panel-head"><div><h2>Editar fornecedores</h2><p>Carregando…</p></div><button class="close-x" onclick="closeOverlay()">✕</button></div>`);
@@ -2652,8 +2652,14 @@ function agruparPorCategoria(lista){
 function linhasDetalheDRE(pares){
   return pares.map(([cat,val])=>`<tr><td style="padding-left:24px; color:var(--ink-faint); font-size:11.5px;">${escapeHtml(cat)}</td><td style="text-align:right; color:var(--ink-faint); font-size:11.5px;">${fmtBRL(val)}</td></tr>`).join('');
 }
+// Detalha "Não classificado" por lançamento individual (credor/documento/vencimento), em vez
+// de só um subtotal por categoria — para dar visibilidade exata de qual lançamento precisa
+// ser confirmado com a cliente antes de fechar o DRE do mês (15/09/2026, a pedido da Danielle).
+function linhasDetalheLancamentos(lista){
+  return lista.map(x=>`<tr><td style="padding-left:24px; color:var(--red); font-size:11.5px;">${escapeHtml(x.credor||'(sem fornecedor)')}${x.documento?` — ${escapeHtml(x.documento)}`:''} · vence ${fmtDate(x.vencimento)}${x.categoria?` · categoria atual: "${escapeHtml(x.categoria)}"`:' · sem categoria'}</td><td style="text-align:right; color:var(--red); font-size:11.5px;">${fmtBRL(x.valor_original)}</td></tr>`).join('');
+}
 
-function openDRE(){
+async function openDRE(){
   const hoje = new Date();
   // Regime de competência: considera o mês de vencimento, não a data em que foi de fato pago/recebido.
   const noPeriodo = iso => { const d = new Date(iso); return d.getUTCFullYear()===hoje.getFullYear() && d.getUTCMonth()===hoje.getMonth(); };
@@ -2668,6 +2674,7 @@ function openDRE(){
   // maquiar o resultado com dado que ainda não foi revisado.
   const itensVar = pagarPeriodo.filter(x=>x.grupo_dre==='CMV' || x.grupo_dre==='Despesas Variáveis');
   const itensFixos = pagarPeriodo.filter(x=>x.grupo_dre==='Despesas Fixas');
+  const itensDespFinCad = pagarPeriodo.filter(x=>x.grupo_dre==='Despesas Financeiras');
   const itensNaoClass = pagarPeriodo.filter(x=>!x.grupo_dre);
   const itensSocios = pagarPeriodo.filter(x=>x.grupo_dre==='Retiradas de Sócios');
   const itensCartao = pagarPeriodo.filter(x=>x.grupo_dre==='Cartao de Credito');
@@ -2675,14 +2682,32 @@ function openDRE(){
 
   const custosVar = itensVar.reduce((s,x)=>s+x.valor_original,0);
   const custosFixos = itensFixos.reduce((s,x)=>s+x.valor_original,0);
+  const despFinCad = itensDespFinCad.reduce((s,x)=>s+x.valor_original,0);
   const naoClass = itensNaoClass.reduce((s,x)=>s+x.valor_original,0);
   const socios = itensSocios.reduce((s,x)=>s+x.valor_original,0);
   const cartao = itensCartao.reduce((s,x)=>s+x.valor_original,0);
   const divida = itensDivida.reduce((s,x)=>s+x.valor_original,0);
 
+  // Juros bancários / encargos de financiamentos (módulo "Despesas Financeiras", tabelas
+  // contratos_financiamento/parcelas_financiamento) — historicamente NUNCA entravam no DRE
+  // porque vivem fora de contas_pagar. Trazidos aqui por pedido direto da Danielle
+  // (14/09/2026): "juros bancários devem estar incluídos no DRE". Cheque especial ainda não
+  // tem fonte de dado (aguardando extratos bancários) — sinalizado explicitamente em vez de
+  // tratado como zero, para não maquiar o resultado.
+  let jurosFinanciamentos = 0, chequeEspecialDisponivel = false, chequeEspecialValor = 0;
+  try{
+    const mesRef = `${hoje.getFullYear()}-${String(hoje.getMonth()+1).padStart(2,'0')}`;
+    const resumoFin = await apiFetch('/api/financiamentos/resumo?mes=' + mesRef);
+    jurosFinanciamentos = (resumoFin.financiamentos && resumoFin.financiamentos.mesAtual) || 0;
+    if(resumoFin.chequeEspecial != null){ chequeEspecialDisponivel = true; chequeEspecialValor = resumoFin.chequeEspecial; }
+  }catch(err){
+    console.error('Não foi possível carregar juros de financiamentos para o DRE:', err);
+  }
+  const despFin = despFinCad + jurosFinanciamentos + (chequeEspecialDisponivel ? chequeEspecialValor : 0);
+
   const margem = receitaBruta - custosVar;
   const margemPct = receitaBruta ? (margem/receitaBruta*100) : 0;
-  const resultado = margem - custosFixos - naoClass;
+  const resultado = margem - custosFixos - despFin - naoClass;
 
   openOverlay(`
     <div class="panel-head">
@@ -2697,7 +2722,11 @@ function openDRE(){
         <tr><td><strong>Margem de Contribuição</strong></td><td style="text-align:right;"><strong>${fmtBRL(margem)} (${margemPct.toFixed(1)}%)</strong></td></tr>
         <tr><td>(–) Custos Fixos</td><td style="text-align:right;">${fmtBRL(custosFixos)}</td></tr>
         ${linhasDetalheDRE(agruparPorCategoria(itensFixos))}
-        ${naoClass ? `<tr><td style="color:var(--red);">(–) Não classificado (revisar categoria)</td><td style="text-align:right; color:var(--red);">${fmtBRL(naoClass)}</td></tr>${linhasDetalheDRE(agruparPorCategoria(itensNaoClass))}` : ''}
+        <tr><td style="color:var(--red);">(–) Despesas Financeiras (juros bancários, encargos de financiamentos)</td><td style="text-align:right; color:var(--red);">${fmtBRL(despFin)}</td></tr>
+        ${despFinCad ? linhasDetalheDRE(agruparPorCategoria(itensDespFinCad)) : ''}
+        ${jurosFinanciamentos ? `<tr><td style="padding-left:24px; color:var(--ink-faint); font-size:11.5px;">Juros/encargos de financiamentos (contratos PJ)</td><td style="text-align:right; color:var(--ink-faint); font-size:11.5px;">${fmtBRL(jurosFinanciamentos)}</td></tr>` : ''}
+        ${chequeEspecialDisponivel ? `<tr><td style="padding-left:24px; color:var(--ink-faint); font-size:11.5px;">Juros de cheque especial</td><td style="text-align:right; color:var(--ink-faint); font-size:11.5px;">${fmtBRL(chequeEspecialValor)}</td></tr>` : `<tr><td style="padding-left:24px; color:var(--gold); font-size:11.5px;">⚠ Juros de cheque especial: sem fonte de dado ainda (falta extrato bancário) — não incluído no total acima.</td><td></td></tr>`}
+        ${naoClass ? `<tr><td style="color:var(--red);">(–) Não classificado (revisar categoria com a cliente)</td><td style="text-align:right; color:var(--red);">${fmtBRL(naoClass)}</td></tr>${linhasDetalheLancamentos(itensNaoClass)}` : ''}
         <tr><td><strong>Resultado do Período</strong></td><td style="text-align:right;"><strong class="${resultado<0?'val neg':''}">${fmtBRL(resultado)}</strong></td></tr>
       </tbody>
     </table>
@@ -3373,6 +3402,11 @@ function renderBaixaPicker(){
       <label>Título</label>
       <select id="baixaItemSelect">${opts || '<option value="">Nada em aberto neste tipo</option>'}</select>
     </div>
+    <p style="margin:-10px 0 18px;">
+      ${baixaState.tipo==='pagar'
+        ? `<a href="#" id="linkRenegCredor" style="font-size:12px; color:var(--gold);">Renegociar todos os títulos em aberto de um credor (várias datas e valores diferentes) →</a>`
+        : `<a href="#" id="linkLoteCliente" style="font-size:12px; color:var(--gold);">Registrar um pagamento único cobrindo várias compras deste cliente →</a>`}
+    </p>
     <div style="display:flex; gap:10px; justify-content:flex-end;">
       <button type="button" class="btn ghost" onclick="closeBaixa()">Cancelar</button>
       <button type="button" class="btn gold" id="baixaContinuarBtn">Continuar</button>
@@ -3389,6 +3423,426 @@ function renderBaixaPicker(){
     baixaState.itemId = sel;
     renderBaixaDetail();
   });
+  const linkReneg = document.getElementById('linkRenegCredor');
+  if(linkReneg) linkReneg.addEventListener('click', e=>{ e.preventDefault(); renderRenegociacaoCredorPicker(); });
+  const linkLote = document.getElementById('linkLoteCliente');
+  if(linkLote) linkLote.addEventListener('click', e=>{ e.preventDefault(); renderBaixaLoteClientePicker(); });
+}
+
+/* =====================================================================================
+   Renegociação por credor (Contas a Pagar) — quando um fornecedor tem VÁRIOS títulos em
+   aberto e a cliente negociou um novo cronograma cobrindo todos eles de uma vez, com datas
+   e valores por parcela diferentes dos boletos originais (pedido da Danielle, 15/09/2026).
+
+   Não precisa de nenhuma rota nova no backend: reaproveita PATCH /api/contas-pagar/:id/baixa
+   (só pra virar o status pra "Cancelado" com nota de auditoria, sem tocar em valor_pago) para
+   encerrar os títulos antigos, e POST /api/contas-pagar pra criar um título novo por parcela
+   negociada. Cada parcela nova entra como um título normal (mesmo fornecedor/categoria) — então
+   aging, "a pagar da semana" e DRE por vencimento já enxergam certo, sem lógica especial em
+   nenhum desses lugares. Os títulos antigos cancelados continuam contando no DRE do mês original
+   deles (a despesa foi real, só o cronograma de pagamento mudou) e saem do "em aberto"/aging
+   porque saldoAberto() já trata status "Cancelado" como saldo zero.
+   ===================================================================================== */
+let renegCredorState = { credorNome: null, selecionados: null, parcelas: [], categoriaId: undefined, observacoes: '' };
+
+function titulosAbertosDoCredor(credorNome){
+  const chave = (credorNome||'').trim().toUpperCase();
+  return DATA.contasPagar.filter(x => (x.credor||'').trim().toUpperCase()===chave && saldoAberto(x,'pagar')>0)
+    .sort((a,b)=> new Date(a.vencimento) - new Date(b.vencimento));
+}
+function credoresComTituloAberto(){
+  const mapa = {};
+  DATA.contasPagar.forEach(x=>{
+    if(saldoAberto(x,'pagar')<=0) return;
+    const nome = (x.credor||'').trim();
+    if(!nome) return;
+    const chave = nome.toUpperCase();
+    if(!mapa[chave]) mapa[chave] = { nome, qtd:0, total:0 };
+    mapa[chave].qtd++; mapa[chave].total += saldoAberto(x,'pagar');
+  });
+  return Object.values(mapa).sort((a,b)=>a.nome.localeCompare(b.nome));
+}
+function categoriaIdPorNome(nome){
+  if(!nome) return null;
+  const alvo = nome.trim().toUpperCase();
+  const cat = (CADASTROS.categoriasDespesa||[]).find(c=>(c.nome_categoria||'').trim().toUpperCase()===alvo);
+  return cat ? cat.id : null;
+}
+function fornecedorIdPorNome(nome){
+  if(!nome) return null;
+  const alvo = nome.trim().toUpperCase();
+  const f = (CADASTROS.fornecedores||[]).find(x=>(x.nome||'').trim().toUpperCase()===alvo);
+  return f ? f.id : null;
+}
+
+function renderRenegociacaoCredorPicker(){
+  const credores = credoresComTituloAberto();
+  const opts = credores.map(c=>`<option value="${escapeHtml(c.nome)}">${escapeHtml(c.nome)} — ${c.qtd} título(s) em aberto — ${fmtBRL(c.total)}</option>`).join('');
+  document.getElementById('panelBaixa').innerHTML = `
+    <div class="panel-head">
+      <div><h2>Renegociar por credor</h2><p>Escolha o fornecedor cujos títulos em aberto foram renegociados num novo cronograma.</p></div>
+      <button class="close-x" onclick="closeBaixa()">✕</button>
+    </div>
+    <div class="field full" style="margin-bottom:18px;">
+      <label>Credor / Fornecedor</label>
+      <select id="renegCredorSelect">${opts || '<option value="">Nenhum credor com título em aberto</option>'}</select>
+    </div>
+    <div style="display:flex; gap:10px; justify-content:flex-end;">
+      <button type="button" class="btn ghost" onclick="renderBaixaPicker()">Voltar</button>
+      <button type="button" class="btn gold" id="renegCredorContinuarBtn">Continuar</button>
+    </div>
+  `;
+  document.getElementById('renegCredorContinuarBtn').addEventListener('click', ()=>{
+    const nome = document.getElementById('renegCredorSelect').value;
+    if(!nome) return;
+    renegCredorState = { credorNome: nome, selecionados: null, parcelas: [], categoriaId: undefined, observacoes: '' };
+    renderRenegociacaoCredorDetail();
+  });
+}
+
+function renderRenegociacaoCredorDetail(){
+  const titulos = titulosAbertosDoCredor(renegCredorState.credorNome);
+  if(!titulos.length){ renderRenegociacaoCredorPicker(); return; }
+  if(!renegCredorState.selecionados){
+    renegCredorState.selecionados = {};
+    titulos.forEach(t=>{ renegCredorState.selecionados[t.id] = true; });
+  }
+  const linhasTitulos = titulos.map(t=>`
+    <tr>
+      <td><input type="checkbox" class="reneg-titulo-check" data-id="${t.id}" ${renegCredorState.selecionados[t.id]?'checked':''}></td>
+      <td>${escapeHtml(t.documento||t.codigo||'—')}</td>
+      <td>${fmtDate(t.vencimento)}</td>
+      <td style="text-align:right;">${fmtBRL(saldoAberto(t,'pagar'))}</td>
+    </tr>`).join('');
+  const selecionados = titulos.filter(t=>renegCredorState.selecionados[t.id]);
+  const totalSelecionado = selecionados.reduce((s,t)=>s+saldoAberto(t,'pagar'),0);
+
+  if(!renegCredorState.parcelas.length){
+    renegCredorState.parcelas = [{ data: todayISO(), valor: '' }];
+  }
+  const totalParcelas = renegCredorState.parcelas.reduce((s,p)=>s+(parseFloat(p.valor)||0),0);
+  const diff = Math.round((totalParcelas - totalSelecionado)*100)/100;
+
+  // Categoria dos novos títulos: se todos os selecionados compartilham a mesma, usa ela sem
+  // perguntar; senão, obriga escolher (fica registrado explicitamente, sem chute).
+  const categoriasSelecionadas = [...new Set(selecionados.map(t=>t.categoria).filter(Boolean))];
+  const categoriaUnica = categoriasSelecionadas.length===1 ? categoriasSelecionadas[0] : null;
+  if(renegCredorState.categoriaId === undefined){
+    renegCredorState.categoriaId = categoriaUnica ? (categoriaIdPorNome(categoriaUnica) || '') : '';
+  }
+  const opcoesCategoria = [`<option value="">— Selecione —</option>`]
+    .concat((CADASTROS.categoriasDespesa||[]).map(c=>`<option value="${c.id}" ${String(renegCredorState.categoriaId)===String(c.id)?'selected':''}>${escapeHtml(c.nome_categoria)}</option>`))
+    .join('');
+
+  const linhasParcelas = renegCredorState.parcelas.map((p,i)=>`
+    <div class="reneg-parcela-row" data-idx="${i}" style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; margin-bottom:8px;">
+      <div class="field" style="flex:1; min-width:130px; margin:0;">
+        <label>${i===0?'Data':`Data parcela ${i+1}`}</label>
+        <input type="date" class="reneg-parcela-data" value="${escapeHtml(p.data)}">
+      </div>
+      <div class="field" style="flex:1; min-width:120px; margin:0;">
+        <label>${i===0?'Valor (R$)':`Valor parcela ${i+1} (R$)`}</label>
+        <input type="number" step="0.01" class="reneg-parcela-valor" value="${escapeHtml(String(p.valor))}">
+      </div>
+      ${renegCredorState.parcelas.length>1 ? `<button type="button" class="btn-mini reneg-parcela-remover" data-idx="${i}" style="height:34px;">✕</button>` : ''}
+    </div>`).join('');
+
+  document.getElementById('panelBaixa').innerHTML = `
+    <div class="panel-head">
+      <div><h2>${escapeHtml(renegCredorState.credorNome)}</h2><p>Selecione os títulos incluídos na renegociação e monte o novo cronograma de pagamento.</p></div>
+      <button class="close-x" onclick="closeBaixa()">✕</button>
+    </div>
+    <table class="report" style="margin-bottom:10px;">
+      <thead><tr><th style="width:30px;"></th><th>Documento</th><th>Vencimento original</th><th style="text-align:right;">Saldo em aberto</th></tr></thead>
+      <tbody>${linhasTitulos}</tbody>
+    </table>
+    <p style="font-size:12.5px; color:var(--ink-soft); margin:0 0 18px;">Saldo selecionado: <strong>${fmtBRL(totalSelecionado)}</strong></p>
+
+    <div class="section-title" style="margin-top:4px;">Novo cronograma de pagamento</div>
+    <div style="display:flex; gap:8px; align-items:flex-end; margin-bottom:14px; flex-wrap:wrap;">
+      <div class="field" style="margin:0;"><label>Quantas parcelas semanais?</label><input type="number" min="1" id="renegQtdSemanal" style="width:90px;" value="4"></div>
+      <button type="button" class="btn ghost" id="renegGerarSemanalBtn">Gerar parcelas semanais (divide o saldo selecionado)</button>
+    </div>
+    <div id="renegParcelasWrap">${linhasParcelas}</div>
+    <button type="button" class="btn ghost" id="renegParcelaAdicionar" style="margin-bottom:14px;">+ Adicionar parcela</button>
+    <p style="font-size:12.5px; margin:0 0 14px; color:${Math.abs(diff)<0.01?'var(--ink-soft)':'var(--red)'};">
+      Total das parcelas: <strong>${fmtBRL(totalParcelas)}</strong>
+      ${Math.abs(diff)>=0.01 ? ` — diferença de ${fmtBRL(Math.abs(diff))} em relação ao saldo selecionado (${diff>0?'a mais':'a menos'} — explique na observação: juros, multa ou desconto negociado)` : ''}
+    </p>
+
+    <div class="field full" style="margin-bottom:10px;">
+      <label>Categoria dos novos títulos</label>
+      <select id="renegCategoriaSelect">${opcoesCategoria}</select>
+    </div>
+    <div class="field full" style="margin-bottom:18px;">
+      <label>Observações da renegociação *</label>
+      <input type="text" id="renegObservacoes" placeholder="Ex: acordo de 15/09 — combinado pagar em 4 parcelas semanais de valores diferentes." value="${escapeHtml(renegCredorState.observacoes||'')}">
+    </div>
+
+    <div style="display:flex; gap:10px; justify-content:flex-end;">
+      <button type="button" class="btn ghost" onclick="renderRenegociacaoCredorPicker()">Voltar</button>
+      <button type="button" class="btn olive" id="renegConfirmarBtn">Confirmar renegociação</button>
+    </div>
+  `;
+
+  document.querySelectorAll('.reneg-titulo-check').forEach(chk=>{
+    chk.addEventListener('change', e=>{
+      renegCredorState.selecionados[e.target.dataset.id] = e.target.checked;
+      renegCredorState.categoriaId = undefined;
+      renderRenegociacaoCredorDetail();
+    });
+  });
+  document.getElementById('renegCategoriaSelect').addEventListener('change', e=>{ renegCredorState.categoriaId = e.target.value; });
+  document.getElementById('renegObservacoes').addEventListener('input', e=>{ renegCredorState.observacoes = e.target.value; });
+  document.querySelectorAll('#renegParcelasWrap .reneg-parcela-data').forEach((el,i)=>{
+    el.addEventListener('input', e=>{ renegCredorState.parcelas[i].data = e.target.value; });
+  });
+  document.querySelectorAll('#renegParcelasWrap .reneg-parcela-valor').forEach((el,i)=>{
+    el.addEventListener('input', e=>{ renegCredorState.parcelas[i].valor = e.target.value; renderRenegociacaoCredorDetail(); });
+  });
+  document.getElementById('renegParcelaAdicionar').addEventListener('click', ()=>{
+    renegCredorState.parcelas.push({ data:'', valor:'' });
+    renderRenegociacaoCredorDetail();
+  });
+  document.querySelectorAll('.reneg-parcela-remover').forEach(btn=>{
+    btn.addEventListener('click', e=>{
+      renegCredorState.parcelas.splice(Number(e.currentTarget.dataset.idx),1);
+      renderRenegociacaoCredorDetail();
+    });
+  });
+  document.getElementById('renegGerarSemanalBtn').addEventListener('click', ()=>{
+    const qtd = Math.max(1, parseInt(document.getElementById('renegQtdSemanal').value,10) || 1);
+    const base = Math.floor((totalSelecionado/qtd)*100)/100;
+    const parcelas = [];
+    let acumulado = 0;
+    const primeiraData = new Date(todayISO()+'T00:00:00');
+    for(let i=0;i<qtd;i++){
+      const d = new Date(primeiraData); d.setDate(d.getDate()+7*i);
+      const valor = (i===qtd-1) ? Math.round((totalSelecionado-acumulado)*100)/100 : base;
+      acumulado += valor;
+      parcelas.push({ data: d.toISOString().slice(0,10), valor: valor.toFixed(2) });
+    }
+    renegCredorState.parcelas = parcelas;
+    renderRenegociacaoCredorDetail();
+  });
+
+  document.getElementById('renegConfirmarBtn').addEventListener('click', confirmarRenegociacaoCredor);
+}
+
+async function confirmarRenegociacaoCredor(){
+  const titulosSelecionados = titulosAbertosDoCredor(renegCredorState.credorNome).filter(t=>renegCredorState.selecionados[t.id]);
+  const parcelasValidas = renegCredorState.parcelas.filter(p=>p.data && parseFloat(p.valor)>0);
+  if(!titulosSelecionados.length){ alert('Selecione ao menos um título para renegociar.'); return; }
+  if(!parcelasValidas.length){ alert('Informe ao menos uma parcela com data e valor.'); return; }
+  if(!renegCredorState.categoriaId){ alert('Selecione a categoria dos novos títulos.'); return; }
+  if(!renegCredorState.observacoes || !renegCredorState.observacoes.trim()){ alert('Descreva a negociação no campo de observações — fica registrado no histórico de ambos os grupos de título.'); return; }
+
+  const btn = document.getElementById('renegConfirmarBtn');
+  btn.disabled = true; btn.textContent = 'Salvando...';
+  try{
+    const codigosAntigos = titulosSelecionados.map(t=>t.codigo || `#${t.id}`).join(', ');
+    const fornecedorId = fornecedorIdPorNome(renegCredorState.credorNome);
+    const novosCodigos = [];
+    for(const p of parcelasValidas){
+      const criado = await apiFetch('/api/contas-pagar', {
+        method:'POST',
+        body: JSON.stringify({
+          fornecedor_id: fornecedorId || undefined,
+          fornecedor_nome: fornecedorId ? undefined : renegCredorState.credorNome,
+          categoria_id: renegCredorState.categoriaId,
+          vencimento: p.data,
+          valor_original: parseFloat(p.valor),
+          origem: 'Renegociação',
+          observacoes: `Renegociação de ${titulosSelecionados.length} título(s) em aberto (${codigosAntigos}) — ${renegCredorState.observacoes.trim()}`,
+        }),
+      });
+      novosCodigos.push(criado.codigo);
+    }
+    for(const t of titulosSelecionados){
+      await apiFetch(`/api/contas-pagar/${t.id}/baixa`, {
+        method:'PATCH',
+        body: JSON.stringify({
+          status: 'Cancelado',
+          observacoes: `Consolidado em nova renegociação — novos títulos: ${novosCodigos.join(', ')}.`,
+        }),
+      });
+    }
+    closeBaixa();
+    await carregarDados();
+    openPagarPanel();
+  }catch(err){
+    alert('Não foi possível concluir a renegociação: ' + err.message);
+  }finally{
+    btn.disabled = false; btn.textContent = 'Confirmar renegociação';
+  }
+}
+
+/* =====================================================================================
+   Pagamento único cobrindo várias compras (Contas a Receber) — clientes da distribuidora que
+   acumulam pedidos e pagam tudo de uma vez, num PIX único (pedido da Danielle, 15/09/2026).
+
+   Diferente da renegociação por credor acima: aqui o dinheiro já entrou HOJE, não é um
+   cronograma futuro — então não cria títulos novos, só distribui o valor recebido entre as
+   compras selecionadas (mais antiga primeiro — FIFO) via POST /api/contas-receber/:id/baixa,
+   uma chamada por compra, sequencial (nunca em paralelo, pra não perder atualização de saldo
+   quando duas chamadas competem pela mesma linha). Cada chamada gera seu próprio lançamento em
+   Fluxo de Caixa (mesmo mecanismo de sempre) — o PIX único aparece como N entradas ligadas à
+   mesma data/forma/conta em vez de uma só, mas o total do dia fecha certo.
+   ===================================================================================== */
+let baixaLoteState = { clienteNome: null, selecionados: null, valorPago: undefined, data: null, forma: null, contaBancariaId: null, observacoes: '' };
+
+function titulosAbertosDoCliente(clienteNome){
+  const chave = (clienteNome||'').trim().toUpperCase();
+  return DATA.contasReceber.filter(x => (x.cliente||'').trim().toUpperCase()===chave && saldoAberto(x,'receber')>0)
+    .sort((a,b)=> new Date(a.vencimento) - new Date(b.vencimento));
+}
+function clientesComTituloAberto(){
+  const mapa = {};
+  DATA.contasReceber.forEach(x=>{
+    if(saldoAberto(x,'receber')<=0) return;
+    const nome = (x.cliente||'').trim();
+    if(!nome) return;
+    const chave = nome.toUpperCase();
+    if(!mapa[chave]) mapa[chave] = { nome, qtd:0, total:0 };
+    mapa[chave].qtd++; mapa[chave].total += saldoAberto(x,'receber');
+  });
+  return Object.values(mapa).sort((a,b)=>a.nome.localeCompare(b.nome));
+}
+
+function renderBaixaLoteClientePicker(){
+  const clientes = clientesComTituloAberto();
+  const opts = clientes.map(c=>`<option value="${escapeHtml(c.nome)}">${escapeHtml(c.nome)} — ${c.qtd} compra(s) em aberto — ${fmtBRL(c.total)}</option>`).join('');
+  document.getElementById('panelBaixa').innerHTML = `
+    <div class="panel-head">
+      <div><h2>Pagamento único de várias compras</h2><p>Escolha o cliente que acumulou compras e pagou tudo de uma vez (ex.: PIX único cobrindo o mês).</p></div>
+      <button class="close-x" onclick="closeBaixa()">✕</button>
+    </div>
+    <div class="field full" style="margin-bottom:18px;">
+      <label>Cliente</label>
+      <select id="loteClienteSelect">${opts || '<option value="">Nenhum cliente com compra em aberto</option>'}</select>
+    </div>
+    <div style="display:flex; gap:10px; justify-content:flex-end;">
+      <button type="button" class="btn ghost" onclick="renderBaixaPicker()">Voltar</button>
+      <button type="button" class="btn gold" id="loteClienteContinuarBtn">Continuar</button>
+    </div>
+  `;
+  document.getElementById('loteClienteContinuarBtn').addEventListener('click', ()=>{
+    const nome = document.getElementById('loteClienteSelect').value;
+    if(!nome) return;
+    baixaLoteState = { clienteNome: nome, selecionados: null, valorPago: undefined, data: null, forma: null, contaBancariaId: null, observacoes: '' };
+    renderBaixaLoteClienteDetail();
+  });
+}
+
+function renderBaixaLoteClienteDetail(){
+  const titulos = titulosAbertosDoCliente(baixaLoteState.clienteNome);
+  if(!titulos.length){ renderBaixaLoteClientePicker(); return; }
+  if(!baixaLoteState.selecionados){
+    baixaLoteState.selecionados = {};
+    titulos.forEach(t=>{ baixaLoteState.selecionados[t.id] = true; });
+  }
+  const selecionados = titulos.filter(t=>baixaLoteState.selecionados[t.id]);
+  const totalSelecionado = selecionados.reduce((s,t)=>s+saldoAberto(t,'receber'),0);
+  if(baixaLoteState.valorPago === undefined) baixaLoteState.valorPago = totalSelecionado.toFixed(2);
+
+  const linhas = titulos.map(t=>`
+    <tr>
+      <td><input type="checkbox" class="lote-titulo-check" data-id="${t.id}" ${baixaLoteState.selecionados[t.id]?'checked':''}></td>
+      <td>${escapeHtml(t.documento||t.codigo||'—')}</td>
+      <td>${fmtDate(t.vencimento)}</td>
+      <td style="text-align:right;">${fmtBRL(saldoAberto(t,'receber'))}</td>
+    </tr>`).join('');
+
+  const valorPagoNum = parseFloat(baixaLoteState.valorPago) || 0;
+  const diff = Math.round((valorPagoNum - totalSelecionado)*100)/100;
+
+  document.getElementById('panelBaixa').innerHTML = `
+    <div class="panel-head">
+      <div><h2>${escapeHtml(baixaLoteState.clienteNome)}</h2><p>Selecione as compras cobertas por este pagamento único.</p></div>
+      <button class="close-x" onclick="closeBaixa()">✕</button>
+    </div>
+    <table class="report" style="margin-bottom:10px;">
+      <thead><tr><th style="width:30px;"></th><th>Documento</th><th>Vencimento</th><th style="text-align:right;">Saldo em aberto</th></tr></thead>
+      <tbody>${linhas}</tbody>
+    </table>
+    <p style="font-size:12.5px; color:var(--ink-soft); margin:0 0 18px;">Total das compras selecionadas: <strong>${fmtBRL(totalSelecionado)}</strong></p>
+
+    <div class="form-grid">
+      <div class="field"><label>Valor total recebido (R$)</label><input type="number" step="0.01" id="loteValorPago" value="${escapeHtml(String(baixaLoteState.valorPago))}"></div>
+      <div class="field"><label>Data</label><input type="date" id="loteData" value="${baixaLoteState.data||todayISO()}"></div>
+      <div class="field"><label>Forma de pagamento</label>
+        <select id="loteForma">${['PIX','Boleto','TED','Cartão','Dinheiro'].map(f=>`<option ${((baixaLoteState.forma||'PIX')===f)?'selected':''}>${f}</option>`).join('')}</select>
+      </div>
+      <div class="field"><label>Conta bancária (para onde foi)</label><select id="loteConta">${optionsContaBancaria(baixaLoteState.contaBancariaId)}</select></div>
+      <div class="field full"><label>Observações</label><input type="text" id="loteObservacoes" placeholder="opcional" value="${escapeHtml(baixaLoteState.observacoes||'')}"></div>
+    </div>
+    <p style="font-size:12.5px; margin:14px 0; color:${Math.abs(diff)<0.01?'var(--ink-soft)':'var(--gold)'};">
+      ${Math.abs(diff)<0.01
+        ? 'O valor cobre exatamente as compras selecionadas — todas ficam quitadas.'
+        : (diff>0
+            ? `O valor é ${fmtBRL(diff)} maior que as compras selecionadas — o excedente fica registrado como pagamento a mais na última compra.`
+            : `O valor é ${fmtBRL(Math.abs(diff))} menor — as compras mais antigas são quitadas primeiro (FIFO) e a mais recente fica parcialmente paga.`)}
+    </p>
+
+    <div style="display:flex; gap:10px; justify-content:flex-end;">
+      <button type="button" class="btn ghost" onclick="renderBaixaLoteClientePicker()">Voltar</button>
+      <button type="button" class="btn olive" id="loteConfirmarBtn">Confirmar pagamento</button>
+    </div>
+  `;
+
+  document.querySelectorAll('.lote-titulo-check').forEach(chk=>{
+    chk.addEventListener('change', e=>{
+      baixaLoteState.selecionados[e.target.dataset.id] = e.target.checked;
+      const novoTotal = titulos.filter(t=>baixaLoteState.selecionados[t.id]).reduce((s,t)=>s+saldoAberto(t,'receber'),0);
+      baixaLoteState.valorPago = novoTotal.toFixed(2);
+      renderBaixaLoteClienteDetail();
+    });
+  });
+  document.getElementById('loteValorPago').addEventListener('input', e=>{ baixaLoteState.valorPago = e.target.value; });
+  document.getElementById('loteData').addEventListener('input', e=>{ baixaLoteState.data = e.target.value; });
+  document.getElementById('loteForma').addEventListener('change', e=>{ baixaLoteState.forma = e.target.value; });
+  document.getElementById('loteConta').addEventListener('change', e=>{ baixaLoteState.contaBancariaId = e.target.value; });
+  document.getElementById('loteObservacoes').addEventListener('input', e=>{ baixaLoteState.observacoes = e.target.value; });
+  document.getElementById('loteConfirmarBtn').addEventListener('click', confirmarBaixaLoteCliente);
+}
+
+async function confirmarBaixaLoteCliente(){
+  const titulos = titulosAbertosDoCliente(baixaLoteState.clienteNome).filter(t=>baixaLoteState.selecionados[t.id]);
+  const valorTotal = parseFloat(baixaLoteState.valorPago) || 0;
+  const data = baixaLoteState.data || todayISO();
+  const forma = baixaLoteState.forma || 'PIX';
+  const contaBancariaId = baixaLoteState.contaBancariaId || null;
+  const observacoesBase = baixaLoteState.observacoes || '';
+  if(!titulos.length){ alert('Selecione ao menos uma compra.'); return; }
+  if(valorTotal<=0){ alert('Informe o valor recebido.'); return; }
+
+  const btn = document.getElementById('loteConfirmarBtn');
+  btn.disabled = true; btn.textContent = 'Salvando...';
+  try{
+    let restante = valorTotal;
+    const nota = `[Pagamento único de ${fmtBRL(valorTotal)} via ${forma}, cobrindo ${titulos.length} compra(s) em ${data}]${observacoesBase?' — '+observacoesBase:''}`;
+    for(const t of titulos){
+      if(restante <= 0.005) break;
+      const saldo = saldoAberto(t,'receber');
+      const valorAplicado = Math.min(saldo, restante);
+      restante = Math.round((restante - valorAplicado)*100)/100;
+      await apiFetch(`/api/contas-receber/${t.id}/baixa`, {
+        method:'POST',
+        body: JSON.stringify({
+          valor: valorAplicado, data, forma,
+          conta_bancaria_id: contaBancariaId,
+          observacoes: nota,
+        }),
+      });
+    }
+    closeBaixa();
+    await carregarDados();
+    openReceberPanel();
+  }catch(err){
+    alert('Não foi possível registrar o pagamento: ' + err.message);
+  }finally{
+    btn.disabled = false; btn.textContent = 'Confirmar pagamento';
+  }
 }
 
 // Select de "de qual conta saiu/entrou o dinheiro" — alimentado pelo mesmo cadastro de contas
