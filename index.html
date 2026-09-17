@@ -805,6 +805,18 @@ function todayISO(){ return new Date().toISOString().slice(0,10); }
 function fmtBRL(v){ return v.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}); }
 function fmtDate(iso){ const [y,m,d]=String(iso).slice(0,10).split('-'); return `${d}/${m}/${y}`; }
 function diffDays(iso){ return Math.round((new Date(iso) - new Date(todayISO()))/86400000); }
+// Soma N meses a uma data, "grudando" no último dia do mês de destino quando o dia original não
+// existe nele (ex.: 31/01 + 1 mês vira 28/02 ou 29/02, nunca "transborda" pra março) — usado nas
+// parcelas mensais de renegociação, pra não gerar datas erradas em fim de mês.
+function addMonthsClamped(date, n){
+  const d = new Date(date.getTime());
+  const dia = d.getDate();
+  d.setDate(1);
+  d.setMonth(d.getMonth()+n);
+  const ultimoDiaDoMes = new Date(d.getFullYear(), d.getMonth()+1, 0).getDate();
+  d.setDate(Math.min(dia, ultimoDiaDoMes));
+  return d;
+}
 
 function saldoAberto(item, tipo){
   const pago = tipo==='pagar' ? item.valor_pago : item.valor_recebido;
@@ -3622,7 +3634,7 @@ function renderBaixaPicker(){
    deles (a despesa foi real, só o cronograma de pagamento mudou) e saem do "em aberto"/aging
    porque saldoAberto() já trata status "Cancelado" como saldo zero.
    ===================================================================================== */
-let renegCredorState = { credorNome: null, selecionados: null, parcelas: [], categoriaId: undefined, observacoes: '' };
+let renegCredorState = { credorNome: null, selecionados: null, parcelas: [], categoriaId: undefined, observacoes: '', periodicidade: 'semanal' };
 
 function titulosAbertosDoCredor(credorNome){
   const chave = (credorNome||'').trim().toUpperCase();
@@ -3674,7 +3686,7 @@ function renderRenegociacaoCredorPicker(){
   document.getElementById('renegCredorContinuarBtn').addEventListener('click', ()=>{
     const nome = document.getElementById('renegCredorSelect').value;
     if(!nome) return;
-    renegCredorState = { credorNome: nome, selecionados: null, parcelas: [], categoriaId: undefined, observacoes: '' };
+    renegCredorState = { credorNome: nome, selecionados: null, parcelas: [], categoriaId: undefined, observacoes: '', periodicidade: 'semanal' };
     renderRenegociacaoCredorDetail();
   });
 }
@@ -3739,8 +3751,14 @@ function renderRenegociacaoCredorDetail(){
 
     <div class="section-title" style="margin-top:4px;">Novo cronograma de pagamento</div>
     <div style="display:flex; gap:8px; align-items:flex-end; margin-bottom:14px; flex-wrap:wrap;">
-      <div class="field" style="margin:0;"><label>Quantas parcelas semanais?</label><input type="number" min="1" id="renegQtdSemanal" style="width:90px;" value="4"></div>
-      <button type="button" class="btn ghost" id="renegGerarSemanalBtn">Gerar parcelas semanais (divide o saldo selecionado)</button>
+      <div class="field" style="margin:0;"><label>Periodicidade</label>
+        <select id="renegPeriodicidade" style="width:110px;">
+          <option value="semanal" ${(renegCredorState.periodicidade||'semanal')==='semanal'?'selected':''}>Semanal</option>
+          <option value="mensal" ${renegCredorState.periodicidade==='mensal'?'selected':''}>Mensal</option>
+        </select>
+      </div>
+      <div class="field" style="margin:0;"><label>Quantas parcelas?</label><input type="number" min="1" id="renegQtdSemanal" style="width:90px;" value="4"></div>
+      <button type="button" class="btn ghost" id="renegGerarSemanalBtn">Gerar parcelas (divide o saldo selecionado)</button>
     </div>
     <div id="renegParcelasWrap">${linhasParcelas}</div>
     <button type="button" class="btn ghost" id="renegParcelaAdicionar" style="margin-bottom:14px;">+ Adicionar parcela</button>
@@ -3789,14 +3807,18 @@ function renderRenegociacaoCredorDetail(){
       renderRenegociacaoCredorDetail();
     });
   });
+  document.getElementById('renegPeriodicidade').addEventListener('change', e=>{ renegCredorState.periodicidade = e.target.value; });
   document.getElementById('renegGerarSemanalBtn').addEventListener('click', ()=>{
     const qtd = Math.max(1, parseInt(document.getElementById('renegQtdSemanal').value,10) || 1);
+    const periodicidade = document.getElementById('renegPeriodicidade').value;
+    renegCredorState.periodicidade = periodicidade;
     const base = Math.floor((totalSelecionado/qtd)*100)/100;
     const parcelas = [];
     let acumulado = 0;
     const primeiraData = new Date(todayISO()+'T00:00:00');
     for(let i=0;i<qtd;i++){
-      const d = new Date(primeiraData); d.setDate(d.getDate()+7*i);
+      const d = periodicidade==='mensal' ? addMonthsClamped(primeiraData, i) : new Date(primeiraData.getTime());
+      if(periodicidade!=='mensal') d.setDate(d.getDate()+7*i);
       const valor = (i===qtd-1) ? Math.round((totalSelecionado-acumulado)*100)/100 : base;
       acumulado += valor;
       parcelas.push({ data: d.toISOString().slice(0,10), valor: valor.toFixed(2) });
