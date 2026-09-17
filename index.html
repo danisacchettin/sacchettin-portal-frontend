@@ -3725,6 +3725,13 @@ function renderRenegociacaoCredorDetail(){
     .concat((CADASTROS.categoriasDespesa||[]).map(c=>`<option value="${c.id}" ${String(renegCredorState.categoriaId)===String(c.id)?'selected':''}>${escapeHtml(c.nome_categoria)}</option>`))
     .join('');
 
+  // Dados do gerador automático de parcelas (data de início, entrada, valor por parcela) —
+  // ficam salvos no estado pra sobreviver a re-renderizações (ex.: marcar/desmarcar título).
+  if(!renegCredorState.gerador){
+    renegCredorState.gerador = { dataInicio: todayISO(), qtd: 4, temEntrada: false, valorEntrada: '', dataEntrada: todayISO(), valorParcela: '' };
+  }
+  const ger = renegCredorState.gerador;
+
   const linhasParcelas = renegCredorState.parcelas.map((p,i)=>`
     <div class="reneg-parcela-row" data-idx="${i}" style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; margin-bottom:8px;">
       <div class="field" style="flex:1; min-width:130px; margin:0;">
@@ -3750,15 +3757,29 @@ function renderRenegociacaoCredorDetail(){
     <p style="font-size:12.5px; color:var(--ink-soft); margin:0 0 18px;">Saldo selecionado: <strong>${fmtBRL(totalSelecionado)}</strong></p>
 
     <div class="section-title" style="margin-top:4px;">Novo cronograma de pagamento</div>
-    <div style="display:flex; gap:8px; align-items:flex-end; margin-bottom:14px; flex-wrap:wrap;">
+    <div class="form-grid" style="margin-bottom:10px;">
       <div class="field" style="margin:0;"><label>Periodicidade</label>
-        <select id="renegPeriodicidade" style="width:110px;">
+        <select id="renegPeriodicidade">
           <option value="semanal" ${(renegCredorState.periodicidade||'semanal')==='semanal'?'selected':''}>Semanal</option>
           <option value="mensal" ${renegCredorState.periodicidade==='mensal'?'selected':''}>Mensal</option>
         </select>
       </div>
-      <div class="field" style="margin:0;"><label>Quantas parcelas?</label><input type="number" min="1" id="renegQtdSemanal" style="width:90px;" value="4"></div>
-      <button type="button" class="btn ghost" id="renegGerarSemanalBtn">Gerar parcelas (divide o saldo selecionado)</button>
+      <div class="field" style="margin:0;"><label>Data da 1ª parcela</label><input type="date" id="renegDataInicio" value="${ger.dataInicio}"></div>
+      <div class="field" style="margin:0;"><label>Quantas parcelas?</label><input type="number" min="1" id="renegQtdSemanal" value="${ger.qtd}"></div>
+      <div class="field" style="margin:0;"><label>Valor de cada parcela (R$)</label><input type="number" step="0.01" id="renegValorParcela" placeholder="em branco = divide automático" value="${escapeHtml(String(ger.valorParcela||''))}"></div>
+    </div>
+    <div class="field" style="margin:0 0 10px;">
+      <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-weight:normal; text-transform:none; letter-spacing:normal;">
+        <input type="checkbox" id="renegTemEntrada" ${ger.temEntrada?'checked':''}> Tem entrada?
+      </label>
+    </div>
+    ${ger.temEntrada ? `
+    <div class="form-grid" style="margin-bottom:10px;">
+      <div class="field" style="margin:0;"><label>Valor da entrada (R$)</label><input type="number" step="0.01" id="renegValorEntrada" value="${escapeHtml(String(ger.valorEntrada||''))}"></div>
+      <div class="field" style="margin:0;"><label>Data da entrada</label><input type="date" id="renegDataEntrada" value="${ger.dataEntrada}"></div>
+    </div>` : ''}
+    <div style="margin-bottom:14px;">
+      <button type="button" class="btn ghost" id="renegGerarSemanalBtn">Gerar parcelas</button>
     </div>
     <div id="renegParcelasWrap">${linhasParcelas}</div>
     <button type="button" class="btn ghost" id="renegParcelaAdicionar" style="margin-bottom:14px;">+ Adicionar parcela</button>
@@ -3808,18 +3829,54 @@ function renderRenegociacaoCredorDetail(){
     });
   });
   document.getElementById('renegPeriodicidade').addEventListener('change', e=>{ renegCredorState.periodicidade = e.target.value; });
+  document.getElementById('renegDataInicio').addEventListener('input', e=>{ renegCredorState.gerador.dataInicio = e.target.value; });
+  document.getElementById('renegQtdSemanal').addEventListener('input', e=>{ renegCredorState.gerador.qtd = parseInt(e.target.value,10) || 1; });
+  document.getElementById('renegValorParcela').addEventListener('input', e=>{ renegCredorState.gerador.valorParcela = e.target.value; });
+  document.getElementById('renegTemEntrada').addEventListener('change', e=>{
+    renegCredorState.gerador.temEntrada = e.target.checked;
+    renderRenegociacaoCredorDetail();
+  });
+  const elValorEntrada = document.getElementById('renegValorEntrada');
+  if(elValorEntrada) elValorEntrada.addEventListener('input', e=>{ renegCredorState.gerador.valorEntrada = e.target.value; });
+  const elDataEntrada = document.getElementById('renegDataEntrada');
+  if(elDataEntrada) elDataEntrada.addEventListener('input', e=>{ renegCredorState.gerador.dataEntrada = e.target.value; });
+
   document.getElementById('renegGerarSemanalBtn').addEventListener('click', ()=>{
     const qtd = Math.max(1, parseInt(document.getElementById('renegQtdSemanal').value,10) || 1);
     const periodicidade = document.getElementById('renegPeriodicidade').value;
+    const dataInicioStr = document.getElementById('renegDataInicio').value || todayISO();
+    const temEntrada = document.getElementById('renegTemEntrada').checked;
+    const valorEntrada = temEntrada ? (parseFloat(document.getElementById('renegValorEntrada').value) || 0) : 0;
+    const dataEntrada = temEntrada ? (document.getElementById('renegDataEntrada').value || todayISO()) : null;
+    const valorParcelaInformado = document.getElementById('renegValorParcela').value;
+    const valorParcelaFixo = valorParcelaInformado !== '' ? (parseFloat(valorParcelaInformado)||0) : null;
+
     renegCredorState.periodicidade = periodicidade;
-    const base = Math.floor((totalSelecionado/qtd)*100)/100;
+    renegCredorState.gerador = {
+      dataInicio: dataInicioStr, qtd, temEntrada,
+      valorEntrada: temEntrada ? String(valorEntrada) : '',
+      dataEntrada: dataEntrada || todayISO(),
+      valorParcela: valorParcelaInformado,
+    };
+
     const parcelas = [];
+    if(temEntrada){
+      parcelas.push({ data: dataEntrada, valor: valorEntrada.toFixed(2) });
+    }
+    // Se o valor da parcela foi informado manualmente, usa esse valor igual em todas (sem ajustar
+    // a última) — é a cliente quem está dizendo o valor real combinado com o credor. Se deixou em
+    // branco, divide automaticamente o saldo restante (depois da entrada) e absorve o resto de
+    // centavos na última parcela, como antes.
+    const restanteParaParcelas = Math.round((totalSelecionado - valorEntrada)*100)/100;
+    const base = valorParcelaFixo!==null ? valorParcelaFixo : Math.floor((restanteParaParcelas/qtd)*100)/100;
+    const primeiraData = new Date(dataInicioStr+'T00:00:00');
     let acumulado = 0;
-    const primeiraData = new Date(todayISO()+'T00:00:00');
     for(let i=0;i<qtd;i++){
       const d = periodicidade==='mensal' ? addMonthsClamped(primeiraData, i) : new Date(primeiraData.getTime());
       if(periodicidade!=='mensal') d.setDate(d.getDate()+7*i);
-      const valor = (i===qtd-1) ? Math.round((totalSelecionado-acumulado)*100)/100 : base;
+      const valor = valorParcelaFixo!==null
+        ? valorParcelaFixo
+        : (i===qtd-1 ? Math.round((restanteParaParcelas-acumulado)*100)/100 : base);
       acumulado += valor;
       parcelas.push({ data: d.toISOString().slice(0,10), valor: valor.toFixed(2) });
     }
