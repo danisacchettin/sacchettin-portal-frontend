@@ -1050,7 +1050,12 @@ function origemTag(x){
   return `<span class="origem-tag ${cls}">${label}</span>`;
 }
 
-function reportTable(list, tipo){
+// terceiro parâmetro "origin" (opcional, pedido da Danielle, 21/09/2026): identifica de qual
+// tela veio o clique em "Pagar/Receber", pra applyBaixa() saber pra onde voltar depois da baixa
+// em vez de sempre cair no painel genérico de Contas a Pagar/Receber (ver applyBaixa). Quando
+// omitido, mantém o comportamento antigo (origin = tipo).
+function reportTable(list, tipo, origin){
+  const org = origin || tipo;
   const nomeCol = tipo==='pagar' ? 'Fornecedor' : 'Cliente';
   const rows = list.map(x=>{
     const aberto = saldoAberto(x,tipo) > 0;
@@ -1066,9 +1071,9 @@ function reportTable(list, tipo){
       <td>${origemTag(x)}</td>
       <td>${(() => {
         const btns = [];
-        if(aberto) btns.push(`<button type="button" class="btn-mini" onclick="openBaixaForItem('${tipo}','${x.id}','${tipo}')">${acaoLbl}</button>`);
+        if(aberto) btns.push(`<button type="button" class="btn-mini" onclick="openBaixaForItem('${tipo}','${x.id}','${org}')">${acaoLbl}</button>`);
         if(tipo==='pagar' && x.forma_pagamento==='Dinheiro') btns.push(`<button type="button" class="btn-mini" onclick="openReciboForm('${x.id}')">🧾 Recibo</button>`);
-        btns.push(`<button type="button" class="btn-mini" onclick="openDetalhesForItem('${tipo}','${x.id}')">👁 Detalhes</button>`);
+        btns.push(`<button type="button" class="btn-mini" onclick="openDetalhesForItem('${tipo}','${x.id}','${org}')">👁 Detalhes</button>`);
         return btns.join(' ');
       })()}</td>
     </tr>`;
@@ -1079,7 +1084,8 @@ function reportTable(list, tipo){
 }
 
 /* ---------- tela de detalhes de um lançamento (pago ou em aberto) ---------- */
-function openDetalhesForItem(tipo, id){
+function openDetalhesForItem(tipo, id, origin){
+  const org = origin || tipo;
   const arr = tipo==='pagar' ? DATA.contasPagar : DATA.contasReceber;
   const item = arr.find(x=>String(x.id)===String(id));
   if(!item) return;
@@ -1115,7 +1121,7 @@ function openDetalhesForItem(tipo, id){
       ${campo('Observações', item.observacoes ? escapeHtml(item.observacoes) : null, true)}
     </div>
     <div class="panel-actions" style="margin-top:18px;">
-      ${aberto ? `<button type="button" class="btn gold" onclick="openBaixaForItem('${tipo}','${item.id}','${tipo}')">${acaoLbl}</button>` : ''}
+      ${aberto ? `<button type="button" class="btn gold" onclick="openBaixaForItem('${tipo}','${item.id}','${org}')">${acaoLbl}</button>` : ''}
       ${tipo==='pagar' && Number(item.valor_pago) > 0 ? `<button type="button" class="btn ghost" onclick="openEditarBaixaForm('${item.id}')">✏️ Editar baixa</button>` : ''}
       ${tipo==='pagar' && forma==='Dinheiro' ? `<button type="button" class="btn gold" onclick="openReciboForm('${item.id}')">🧾 Recibo</button>` : ''}
       <button type="button" class="btn ghost" onclick="closeOverlay(); openEditarLancamentoForm('${tipo}','${item.id}')">✏️ Editar lançamento</button>
@@ -2881,8 +2887,23 @@ function renderVencidosPanel(){
   }
   lista = lista.slice().sort((a,b)=> new Date(a.vencimento) - new Date(b.vencimento));
   const total = lista.reduce((s,x)=>s+saldoAberto(x,'pagar'),0);
-  const optsCredor = credoresVencidos().map(c=>`<option value="${escapeHtml(c)}" ${c===credor?'selected':''}>${escapeHtml(c)}</option>`).join('');
+
+  // Se o fornecedor selecionado no filtro não tiver mais NENHUM título vencido (ex.: acabou de
+  // quitar o último), ele some da lista que credoresVencidos() calcula — mas o filtro não deve
+  // "soltar" sozinho pra Todos (pedido da Danielle, 21/09/2026), então garantimos que a opção
+  // dele continue aparecendo no <select> mesmo com zero vencidos, selecionada.
+  const nomesComVencido = credoresVencidos();
+  const nomesParaMostrar = (credor !== 'todos' && !nomesComVencido.includes(credor))
+    ? [credor, ...nomesComVencido].sort((a,b)=>a.localeCompare(b,'pt-BR'))
+    : nomesComVencido;
+  const optsCredor = nomesParaMostrar.map(c=>`<option value="${escapeHtml(c)}" ${c===credor?'selected':''}>${escapeHtml(c)}</option>`).join('');
   const estiloSelect = 'width:auto; margin-top:0; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:var(--paper-2); font-family:inherit; font-size:13px; color:var(--ink);';
+
+  // Mensagem de lista vazia: quando é um fornecedor específico que zerou os vencidos, avisa
+  // isso explicitamente (em vez do texto genérico) e indica como voltar pra listagem completa.
+  const mensagemVazia = (credor !== 'todos')
+    ? `<p style="font-size:13.5px; color:var(--olive-strong); font-weight:600; background:var(--olive-wash); padding:12px 14px; border-radius:10px;">FORNECEDOR SEM DÉBITOS VENCIDOS — ${escapeHtml(credor)} não tem nenhum título em atraso${faixa!=='todos' ? ' nessa faixa de atraso' : ''}. Selecione "Todos os vencidos" para voltar à listagem completa.</p>`
+    : `<p style="font-size:13px; color:var(--ink-soft);">Nenhum título vencido para esse filtro.</p>`;
 
   openOverlay(`
     <div class="panel-head">
@@ -2892,7 +2913,7 @@ function renderVencidosPanel(){
     <div class="panel-actions" style="flex-wrap:wrap; gap:10px;">
       <button class="btn" onclick="window.print()">Imprimir</button>
       <select id="filtroCredorVencidos" style="${estiloSelect}">
-        <option value="todos" ${credor==='todos'?'selected':''}>Todos os fornecedores</option>
+        <option value="todos" ${credor==='todos'?'selected':''}>Todos os vencidos</option>
         ${optsCredor}
       </select>
       <select id="filtroFaixaVencidos" style="${estiloSelect}">
@@ -2903,7 +2924,7 @@ function renderVencidosPanel(){
       </select>
     </div>
     <p style="font-size:12px; color:var(--ink-soft); margin:18px 0 6px;">${lista.length} título(s) — ${fmtBRL(total)}</p>
-    ${lista.length ? reportTable(lista,'pagar') : '<p style="font-size:13px; color:var(--ink-soft);">Nenhum título vencido para esse filtro.</p>'}
+    ${lista.length ? reportTable(lista,'pagar','vencidos') : mensagemVazia}
   `);
 
   document.getElementById('filtroCredorVencidos').addEventListener('change', e=>{ filtroVencidos.credor = e.target.value; renderVencidosPanel(); });
@@ -4724,8 +4745,15 @@ async function applyBaixa(tipo, id, payload){
     await apiFetch(path, {method:'POST', body: JSON.stringify(corpo)});
     closeBaixa();
     await carregarDados();
-    if(baixaState.origin==='pagar') openPagarPanel();
-    if(baixaState.origin==='receber') openReceberPanel();
+    // "origin" diz de qual tela veio o pedido de baixa — sem isso, sempre caía no painel
+    // genérico de Contas a Pagar/Receber, o que "soltava" o filtro por fornecedor que a
+    // Danielle tinha aplicado em Vencidos (pedido dela, 21/09/2026: o filtro deve permanecer
+    // no último fornecedor pesquisado, não voltar sozinho pra "todos"). renderVencidosPanel()
+    // relê o filtroVencidos já salvo (não é resetado aqui), então a conta selecionada continua
+    // selecionada — e se ela não tiver mais vencido nenhum, aparece a mensagem correspondente.
+    if(baixaState.origin==='vencidos') renderVencidosPanel();
+    else if(baixaState.origin==='pagar') openPagarPanel();
+    else if(baixaState.origin==='receber') openReceberPanel();
   }catch(err){
     alert('Não foi possível registrar: ' + err.message);
   }
