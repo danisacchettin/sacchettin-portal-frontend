@@ -510,6 +510,11 @@ Fica fora de .wrap para continuar visível quando .wrap é escondido em @media p
       <div class="val" style="font-size:19px;">Cadastro de RH</div>
       <div class="sub">Salário, benefícios, encargos e alertas de férias</div>
     </div>
+    <div class="card" id="btnContasPagas">
+      <div class="lbl">Contas Pagas</div>
+      <div class="val" style="font-size:19px;">Relatório de pagamentos</div>
+      <div class="sub">Todos os pagamentos já feitos, filtrando por período e credor/fornecedor</div>
+    </div>
   </div>
 
   <footer class="foot">
@@ -2058,6 +2063,85 @@ async function baixarAnexo(id, nome){
     setupDropzoneFin('dzContratosFin', 'dfInputContratos', 'contratos');
     setupDropzoneFin('dzParcelasFin', 'dfInputParcelas', 'parcelas');
   }
+
+  // ---------- Contas Pagas — relatório geral de pagamentos (pedido da Danielle, 21/09/2026) ----------
+  // Módulo próprio, separado de Despesas Financeiras: cobre TODO pagamento já feito em Contas a
+  // Pagar (qualquer categoria — não só juros/mora), filtrável por período livre e por credor/
+  // fornecedor. Consome a rota nova GET /api/contas-pagar/pagas (backend), que não tem o limite
+  // de 365 dias da listagem padrão porque filtra sempre por data_pagamento.
+  async function openContasPagasPanel(inicio, fim, fornecedorId){
+    openOverlay(`<div class="panel-head"><div><h2>Contas Pagas</h2><p>Carregando…</p></div><button class="close-x" onclick="closeOverlay()">✕</button></div>`);
+    try{
+      const hoje = new Date();
+      const inicioPadrao = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-01`;
+      const fimPadrao = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).toISOString().slice(0, 10);
+      const ini = inicio || inicioPadrao;
+      const fi = fim || fimPadrao;
+      const fid = fornecedorId || '';
+      const qs = new URLSearchParams({ inicio: ini, fim: fi });
+      if(fid) qs.set('fornecedor_id', fid);
+      const [resumo, fornecedores] = await Promise.all([
+        apiFetch('/api/contas-pagar/pagas?' + qs.toString()),
+        apiFetch('/api/cadastros/fornecedores').catch(() => []),
+      ]);
+      renderContasPagasPanel(resumo, fornecedores, ini, fi, fid);
+    }catch(err){
+      openOverlay(`
+      <div class="panel-head"><div><h2>Contas Pagas</h2><p style="color:var(--red);">Erro ao carregar: ${err.message}</p></div><button class="close-x" onclick="closeOverlay()">✕</button></div>
+      `);
+    }
+  }
+  function renderContasPagasPanel(resumo, fornecedores, inicio, fim, fornecedorId){
+    const itens = resumo.itens || [];
+    const optionsFornecedor = ['<option value="">Todos os credores/fornecedores</option>']
+      .concat((fornecedores || []).map(f => `<option value="${f.id}" ${String(f.id)===String(fornecedorId)?'selected':''}>${escapeHtml(f.nome)}</option>`))
+      .join('');
+    const linhas = itens.map(it => `
+    <tr>
+    <td>${fmtDate(it.data_pagamento)}</td>
+    <td>${escapeHtml(it.fornecedor_nome || '—')}</td>
+    <td>${escapeHtml(it.categoria_nome || 'Não classificado')}</td>
+    <td style="text-align:right;">${fmtBRL(it.valor_pago)}</td>
+    <td>${escapeHtml(it.forma_pagamento || '—')}</td>
+    <td><span class="tag-status ${it.status==='Pago Total' ? 'tag-pago' : 'tag-aberto'}">${escapeHtml(it.status)}</span></td>
+    </tr>
+    `).join('');
+    openOverlay(`
+    <div class="panel-head">
+    <div><h2>Contas Pagas</h2><p>Todos os pagamentos já efetuados em Contas a Pagar (qualquer categoria) no período selecionado.</p></div>
+    <button class="close-x" onclick="closeOverlay()">✕</button>
+    </div>
+
+    <div class="form-grid" style="margin-bottom:16px;">
+    <div class="field"><label>De</label><input type="date" id="cpInicio" value="${inicio}"></div>
+    <div class="field"><label>Até</label><input type="date" id="cpFim" value="${fim}"></div>
+    <div class="field full"><label>Credor/Fornecedor</label><select id="cpFornecedor">${optionsFornecedor}</select></div>
+    </div>
+    <div class="panel-actions" style="margin-bottom:14px;">
+    <button type="button" class="btn olive" id="cpFiltrar">Filtrar</button>
+    </div>
+
+    <div class="card" style="margin-bottom:18px; max-width:320px;">
+    <div class="lbl">Total pago no período</div>
+    <div class="val" style="font-size:22px;">${fmtBRL(resumo.total)}</div>
+    <div class="sub">${itens.length} pagamento(s) encontrado(s).</div>
+    </div>
+
+    <div style="overflow-x:auto;">
+    <table class="report">
+    <thead><tr><th>Data</th><th>Credor/Fornecedor</th><th>Categoria</th><th style="text-align:right;">Valor pago</th><th>Forma</th><th>Status</th></tr></thead>
+    <tbody>${linhas || '<tr><td colspan="6">Nenhum pagamento encontrado nesse período/filtro.</td></tr>'}</tbody>
+    </table>
+    </div>
+    `);
+    document.getElementById('cpFiltrar').addEventListener('click', () => {
+      const novoInicio = document.getElementById('cpInicio').value || inicio;
+      const novoFim = document.getElementById('cpFim').value || fim;
+      const novoFornecedor = document.getElementById('cpFornecedor').value;
+      openContasPagasPanel(novoInicio, novoFim, novoFornecedor);
+    });
+  }
+
   async function handleFinanciamentosUpload(file, tipo){
     const resultadoEl = document.getElementById('dfImportResultado');
     resultadoEl.innerHTML = `<div class="processing"><div class="spin"></div> Importando "${file.name}"... pode levar alguns segundos.</div>`;
@@ -4509,6 +4593,7 @@ document.getElementById('btnImportar').addEventListener('click', openImportPanel
 document.getElementById('btnContratos').addEventListener('click', openContratosPanel);
   document.getElementById('btnDespesasFinanceiras').addEventListener('click', ()=>openDespesasFinanceirasPanel());
 document.getElementById('btnFuncionarios').addEventListener('click', openFuncionariosPanel);
+document.getElementById('btnContasPagas').addEventListener('click', ()=>openContasPagasPanel());
 
 document.getElementById('loginForm').addEventListener('submit', async e=>{
   e.preventDefault();
