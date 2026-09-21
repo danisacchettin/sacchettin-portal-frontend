@@ -1874,6 +1874,24 @@ async function baixarAnexo(id, nome){
     ? `${deltaSeta} ${fmtBRL(Math.abs(delta))} vs. mês anterior (${fmtBRL(fin.mesAnterior)})`
       : 'sem dado do mês anterior';
 
+    // Sub-item "Juros e Encargos Moratórios" — mora paga na baixa de títulos em atraso (Contas a Pagar),
+    // separado de encargo financeiro regular (Pix, boleto, manutenção de conta etc). Ver campo novo no
+    // formulário de "Confirmar pagamento" e a categoria fixa CATEGORIA_JUROS_MORA no backend.
+    const jm = resumo.jurosMoratorios || { mesAtual: 0, mesAnterior: null, porCredor: [] };
+    const deltaJm = jm.mesAtual - (jm.mesAnterior || 0);
+    const deltaJmCor = deltaJm > 0 ? 'var(--red)' : (deltaJm < 0 ? 'var(--olive)' : 'var(--ink-faint)');
+    const deltaJmSeta = deltaJm > 0 ? '▲' : (deltaJm < 0 ? '▼' : '—');
+    const deltaJmTxt = jm.mesAnterior != null
+    ? `${deltaJmSeta} ${fmtBRL(Math.abs(deltaJm))} vs. mês anterior (${fmtBRL(jm.mesAnterior)})`
+      : 'sem dado do mês anterior';
+    const porCredorJm = jm.porCredor || [];
+    const linhasJurosMora = porCredorJm.map(c => `
+    <tr>
+    <td>${escapeHtml(c.credor)}</td>
+    <td style="text-align:right; font-weight:600;">${fmtBRL(c.total)}</td>
+    </tr>
+    `).join('');
+
     const contratosPJ = resumo.contratosPJ || [];
     const contratosPF = resumo.contratosPF || [];
     const contratosChart = resumo.contratos || [];
@@ -1926,7 +1944,7 @@ async function baixarAnexo(id, nome){
     <button type="button" class="btn ghost" onclick="openDespesasFinanceirasPanel('${mesVizinho(mesAtual, 1)}')">Mês seguinte →</button>
     </div>
 
-    <div class="grid" style="grid-template-columns:repeat(2, minmax(220px, 1fr));">
+    <div class="grid" style="grid-template-columns:repeat(3, minmax(220px, 1fr));">
     <div class="card">
     <div class="lbl">Juros de Cheque Especial <span style="font-size:10px; padding:2px 8px; border-radius:20px; background:var(--gold-wash); color:var(--gold); vertical-align:middle;">aguardando dados</span></div>
     <div class="val" style="font-size:22px; color:var(--ink-faint);">— —</div>
@@ -1938,6 +1956,18 @@ async function baixarAnexo(id, nome){
     <div class="sub" style="color:${deltaCor};">${deltaTxt}</div>
     <div class="sub">${contratosPJ.length} contrato(s) Santander ativo(s) (PJ).</div>
     </div>
+    <div class="card">
+    <div class="lbl">Juros e Encargos Moratórios</div>
+    <div class="val" style="font-size:22px;">${fmtBRL(jm.mesAtual)}</div>
+    <div class="sub" style="color:${deltaJmCor};">${deltaJmTxt}</div>
+    <div class="sub">Mora paga ao quitar títulos em atraso (à parte de Pix/boleto/manutenção de conta).</div>
+    </div>
+    </div>
+
+    <div class="section-title">Juros e Encargos Moratórios por credor (mês de referência)</div>
+    <div style="overflow-x:auto; margin-bottom:22px;">
+    <table class="report"><thead><tr><th>Credor</th><th style="text-align:right;">Total pago em mora</th></tr></thead>
+    <tbody>${linhasJurosMora || '<tr><td colspan="2">Nenhum juro/encargo de mora registrado neste mês.</td></tr>'}</tbody></table>
     </div>
 
     <div class="section-title">Juros de financiamentos por mês</div>
@@ -4324,6 +4354,12 @@ async function salvarCodigoBarrasBoleto(item){
 function renderBaixaForm(fase, saldo, item){
   const wrap = document.getElementById('baixaFormWrap');
   const campoCodigo = (baixaState.tipo==='pagar') ? campoCodigoBarrasHTML(item) : '';
+  // Campo opcional de juros/encargos de mora — só faz sentido em Contas a Pagar (baixa de título em atraso).
+  // Gera, no backend, um lançamento separado na categoria fixa "Juros e Encargos Moratórios" (dentro do
+  // card Despesas Financeiras), para não misturar mora com o valor do título nem com encargo financeiro regular.
+  const campoJurosMora = (baixaState.tipo==='pagar')
+    ? `<div class="field"><label>Juros/Encargos de mora (R$)</label><input type="number" step="0.01" min="0" name="juros_mora" placeholder="0,00"></div>`
+    : '';
   if(fase==='total'){
     wrap.innerHTML = `
       <div class="form-grid">
@@ -4333,6 +4369,7 @@ function renderBaixaForm(fase, saldo, item){
           <select name="forma"><option>PIX</option><option>Boleto</option><option>TED</option><option>Cartão</option><option>Dinheiro</option></select>
         </div>
         ${campoCodigo}
+        ${campoJurosMora}
         <div class="field full"><label>Conta bancária (de onde saiu/entrou)</label>
           <select name="conta_bancaria_id">${optionsContaBancaria()}</select>
         </div>
@@ -4346,6 +4383,7 @@ function renderBaixaForm(fase, saldo, item){
           <select name="forma"><option>PIX</option><option>Boleto</option><option>TED</option><option>Cartão</option><option>Dinheiro</option></select>
         </div>
         ${campoCodigo}
+        ${campoJurosMora}
         <div class="field"><label>Conta bancária (de onde saiu/entrou)</label>
           <select name="conta_bancaria_id">${optionsContaBancaria()}</select>
         </div>
@@ -4409,6 +4447,7 @@ function renderBaixaDetail(){
     const vencEl = f.querySelector('[name=nova_venc]');
     const contaEl = f.querySelector('[name=conta_bancaria_id]');
     const codigoEl = f.querySelector('[name=codigo_barras_boleto]');
+    const jurosMoraEl = f.querySelector('[name=juros_mora]');
     const valor = fase==='total' ? saldo : (parseFloat(f.querySelector('[name=valor]').value)||0);
     applyBaixa(baixaState.tipo, item.id, {
       valor, data, forma,
@@ -4416,6 +4455,7 @@ function renderBaixaDetail(){
       novaDataVenc: vencEl && vencEl.value ? vencEl.value : null,
       contaBancariaId: contaEl && contaEl.value ? contaEl.value : null,
       codigoBarrasBoleto: codigoEl ? codigoEl.value : undefined,
+      jurosMora: jurosMoraEl ? parseFloat(jurosMoraEl.value) || 0 : 0,
       parcial: fase==='parcial',
     });
   });
@@ -4431,6 +4471,9 @@ async function applyBaixa(tipo, id, payload){
       conta_bancaria_id: payload.contaBancariaId,
     };
     if(tipo==='pagar' && payload.codigoBarrasBoleto !== undefined) corpo.codigo_barras_boleto = payload.codigoBarrasBoleto;
+    // Juros/encargos de mora informados nesta baixa (Contas a Pagar) — o backend gera um lançamento
+    // separado na categoria "Juros e Encargos Moratórios" quando este valor é maior que zero.
+    if(tipo==='pagar' && payload.jurosMora) corpo.juros_mora = payload.jurosMora;
     await apiFetch(path, {method:'POST', body: JSON.stringify(corpo)});
     closeBaixa();
     await carregarDados();
