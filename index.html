@@ -515,6 +515,11 @@ Fica fora de .wrap para continuar visível quando .wrap é escondido em @media p
       <div class="val" style="font-size:19px;">Relatório de pagamentos</div>
       <div class="sub">Todos os pagamentos já feitos, filtrando por período e credor/fornecedor</div>
     </div>
+    <div class="card" id="btnConciliacao">
+      <div class="lbl">Conciliação Bancária</div>
+      <div class="val" style="font-size:19px;">Enviar extrato (PDF)</div>
+      <div class="sub">Compara o extrato do banco com o Caixa e Bancos e aponta as diferenças</div>
+    </div>
   </div>
 
   <footer class="foot">
@@ -2140,6 +2145,164 @@ async function baixarAnexo(id, nome){
       const novoFornecedor = document.getElementById('cpFornecedor').value;
       openContasPagasPanel(novoInicio, novoFim, novoFornecedor);
     });
+  }
+
+  // ---------- Conciliação Bancária (pedido da Danielle, 21/09/2026) ----------
+  // Envia o extrato do banco (hoje só PDF — é o que o backend em src/routes/conciliacao.js
+  // sabe ler, via src/parsers/pdfText.js; CSV/XML de extrato ainda não têm leitor calibrado
+  // no backend) e compara com o que já está lançado em Caixa e Bancos para a mesma conta e
+  // período. A rota NÃO altera nem cria nada sozinha — só aponta as diferenças, decisão já
+  // confirmada com a Danielle ("só apontar a divergência"), pra ela decidir o que fazer com
+  // cada uma.
+  async function openConciliacaoPanel(){
+    openOverlay(`<div class="panel-head"><div><h2>Conciliação Bancária</h2><p>Carregando contas bancárias…</p></div><button class="close-x" onclick="closeOverlay()">✕</button></div>`);
+    try{
+      const contas = await apiFetch('/api/cadastros/contas-bancarias');
+      renderConciliacaoPanel(contas || []);
+    }catch(err){
+      openOverlay(`
+      <div class="panel-head"><div><h2>Conciliação Bancária</h2><p style="color:var(--red);">Erro ao carregar contas bancárias: ${err.message}</p></div><button class="close-x" onclick="closeOverlay()">✕</button></div>
+      `);
+    }
+  }
+
+  function renderConciliacaoPanel(contas){
+    const optionsConta = ['<option value="">Selecione a conta bancária...</option>']
+      .concat((contas || []).map(c => `<option value="${c.id}">${escapeHtml(c.nome_conta)}${c.banco ? ' — ' + escapeHtml(c.banco) : ''}</option>`))
+      .join('');
+    openOverlay(`
+      <div class="panel-head">
+        <div><h2>Conciliação Bancária</h2><p>Envie o extrato em PDF de uma conta e compare automaticamente com os lançamentos já registrados no Caixa e Bancos. O sistema só aponta as diferenças — não altera nem cria nada sozinho.</p></div>
+        <button class="close-x" onclick="closeOverlay()">✕</button>
+      </div>
+      <div class="form-grid" style="margin-bottom:16px;">
+        <div class="field full"><label>Conta bancária</label><select id="concConta">${optionsConta}</select></div>
+      </div>
+      <div id="concDropzoneWrap"></div>
+      <div id="concResultado"></div>
+    `);
+    renderConciliacaoDropzone();
+  }
+
+  function renderConciliacaoDropzone(){
+    document.getElementById('concDropzoneWrap').innerHTML = `
+      <div class="dropzone" id="concDropzoneEl">
+        <input type="file" id="concInput" accept=".pdf">
+        <div class="dz-icon">🏦</div>
+        <div class="dz-title">Arraste o extrato em PDF aqui ou clique para selecionar</div>
+        <div class="dz-sub">Leitor calibrado hoje para Santander e Cresol — outro banco aparece como "ainda não suportado".</div>
+      </div>
+    `;
+    const dz = document.getElementById('concDropzoneEl');
+    const input = document.getElementById('concInput');
+    dz.addEventListener('click', ()=>input.click());
+    dz.addEventListener('dragover', e=>{ e.preventDefault(); dz.classList.add('dragover'); });
+    dz.addEventListener('dragleave', ()=> dz.classList.remove('dragover'));
+    dz.addEventListener('drop', e=>{
+      e.preventDefault(); dz.classList.remove('dragover');
+      if(e.dataTransfer.files[0]) handleConciliacaoUpload(e.dataTransfer.files[0]);
+    });
+    input.addEventListener('change', e=>{
+      if(e.target.files[0]) handleConciliacaoUpload(e.target.files[0]);
+    });
+  }
+
+  async function handleConciliacaoUpload(file){
+    const contaId = document.getElementById('concConta').value;
+    if(!contaId){
+      document.getElementById('concResultado').innerHTML = `<div class="extract-badge" style="color:var(--red); background:var(--red-wash); margin-top:14px;">Selecione a conta bancária antes de enviar o extrato.</div>`;
+      return;
+    }
+    document.getElementById('concDropzoneWrap').innerHTML = `<div class="processing"><div class="spin"></div> Lendo "${file.name}" e comparando com o Caixa e Bancos... pode levar alguns segundos.</div>`;
+    document.getElementById('concResultado').innerHTML = '';
+    try{
+      const fd = new FormData();
+      fd.append('arquivo', file);
+      fd.append('conta_bancaria_id', contaId);
+      const resp = await apiFetch('/api/conciliacao/extrato', {method:'POST', body: fd});
+      renderConciliacaoResultado(resp);
+    }catch(err){
+      renderConciliacaoDropzone();
+      document.getElementById('concResultado').innerHTML = `<div class="extract-badge" style="color:var(--red); background:var(--red-wash); margin-top:14px;">Erro ao processar o extrato: ${err.message}</div>`;
+    }
+  }
+
+  function renderConciliacaoResultado(resp){
+    renderConciliacaoDropzone(); // deixa pronto pra conferir outro extrato em seguida
+
+    if(!resp.suportado){
+      document.getElementById('concResultado').innerHTML = `
+        <div class="extract-badge" style="color:var(--gold); background:var(--gold-wash); margin-top:14px;">⚠ ${escapeHtml(resp.mensagem)}</div>
+      `;
+      return;
+    }
+
+    const r = resp.resumo || {};
+    const div = resp.divergencias || {};
+
+    const linhaDivergValor = (div.valorDivergente || []).map(d => `
+      <tr>
+        <td>${escapeHtml(d.data)}</td>
+        <td>${escapeHtml(d.extrato.descricao || '—')}</td>
+        <td style="text-align:right;">${fmtBRL(d.extrato.valor)} (${escapeHtml(d.extrato.tipo)})</td>
+        <td>${escapeHtml(d.sistema.descricao || d.sistema.codigo || '—')}</td>
+        <td style="text-align:right;">${fmtBRL(d.sistema.valor)} (${escapeHtml(d.sistema.tipo)})</td>
+      </tr>`).join('');
+
+    const linhaSoExtrato = (div.soNoExtrato || []).map(e => `
+      <tr><td>${escapeHtml(e.data)}</td><td>${escapeHtml(e.descricao || '—')}</td><td style="text-align:right;">${fmtBRL(e.valor)}</td><td>${escapeHtml(e.tipo)}</td></tr>`).join('');
+
+    const linhaSoSistema = (div.soNoSistema || []).map(s => `
+      <tr><td>${escapeHtml(s.data)}</td><td>${escapeHtml(s.descricao || s.codigo || '—')}</td><td style="text-align:right;">${fmtBRL(s.valor)}</td><td>${escapeHtml(s.tipo)}</td></tr>`).join('');
+
+    const linhaSemSinal = (div.semSinalIdentificado || []).map(t => `
+      <tr><td>${escapeHtml(t.data)}</td><td>${escapeHtml(t.descricao || '—')}</td><td style="text-align:right;">${fmtBRL(t.valor)}</td><td style="text-align:right;">${t.saldo != null ? fmtBRL(t.saldo) : '—'}</td></tr>`).join('');
+
+    const semDivergencias = !linhaDivergValor && !linhaSoExtrato && !linhaSoSistema && !linhaSemSinal;
+
+    document.getElementById('concResultado').innerHTML = `
+      <div class="extract-badge" style="margin-top:14px;">✅ Extrato de <strong>${escapeHtml(resp.banco || '')}</strong> (${escapeHtml((resp.conta || {}).nome_conta || '')}) lido: ${escapeHtml((resp.periodo || {}).inicio || '?')} a ${escapeHtml((resp.periodo || {}).fim || '?')}.</div>
+
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:12px; margin:16px 0;">
+        <div class="card"><div class="lbl">Lançamentos no extrato</div><div class="val" style="font-size:20px;">${r.totalExtrato ?? 0}</div></div>
+        <div class="card"><div class="lbl">Lançamentos no sistema</div><div class="val" style="font-size:20px;">${r.totalSistema ?? 0}</div></div>
+        <div class="card"><div class="lbl">Conciliados</div><div class="val" style="font-size:20px; color:var(--olive);">${r.conciliados ?? 0}</div></div>
+        <div class="card"><div class="lbl">Valor divergente</div><div class="val" style="font-size:20px; color:var(--gold);">${r.valorDivergente ?? 0}</div></div>
+        <div class="card"><div class="lbl">Só no extrato</div><div class="val" style="font-size:20px; color:var(--red);">${r.soNoExtrato ?? 0}</div></div>
+        <div class="card"><div class="lbl">Só no sistema</div><div class="val" style="font-size:20px; color:var(--red);">${r.soNoSistema ?? 0}</div></div>
+        ${r.semSinalIdentificado ? `<div class="card"><div class="lbl">Sem sinal identificado</div><div class="val" style="font-size:20px; color:var(--gold);">${r.semSinalIdentificado}</div></div>` : ''}
+      </div>
+
+      ${semDivergencias ? `<p style="color:var(--olive); font-weight:600;">Nenhuma divergência encontrada — o extrato bate com o sistema neste período.</p>` : ''}
+
+      ${linhaDivergValor ? `
+        <div class="section-title">Valor divergente na mesma data</div>
+        <div style="overflow-x:auto; margin-bottom:20px;"><table class="report">
+          <thead><tr><th>Data</th><th>Extrato</th><th style="text-align:right;">Valor (extrato)</th><th>Sistema</th><th style="text-align:right;">Valor (sistema)</th></tr></thead>
+          <tbody>${linhaDivergValor}</tbody>
+        </table></div>` : ''}
+
+      ${linhaSoExtrato ? `
+        <div class="section-title">Só aparece no extrato (falta lançar no sistema)</div>
+        <div style="overflow-x:auto; margin-bottom:20px;"><table class="report">
+          <thead><tr><th>Data</th><th>Descrição</th><th style="text-align:right;">Valor</th><th>Tipo</th></tr></thead>
+          <tbody>${linhaSoExtrato}</tbody>
+        </table></div>` : ''}
+
+      ${linhaSoSistema ? `
+        <div class="section-title">Só aparece no sistema (não achei no extrato)</div>
+        <div style="overflow-x:auto; margin-bottom:20px;"><table class="report">
+          <thead><tr><th>Data</th><th>Descrição</th><th style="text-align:right;">Valor</th><th>Tipo</th></tr></thead>
+          <tbody>${linhaSoSistema}</tbody>
+        </table></div>` : ''}
+
+      ${linhaSemSinal ? `
+        <div class="section-title">Sem sinal identificado no extrato (conferir manualmente)</div>
+        <div style="overflow-x:auto; margin-bottom:20px;"><table class="report">
+          <thead><tr><th>Data</th><th>Descrição</th><th style="text-align:right;">Valor</th><th style="text-align:right;">Saldo</th></tr></thead>
+          <tbody>${linhaSemSinal}</tbody>
+        </table></div>` : ''}
+    `;
   }
 
   async function handleFinanciamentosUpload(file, tipo){
@@ -4594,6 +4757,7 @@ document.getElementById('btnContratos').addEventListener('click', openContratosP
   document.getElementById('btnDespesasFinanceiras').addEventListener('click', ()=>openDespesasFinanceirasPanel());
 document.getElementById('btnFuncionarios').addEventListener('click', openFuncionariosPanel);
 document.getElementById('btnContasPagas').addEventListener('click', ()=>openContasPagasPanel());
+document.getElementById('btnConciliacao').addEventListener('click', ()=>openConciliacaoPanel());
 
 document.getElementById('loginForm').addEventListener('submit', async e=>{
   e.preventDefault();
