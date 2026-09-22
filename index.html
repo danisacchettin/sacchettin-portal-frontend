@@ -520,6 +520,11 @@ Fica fora de .wrap para continuar visível quando .wrap é escondido em @media p
       <div class="val" style="font-size:19px;">Enviar extrato (PDF)</div>
       <div class="sub">Compara o extrato do banco com o Caixa e Bancos e aponta as diferenças</div>
     </div>
+    <div class="card" id="btnChequesRecebidos">
+      <div class="lbl">Cheques Recebidos</div>
+      <div class="val" style="font-size:19px;">Controle de cheques</div>
+      <div class="sub">Em carteira, repassados a fornecedor ou com título antecipado</div>
+    </div>
   </div>
 
   <footer class="foot">
@@ -1908,6 +1913,26 @@ async function baixarAnexo(id, nome){
     </tr>
     `).join('');
 
+    // Sub-item "Deságio de Antecipação de Recebíveis" — juros/deságio cobrado quando um cheque
+    // recebido é cedido a uma financeira antes do vencimento (ver "Título antecipado" em
+    // Cheques Recebidos, POST/PATCH /api/cheques em src/routes/cheques.js). Hoje só acontece no
+    // Cresol, mas o detalhamento é por credor/financeira porque pode crescer (pedido da
+    // Danielle, 22/09/2026: "com certeza. Ja faça agora, inclusive").
+    const da = resumo.desagioAntecipacao || { mesAtual: 0, mesAnterior: null, porCredor: [] };
+    const deltaDa = da.mesAtual - (da.mesAnterior || 0);
+    const deltaDaCor = deltaDa > 0 ? 'var(--red)' : (deltaDa < 0 ? 'var(--olive)' : 'var(--ink-faint)');
+    const deltaDaSeta = deltaDa > 0 ? '▲' : (deltaDa < 0 ? '▼' : '—');
+    const deltaDaTxt = da.mesAnterior != null
+    ? `${deltaDaSeta} ${fmtBRL(Math.abs(deltaDa))} vs. mês anterior (${fmtBRL(da.mesAnterior)})`
+      : 'sem dado do mês anterior';
+    const porCredorDa = da.porCredor || [];
+    const linhasDesagio = porCredorDa.map(c => `
+    <tr>
+    <td>${escapeHtml(c.credor)}</td>
+    <td style="text-align:right; font-weight:600;">${fmtBRL(c.total)}</td>
+    </tr>
+    `).join('');
+
     const contratosPJ = resumo.contratosPJ || [];
     const contratosPF = resumo.contratosPF || [];
     const contratosChart = resumo.contratos || [];
@@ -1960,7 +1985,7 @@ async function baixarAnexo(id, nome){
     <button type="button" class="btn ghost" onclick="openDespesasFinanceirasPanel('${mesVizinho(mesAtual, 1)}')">Mês seguinte →</button>
     </div>
 
-    <div class="grid" style="grid-template-columns:repeat(3, minmax(220px, 1fr));">
+    <div class="grid" style="grid-template-columns:repeat(4, minmax(220px, 1fr));">
     <div class="card">
     <div class="lbl">Juros de Cheque Especial <span style="font-size:10px; padding:2px 8px; border-radius:20px; background:var(--gold-wash); color:var(--gold); vertical-align:middle;">aguardando dados</span></div>
     <div class="val" style="font-size:22px; color:var(--ink-faint);">— —</div>
@@ -1978,12 +2003,24 @@ async function baixarAnexo(id, nome){
     <div class="sub" style="color:${deltaJmCor};">${deltaJmTxt}</div>
     <div class="sub">Mora paga ao quitar títulos em atraso (à parte de Pix/boleto/manutenção de conta).</div>
     </div>
+    <div class="card">
+    <div class="lbl">Deságio de Antecipação de Recebíveis</div>
+    <div class="val" style="font-size:22px;">${fmtBRL(da.mesAtual)}</div>
+    <div class="sub" style="color:${deltaDaCor};">${deltaDaTxt}</div>
+    <div class="sub">Custo de antecipar cheques/recebíveis junto a uma financeira antes do vencimento.</div>
+    </div>
     </div>
 
     <div class="section-title">Juros e Encargos Moratórios por credor (mês de referência)</div>
     <div style="overflow-x:auto; margin-bottom:22px;">
     <table class="report"><thead><tr><th>Credor</th><th style="text-align:right;">Total pago em mora</th></tr></thead>
     <tbody>${linhasJurosMora || '<tr><td colspan="2">Nenhum juro/encargo de mora registrado neste mês.</td></tr>'}</tbody></table>
+    </div>
+
+    <div class="section-title">Deságio de Antecipação de Recebíveis por credor/financeira (mês de referência)</div>
+    <div style="overflow-x:auto; margin-bottom:22px;">
+    <table class="report"><thead><tr><th>Credor/Financeira</th><th style="text-align:right;">Total pago em deságio</th></tr></thead>
+    <tbody>${linhasDesagio || '<tr><td colspan="2">Nenhuma antecipação de recebíveis registrada neste mês.</td></tr>'}</tbody></table>
     </div>
 
     <div class="section-title">Juros de financiamentos por mês</div>
@@ -2309,6 +2346,129 @@ async function baixarAnexo(id, nome){
           <tbody>${linhaSemSinal}</tbody>
         </table></div>` : ''}
     `;
+  }
+
+  // ---------- Cheques Recebidos (pedido da Danielle, 22/09/2026) ----------
+  // Relatório dos cheques cadastrados em Contas a Receber (forma "Cheque" — ver
+  // renderChequesReceber/toggleChequesReceber acima), com filtro por status e edição de status
+  // (inclusive os campos condicionais de "Título antecipado": cedido_para/valor_juros_desagio,
+  // que o backend usa para gerar automaticamente a despesa de deságio — ver PATCH /api/cheques/:id).
+  const STATUS_CHEQUE = ['Em carteira', 'Repassado a fornecedor', 'Título antecipado'];
+  async function openChequesRecebidosPanel(statusFiltro){
+    openOverlay(`<div class="panel-head"><div><h2>Cheques Recebidos</h2><p>Carregando…</p></div><button class="close-x" onclick="closeOverlay()">✕</button></div>`);
+    try{
+      const qs = statusFiltro ? ('?status=' + encodeURIComponent(statusFiltro)) : '';
+      const cheques = await apiFetch('/api/cheques' + qs);
+      renderChequesRecebidosPanel(cheques || [], statusFiltro || '');
+    }catch(err){
+      openOverlay(`
+      <div class="panel-head"><div><h2>Cheques Recebidos</h2><p style="color:var(--red);">Erro ao carregar: ${err.message}</p></div><button class="close-x" onclick="closeOverlay()">✕</button></div>
+      `);
+    }
+  }
+
+  function renderChequesRecebidosPanel(cheques, statusFiltro){
+    const optionsStatus = ['<option value="">Todos os status</option>']
+      .concat(STATUS_CHEQUE.map(s => `<option value="${escapeHtml(s)}" ${s===statusFiltro?'selected':''}>${escapeHtml(s)}</option>`))
+      .join('');
+    const tagCor = { 'Em carteira':'tag-aberto', 'Repassado a fornecedor':'tag-pago', 'Título antecipado':'tag-pago' };
+    const linhas = cheques.map(c => `
+      <tr>
+        <td>${escapeHtml(c.numero_cheque || '—')}</td>
+        <td>${escapeHtml(c.banco || '—')}</td>
+        <td>${escapeHtml(c.sacado_nome || '—')}</td>
+        <td style="text-align:right;">${fmtBRL(c.valor)}</td>
+        <td>${c.data_pre_datada ? fmtDate(c.data_pre_datada) : '—'}</td>
+        <td><span class="tag-status ${tagCor[c.status] || 'tag-aberto'}">${escapeHtml(c.status)}</span></td>
+        <td>${escapeHtml(c.status_financeiro || '—')}</td>
+        <td><button type="button" class="btn-mini cheque-editar-status" data-id="${c.id}">Editar status</button></td>
+      </tr>
+    `).join('');
+    openOverlay(`
+      <div class="panel-head">
+        <div><h2>Cheques Recebidos</h2><p>Controle dos cheques recebidos em Contas a Receber — em carteira, repassados a fornecedor ou com título antecipado junto a uma financeira.</p></div>
+        <button class="close-x" onclick="closeOverlay()">✕</button>
+      </div>
+      <div class="form-grid" style="margin-bottom:16px;">
+        <div class="field full"><label>Status</label><select id="chStatusFiltro">${optionsStatus}</select></div>
+      </div>
+      <div class="panel-actions" style="margin-bottom:14px;">
+        <button type="button" class="btn olive" id="chFiltrar">Filtrar</button>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="report">
+          <thead><tr><th>Nº cheque</th><th>Banco</th><th>Cliente</th><th style="text-align:right;">Valor</th><th>Data pré-datada</th><th>Status do cheque</th><th>Status do título</th><th></th></tr></thead>
+          <tbody>${linhas || '<tr><td colspan="8">Nenhum cheque encontrado.</td></tr>'}</tbody>
+        </table>
+      </div>
+      <div id="chequeEdicaoWrap"></div>
+    `);
+    document.getElementById('chFiltrar').addEventListener('click', ()=>{
+      openChequesRecebidosPanel(document.getElementById('chStatusFiltro').value);
+    });
+    document.querySelectorAll('.cheque-editar-status').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const cheque = cheques.find(c => String(c.id) === btn.dataset.id);
+        if(cheque) renderEdicaoStatusCheque(cheque, statusFiltro);
+      });
+    });
+  }
+
+  function renderEdicaoStatusCheque(cheque, statusFiltro){
+    const optionsStatus = STATUS_CHEQUE.map(s => `<option value="${escapeHtml(s)}" ${s===cheque.status?'selected':''}>${escapeHtml(s)}</option>`).join('');
+    document.getElementById('chequeEdicaoWrap').innerHTML = `
+      <div style="background:var(--paper-2); border:1px solid var(--border); border-radius:10px; padding:14px; margin-top:16px;">
+        <div class="section-title" style="margin-top:0;">Editar status — cheque ${escapeHtml(cheque.numero_cheque || 's/nº')} (${fmtBRL(cheque.valor)})</div>
+        <div class="form-grid">
+          <div class="field"><label>Status</label><select id="chNovoStatus">${optionsStatus}</select></div>
+          <div class="field full" id="chCedidoParaWrap" style="display:${cheque.status==='Título antecipado'?'':'none'};">
+            <label>Cedido para (financeira/pessoa)</label>
+            <input type="text" id="chCedidoPara" value="${escapeHtml(cheque.cedido_para || '')}" placeholder="Ex.: Cresol">
+          </div>
+          <div class="field" id="chJurosWrap" style="display:${cheque.status==='Título antecipado'?'':'none'};">
+            <label>Valor dos juros/deságio (R$)</label>
+            <input type="number" step="0.01" id="chJurosDesagio" value="${cheque.valor_juros_desagio != null ? cheque.valor_juros_desagio : ''}">
+          </div>
+          <div class="field full"><label>Observações</label><input type="text" id="chObsEdicao" placeholder="opcional"></div>
+        </div>
+        <p style="font-size:11.5px; color:var(--ink-soft); margin:4px 0 10px;">Ao marcar "Título antecipado" com o valor de juros/deságio preenchido, o sistema lança automaticamente essa despesa em Contas a Pagar (categoria "Deságio de Antecipação de Recebíveis"), já paga — alimenta o card de Despesas Financeiras.</p>
+        <div class="panel-actions">
+          <button type="button" class="btn olive" id="chSalvarStatus">Salvar status</button>
+          <button type="button" class="btn ghost" id="chCancelarStatus">Cancelar</button>
+        </div>
+      </div>
+    `;
+    document.getElementById('chNovoStatus').addEventListener('change', e=>{
+      const ehAntecipado = e.target.value === 'Título antecipado';
+      document.getElementById('chCedidoParaWrap').style.display = ehAntecipado ? '' : 'none';
+      document.getElementById('chJurosWrap').style.display = ehAntecipado ? '' : 'none';
+    });
+    document.getElementById('chCancelarStatus').addEventListener('click', ()=>{
+      document.getElementById('chequeEdicaoWrap').innerHTML = '';
+    });
+    document.getElementById('chSalvarStatus').addEventListener('click', async ()=>{
+      const novoStatus = document.getElementById('chNovoStatus').value;
+      const cedidoPara = document.getElementById('chCedidoPara').value.trim();
+      const jurosDesagio = document.getElementById('chJurosDesagio').value;
+      const observacoes = document.getElementById('chObsEdicao').value.trim();
+      if(novoStatus === 'Título antecipado' && !cedidoPara && !cheque.cedido_para){
+        alert('Informe para qual financeira/pessoa o título foi cedido.');
+        return;
+      }
+      const btn = document.getElementById('chSalvarStatus');
+      btn.disabled = true;
+      try{
+        await apiFetch(`/api/cheques/${cheque.id}`, {method:'PATCH', body: JSON.stringify({
+          status: novoStatus, cedido_para: cedidoPara || undefined,
+          valor_juros_desagio: jurosDesagio !== '' ? parseFloat(jurosDesagio) : undefined,
+          observacoes: observacoes || undefined,
+        })});
+        openChequesRecebidosPanel(statusFiltro);
+      }catch(err){
+        alert('Não foi possível salvar: ' + err.message);
+        btn.disabled = false;
+      }
+    });
   }
 
   async function handleFinanciamentosUpload(file, tipo){
@@ -3374,7 +3534,7 @@ const FIELD_SETS = {
     {name:'data_compra', label:'Data da compra', type:'date'},
     {name:'valor_original', label:'Valor (R$)', type:'number'},
     {name:'vencimento', label:'Vencimento', type:'date'},
-    {name:'forma', label:'Forma de recebimento', type:'select', options:['PIX','Boleto','TED','Cartão','Dinheiro']},
+    {name:'forma', label:'Forma de recebimento', type:'select', options:['PIX','Boleto','TED','Cartão','Dinheiro','Cheque']},
     {name:'data_recebimento', label:'Data de recebimento (opcional)', type:'date', optionalDate:true},
     {name:'conta_bancaria', label:'Conta bancária / PIX / Caixa (se já recebido)', type:'cadastro', cadastro:'contasBancarias', full:true},
     {name:'observacoes', label:'Observações', type:'text', full:true},
@@ -3396,6 +3556,11 @@ let entryMode = 'manual';
 // lançar de uma vez vários boletos originados da mesma NF (mesmo fornecedor/categoria/documento),
 // cada um com seu próprio valor, vencimento e número de boleto/orçamento.
 let parcelasPagar = [];
+// Cheques de uma Conta a Receber (forma "Cheque"): array de {numero_cheque, banco, agencia,
+// titular, valor, data_emissao, data_pre_datada} — mesma ideia de parcelasPagar acima, mas cada
+// cheque vira seu próprio título em Contas a Receber (POST /api/cheques), com vencimento = data
+// pré-datada (pedido da Danielle, 22/09/2026).
+let chequesReceber = [];
 
 // Metadados de cada lista de cadastro: endpoint da API, qual campo do JSON traz o "nome" a
 // exibir/gravar, rótulo usado em "+ Cadastrar novo ___" e quais campos extras (opcionais)
@@ -3567,14 +3732,22 @@ function renderFormFields(prefill){
     const defaultVal = (f.type==='date' && !f.optionalDate) ? todayISO() : '';
     const val = prefill[f.name] !== undefined ? prefill[f.name] : defaultVal;
     const stepAttr = f.type==='number' ? ' step="0.01"' : '';
+    // Campo "forma" de Contas a Receber ganha onchange pra alternar pra lista de cheques quando
+    // a forma escolhida é "Cheque" (ver toggleChequesReceber/renderChequesReceber abaixo).
+    const selectExtraAttr = (f.type==='select' && f.name==='forma' && currentType==='receber')
+      ? ` onchange="toggleChequesReceber(this.value)"` : '';
     const inputHTML = f.type==='select'
-      ? `<select name="${f.name}">${f.options.map(o=>`<option ${val===o?'selected':''}>${o}</option>`).join('')}</select>`
+      ? `<select name="${f.name}"${selectExtraAttr}>${f.options.map(o=>`<option ${val===o?'selected':''}>${o}</option>`).join('')}</select>`
       : `<input name="${f.name}" type="${f.type}" value="${val}"${stepAttr} />`;
     return `<div class="field ${f.full?'full':''}"><label>${f.label}</label>${inputHTML}</div>`;
   }).join('');
   document.getElementById('formFields').style.display = 'grid';
   if(currentType === 'pagar'){
     renderParcelasPagar(prefill);
+  } else if(currentType === 'receber'){
+    chequesReceber = [];
+    const formaSelect = document.querySelector('#formFields select[name="forma"]');
+    toggleChequesReceber(formaSelect ? formaSelect.value : 'PIX');
   } else {
     document.getElementById('parcelasWrap').innerHTML = '';
   }
@@ -3682,6 +3855,75 @@ function renderParcelasPagar(prefill){
   });
 }
 
+/* Cheques recebidos (Contas a Receber, forma "Cheque") — pedido da Danielle (22/09/2026):
+   distribuidora recebe pagamento em cheque, às vezes mais de um na mesma venda, muitas vezes
+   pré-datado. Em vez do único par Valor/Vencimento genérico do formulário (que fica escondido
+   quando a forma é Cheque), abre uma lista de cheques — cada um com número, banco, agência,
+   titular, valor, data de emissão e data pré-datada (data em que o cheque entra sozinho no
+   controle de Contas a Receber para compensação). Ao salvar, em vez de POST /api/contas-receber,
+   envia para POST /api/cheques, que cria um título de Contas a Receber por cheque automaticamente. */
+function toggleChequesReceber(formaValor){
+  const wrap = document.getElementById('parcelasWrap');
+  if(!wrap) return;
+  const ehCheque = formaValor === 'Cheque';
+  // Some com os campos genéricos "Valor (R$)" e "Vencimento" quando é Cheque — cada cheque tem
+  // seu próprio valor e sua própria data pré-datada, então esses dois campos ficam sem uso.
+  const campoValor = document.querySelector('#formFields input[name="valor_original"]');
+  const campoVenc = document.querySelector('#formFields input[name="vencimento"]');
+  if(campoValor && campoValor.closest('.field')) campoValor.closest('.field').style.display = ehCheque ? 'none' : '';
+  if(campoVenc && campoVenc.closest('.field')) campoVenc.closest('.field').style.display = ehCheque ? 'none' : '';
+  if(ehCheque){
+    renderChequesReceber();
+  } else {
+    wrap.innerHTML = '';
+    chequesReceber = [];
+  }
+}
+
+function renderChequesReceber(){
+  if(!chequesReceber.length){
+    chequesReceber = [{ numero_cheque:'', banco:'', agencia:'', titular:'', valor:'', data_emissao: todayISO(), data_pre_datada: todayISO() }];
+  }
+  const linhas = chequesReceber.map((c, i) => `
+    <div class="cheque-row" data-idx="${i}" style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; margin-bottom:8px; padding-bottom:8px; border-bottom:1px dashed var(--border);">
+      <div class="field" style="flex:1; min-width:100px; margin:0;"><label>Nº do cheque</label><input type="text" class="cheque-numero" value="${escapeHtml(c.numero_cheque)}" /></div>
+      <div class="field" style="flex:1; min-width:110px; margin:0;"><label>Banco</label><input type="text" class="cheque-banco" value="${escapeHtml(c.banco)}" /></div>
+      <div class="field" style="flex:1; min-width:80px; margin:0;"><label>Agência</label><input type="text" class="cheque-agencia" value="${escapeHtml(c.agencia)}" /></div>
+      <div class="field" style="flex:1; min-width:140px; margin:0;"><label>Titular</label><input type="text" class="cheque-titular" value="${escapeHtml(c.titular)}" /></div>
+      <div class="field" style="flex:1; min-width:110px; margin:0;"><label>Valor (R$)</label><input type="number" step="0.01" class="cheque-valor" value="${escapeHtml(String(c.valor))}" /></div>
+      <div class="field" style="flex:1; min-width:130px; margin:0;"><label>Data de emissão</label><input type="date" class="cheque-emissao" value="${escapeHtml(c.data_emissao)}" /></div>
+      <div class="field" style="flex:1; min-width:150px; margin:0;"><label>Data pré-datada (compensação)</label><input type="date" class="cheque-predatada" value="${escapeHtml(c.data_pre_datada)}" /></div>
+      ${chequesReceber.length>1 ? `<button type="button" class="btn-mini cheque-remover" data-idx="${i}" title="Remover cheque" style="height:34px;">✕</button>` : ''}
+    </div>`).join('');
+  document.getElementById('parcelasWrap').innerHTML = `
+    <div class="section-title" style="margin-top:4px;">Cheques</div>
+    <p style="font-size:12px; color:var(--ink-soft); margin:0 0 8px;">Informe cada cheque separadamente (pode ser mais de um na mesma venda). A "Data pré-datada" é quando o cheque entra automaticamente no controle de Contas a Receber para compensação.</p>
+    ${linhas}
+    <button type="button" class="btn ghost" id="chequeAdicionar" style="margin-top:4px;">+ Adicionar outro cheque</button>
+  `;
+  document.querySelectorAll('#parcelasWrap .cheque-row').forEach(row=>{
+    const idx = Number(row.dataset.idx);
+    row.querySelector('.cheque-numero').addEventListener('input', e=>{ chequesReceber[idx].numero_cheque = e.target.value; });
+    row.querySelector('.cheque-banco').addEventListener('input', e=>{ chequesReceber[idx].banco = e.target.value; });
+    row.querySelector('.cheque-agencia').addEventListener('input', e=>{ chequesReceber[idx].agencia = e.target.value; });
+    row.querySelector('.cheque-titular').addEventListener('input', e=>{ chequesReceber[idx].titular = e.target.value; });
+    row.querySelector('.cheque-valor').addEventListener('input', e=>{ chequesReceber[idx].valor = e.target.value; });
+    row.querySelector('.cheque-emissao').addEventListener('input', e=>{ chequesReceber[idx].data_emissao = e.target.value; });
+    row.querySelector('.cheque-predatada').addEventListener('input', e=>{ chequesReceber[idx].data_pre_datada = e.target.value; });
+  });
+  document.getElementById('chequeAdicionar').addEventListener('click', ()=>{
+    chequesReceber.push({ numero_cheque:'', banco:'', agencia:'', titular:'', valor:'', data_emissao: todayISO(), data_pre_datada: todayISO() });
+    renderChequesReceber();
+  });
+  document.querySelectorAll('#parcelasWrap .cheque-remover').forEach(btn=>{
+    btn.addEventListener('click', e=>{
+      const idx = Number(e.currentTarget.dataset.idx);
+      chequesReceber.splice(idx, 1);
+      renderChequesReceber();
+    });
+  });
+}
+
 /* ---------- alternativa: enviar documento (NF, boleto, extrato) ---------- */
 function renderDropzone(){
   document.getElementById('dropzoneWrap').innerHTML = `
@@ -3759,6 +4001,7 @@ document.getElementById('typeToggle').addEventListener('click', e=>{
   const btn = e.target.closest('button'); if(!btn) return;
   currentType = btn.dataset.type;
   parcelasPagar = [];
+  chequesReceber = [];
   document.getElementById('salvoFeedback').style.display = 'none';
   document.querySelectorAll('#typeToggle button').forEach(b=>b.classList.toggle('active', b===btn));
   if(entryMode==='documento'){ renderDropzone(); document.getElementById('formFields').style.display='none'; document.getElementById('formFields').innerHTML=''; document.getElementById('parcelasWrap').innerHTML=''; }
@@ -3844,6 +4087,26 @@ document.getElementById('entryForm').addEventListener('submit', async e=>{
           data_pagamento: obj.data_pagamento || null, conta_bancaria_id: resolved.conta_bancaria || null,
         })});
       }
+    } else if(currentType==='receber' && obj.forma === 'Cheque'){
+      // Recebimento em cheque: um título de Contas a Receber por cheque, gerado automaticamente
+      // pelo backend (ver POST /api/cheques em src/routes/cheques.js), com vencimento = data
+      // pré-datada de cada cheque.
+      const linhasCheques = Array.from(document.querySelectorAll('#parcelasWrap .cheque-row')).map(row=>({
+        numero_cheque: row.querySelector('.cheque-numero').value.trim() || null,
+        banco: row.querySelector('.cheque-banco').value.trim() || null,
+        agencia: row.querySelector('.cheque-agencia').value.trim() || null,
+        titular: row.querySelector('.cheque-titular').value.trim() || null,
+        valor: parseFloat(row.querySelector('.cheque-valor').value) || 0,
+        data_emissao: row.querySelector('.cheque-emissao').value || null,
+        data_pre_datada: row.querySelector('.cheque-predatada').value,
+      })).filter(c => c.valor > 0 && c.data_pre_datada);
+      if(!linhasCheques.length){
+        throw new Error('Informe ao menos um cheque com valor e data pré-datada.');
+      }
+      await apiFetch('/api/cheques', {method:'POST', body: JSON.stringify({
+        sacado_id: resolved.cliente, categoria_id: resolved.categoria, documento: obj.documento || null,
+        observacoes: obj.observacoes, cheques: linhasCheques,
+      })});
     } else if(currentType==='receber'){
       await apiFetch('/api/contas-receber', {method:'POST', body: JSON.stringify({
         sacado_id: resolved.cliente, categoria_id: resolved.categoria, vencimento: obj.vencimento,
@@ -3860,6 +4123,7 @@ document.getElementById('entryForm').addEventListener('submit', async e=>{
       })});
     }
     parcelasPagar = [];
+    chequesReceber = [];
     if(acaoSalvar === 'novo'){
       // Mantém o painel aberto, no mesmo tipo/modo, com os campos limpos — pra digitar o
       // próximo lançamento em seguida sem precisar reabrir o card "Novo lançamento" toda vez.
@@ -4855,6 +5119,7 @@ document.getElementById('btnContratos').addEventListener('click', openContratosP
 document.getElementById('btnFuncionarios').addEventListener('click', openFuncionariosPanel);
 document.getElementById('btnContasPagas').addEventListener('click', ()=>openContasPagasPanel());
 document.getElementById('btnConciliacao').addEventListener('click', ()=>openConciliacaoPanel());
+document.getElementById('btnChequesRecebidos').addEventListener('click', ()=>openChequesRecebidosPanel());
 
 document.getElementById('loginForm').addEventListener('submit', async e=>{
   e.preventDefault();
