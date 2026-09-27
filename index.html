@@ -525,6 +525,11 @@ Fica fora de .wrap para continuar visível quando .wrap é escondido em @media p
       <div class="val" style="font-size:19px;">Controle de cheques</div>
       <div class="sub">Em carteira, repassados a fornecedor ou com título antecipado</div>
     </div>
+    <div class="card" id="btnContratosPrestadores">
+      <div class="lbl">Contratos de Prestadores</div>
+      <div class="val" style="font-size:19px;">Serviços terceirizados</div>
+      <div class="sub">Contrato anexado, parcelas de pagamento e alerta de vencimento<span id="badgeContratosPrestadores"></span></div>
+    </div>
   </div>
 
   <footer class="foot">
@@ -776,6 +781,10 @@ async function carregarDados(){
     const el = document.getElementById('syncTxt');
     if(el) el.textContent = 'Erro ao exibir os dados recebidos';
   }
+  // Selo de alerta do card "Contratos de Prestadores" (contratos a 30 dias do vencimento) —
+  // chamada própria, com seu próprio try/catch, para nunca travar o carregamento do resto do
+  // dashboard se essa parte falhar (mesmo cuidado do bloco acima).
+  atualizarBadgeContratosPrestadores();
 }
 
 function loadMockData(){
@@ -1852,6 +1861,352 @@ async function baixarAnexo(id, nome){
     URL.revokeObjectURL(url);
   }catch(err){ alert('Erro ao baixar anexo: ' + err.message); }
 }
+
+/* ==========================================================================================
+   CONTRATOS DE PRESTADORES DE SERVIÇOS TERCEIRIZADOS — pedido da Danielle (27/09/2026):
+   segurança, limpeza, TI etc. O contrato é anexado reaproveitando o MESMO sistema de anexos já
+   usado no card "Contratos" (financiamentos) logo acima — POST/GET /api/upload/... — em vez de
+   um jeito novo de guardar arquivo. As parcelas de pagamento são lançadas de uma vez em Contas a
+   Pagar no momento do cadastro (contrato_prestador_id amarra cada parcela de volta ao contrato).
+   "Dias para vencer" e o alerta de 30 dias nunca são um campo salvo: vêm calculados do backend
+   a partir de data_vencimento a cada consulta.
+   ========================================================================================== */
+const STATUS_CONTRATO_PRESTADOR = ['Ativo', 'Encerrado', 'Renovado'];
+let parcelasContratoPrestador = [];
+
+// Selo de alerta no card do dashboard ("⚠ N vencendo em 30 dias") — chamada própria, com seu
+// próprio try/catch (ver carregarDados acima), pra nunca travar o resto do dashboard se isso falhar.
+async function atualizarBadgeContratosPrestadores(){
+  try{
+    const contratos = await apiFetch('/api/contratos-prestadores');
+    const badge = document.getElementById('badgeContratosPrestadores');
+    if(!badge) return;
+    const ativos = (contratos||[]).filter(c => c.status === 'Ativo' && c.dias_para_vencer != null);
+    const vencidos = ativos.filter(c => c.dias_para_vencer < 0);
+    const vencendo = ativos.filter(c => c.dias_para_vencer >= 0 && c.dias_para_vencer <= 30);
+    if(vencidos.length){
+      badge.innerHTML = `<span style="display:inline-block; margin-left:6px; font-size:10px; padding:2px 8px; border-radius:20px; background:var(--red-wash); color:var(--red); font-weight:600; vertical-align:middle;">⚠ ${vencidos.length} vencido(s)</span>`;
+    } else if(vencendo.length){
+      badge.innerHTML = `<span style="display:inline-block; margin-left:6px; font-size:10px; padding:2px 8px; border-radius:20px; background:var(--gold-wash); color:var(--gold); font-weight:600; vertical-align:middle;">⚠ ${vencendo.length} vencendo em 30 dias</span>`;
+    } else {
+      badge.innerHTML = '';
+    }
+  }catch(e){
+    console.error('Não consegui atualizar o alerta de Contratos de Prestadores:', e);
+  }
+}
+
+async function openContratosPrestadoresPanel(){
+  openOverlay(`<div class="panel-head"><div><h2>Contratos de Prestadores</h2><p>Carregando…</p></div><button class="close-x" onclick="closeOverlay()">✕</button></div>`);
+  try{
+    const lista = await apiFetch('/api/contratos-prestadores');
+    await carregarCadastros();
+    parcelasContratoPrestador = [];
+    renderContratosPrestadoresPanel(lista || []);
+  }catch(err){
+    openOverlay(`
+      <div class="panel-head"><div><h2>Contratos de Prestadores</h2><p style="color:var(--red);">Erro ao carregar: ${err.message}</p></div><button class="close-x" onclick="closeOverlay()">✕</button></div>
+    `);
+  }
+}
+
+function renderContratosPrestadoresPanel(lista){
+  const tagStatus = { 'Ativo':'tag-aberto', 'Encerrado':'tag-pago', 'Renovado':'tag-pago' };
+  const linhas = lista.map(c => {
+    const dias = c.dias_para_vencer;
+    let corLinha = '';
+    if(c.status === 'Ativo' && dias != null){
+      if(dias < 0) corLinha = 'background:var(--red-wash);';
+      else if(dias <= 30) corLinha = 'background:var(--gold-wash);';
+    }
+    const diasTxt = dias == null ? '—' : (dias < 0 ? `vencido há ${Math.abs(dias)} dia(s)` : `${dias} dia(s)`);
+    return `
+    <tr data-id="${c.id}" style="${corLinha}">
+      <td>
+        <div style="font-weight:600;">${escapeHtml(c.fornecedor_nome || 'Prestador não informado')}</div>
+        <div style="font-size:11px; color:var(--ink-faint);">${escapeHtml(c.numero_contrato || 'sem número')}${c.categoria_nome ? ' · ' + escapeHtml(c.categoria_nome) : ''}</div>
+      </td>
+      <td style="max-width:220px;">${escapeHtml(c.descricao_servico || '—')}</td>
+      <td>${fmtDate(c.data_vencimento)}<div style="font-size:11px; color:var(--ink-faint);">${diasTxt}</div></td>
+      <td>
+        <div style="font-size:11.5px;">${c.qtd_parcelas} parcela(s)</div>
+        <div style="font-size:11px; color:var(--ink-faint);">${fmtBRL(c.valor_pago_total)} pago de ${fmtBRL(c.valor_parcelas_total)}</div>
+      </td>
+      <td><span class="tag-status ${tagStatus[c.status] || 'tag-aberto'}">${escapeHtml(c.status)}</span></td>
+      <td>
+        <input type="file" class="cpr-anexo-input" style="display:none;" accept="application/pdf,image/*,.doc,.docx">
+        <button type="button" class="btn-mini cpr-anexar">Anexar contrato</button>
+        <div class="cpr-anexos-lista" style="font-size:10.5px; margin-top:4px;"></div>
+        <span class="cpr-msg" style="font-size:10.5px; display:block; margin-top:4px;"></span>
+      </td>
+      <td>
+        <button type="button" class="btn-mini cpr-editar" data-id="${c.id}">Editar status</button>
+        <button type="button" class="btn-mini cpr-excluir" data-id="${c.id}" style="margin-top:4px;">Excluir</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  openOverlay(`
+    <div class="panel-head">
+      <div><h2>Contratos de Prestadores</h2><p>Contratos de serviços terceirizados (segurança, limpeza, TI etc.) — com o contrato anexado, as parcelas de pagamento já lançadas em Contas a Pagar, e alerta quando faltam 30 dias para o vencimento.</p></div>
+      <button class="close-x" onclick="closeOverlay()">✕</button>
+    </div>
+    <div style="overflow-x:auto;">
+      <table class="report"><thead><tr><th>Prestador / nº</th><th>Serviço</th><th>Vencimento</th><th>Parcelas</th><th>Status</th><th>Contrato anexado</th><th></th></tr></thead>
+      <tbody id="cprBody">${linhas || '<tr><td colspan="7">Nenhum contrato cadastrado ainda.</td></tr>'}</tbody></table>
+    </div>
+    <div id="cprEdicaoWrap"></div>
+
+    <div class="section-title">Adicionar contrato</div>
+    <form id="formNovoContratoPrestador" class="notes-box" style="border-top:none; padding-top:0;">
+      <div class="form-grid" id="cprFormFields"></div>
+      <div id="cprParcelasWrap"></div>
+      <div id="cprNovoMsg" style="font-size:12px; margin-top:12px; display:none;"></div>
+      <button type="submit" class="btn gold" style="margin-top:14px;">Salvar contrato</button>
+    </form>
+
+    <div class="panel-actions" style="margin-top:20px;"><button type="button" class="btn ghost" onclick="closeOverlay()">Fechar</button></div>
+  `);
+
+  renderCamposNovoContratoPrestador();
+  renderParcelasContratoPrestador();
+
+  document.getElementById('formNovoContratoPrestador').addEventListener('submit', submeterNovoContratoPrestador);
+
+  document.querySelectorAll('#cprBody .cpr-anexar').forEach(btn=>{
+    btn.addEventListener('click', e=>{ e.target.closest('tr').querySelector('.cpr-anexo-input').click(); });
+  });
+  document.querySelectorAll('#cprBody .cpr-anexo-input').forEach(input=>{
+    input.addEventListener('change', async e=>{
+      const tr = e.target.closest('tr'); const id = tr.dataset.id;
+      const msg = tr.querySelector('.cpr-msg');
+      const file = e.target.files[0]; if(!file) return;
+      const fd = new FormData(); fd.append('arquivo', file); fd.append('entidade_id', id);
+      try{
+        await apiFetch('/api/upload/contratos_prestadores', {method:'POST', body: fd});
+        msg.textContent = 'Anexado ✓'; msg.style.color = 'var(--olive)';
+        await carregarAnexosEntidade('contratos_prestadores', id, tr.querySelector('.cpr-anexos-lista'));
+      }catch(err){ msg.textContent = 'Erro: ' + err.message; msg.style.color = 'var(--red)'; }
+    });
+  });
+  document.querySelectorAll('#cprBody tr[data-id]').forEach(tr=>{
+    carregarAnexosEntidade('contratos_prestadores', tr.dataset.id, tr.querySelector('.cpr-anexos-lista'));
+  });
+  document.querySelectorAll('#cprBody .cpr-editar').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const contrato = lista.find(c => String(c.id) === btn.dataset.id);
+      if(contrato) renderEdicaoContratoPrestador(contrato);
+    });
+  });
+  document.querySelectorAll('#cprBody .cpr-excluir').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      if(!confirm('Excluir este contrato? Só é permitido se nenhuma parcela dele já tiver sido paga — nesse caso, encerre o contrato em vez de excluir.')) return;
+      try{
+        await apiFetch(`/api/contratos-prestadores/${btn.dataset.id}`, {method:'DELETE'});
+        openContratosPrestadoresPanel();
+      }catch(err){ alert('Não foi possível excluir: ' + err.message); }
+    });
+  });
+}
+
+function renderEdicaoContratoPrestador(contrato){
+  const optionsStatus = STATUS_CONTRATO_PRESTADOR.map(s => `<option value="${escapeHtml(s)}" ${s===contrato.status?'selected':''}>${escapeHtml(s)}</option>`).join('');
+  document.getElementById('cprEdicaoWrap').innerHTML = `
+    <div style="background:var(--paper-2); border:1px solid var(--border); border-radius:10px; padding:14px; margin-top:16px;">
+      <div class="section-title" style="margin-top:0;">Editar contrato — ${escapeHtml(contrato.fornecedor_nome || 'prestador não informado')}</div>
+      <div class="form-grid">
+        <div class="field"><label>Status</label><select id="cprNovoStatus">${optionsStatus}</select></div>
+        <div class="field"><label>Data de vencimento</label><input type="date" id="cprNovoVencimento" value="${String(contrato.data_vencimento).slice(0,10)}"></div>
+        <div class="field"><label>Número do contrato</label><input type="text" id="cprNovoNumero" value="${escapeHtml(contrato.numero_contrato || '')}"></div>
+        <div class="field full"><label>Descrição do serviço</label><input type="text" id="cprNovaDescricao" value="${escapeHtml(contrato.descricao_servico || '')}"></div>
+        <div class="field full"><label>Observações (adiciona ao histórico)</label><input type="text" id="cprNovaObs" placeholder="opcional"></div>
+      </div>
+      <p style="font-size:11.5px; color:var(--ink-soft); margin:4px 0 10px;">Encerrar ou renovar o contrato não apaga nem altera as parcelas já lançadas em Contas a Pagar — se ainda houver parcela em aberto, ela continua lá normalmente (edite/exclua pela tela de Contas a Pagar, se for o caso).</p>
+      <div class="panel-actions">
+        <button type="button" class="btn olive" id="cprSalvarEdicao">Salvar</button>
+        <button type="button" class="btn ghost" id="cprCancelarEdicao">Cancelar</button>
+      </div>
+    </div>
+  `;
+  document.getElementById('cprCancelarEdicao').addEventListener('click', ()=>{ document.getElementById('cprEdicaoWrap').innerHTML=''; });
+  document.getElementById('cprSalvarEdicao').addEventListener('click', async ()=>{
+    const btn = document.getElementById('cprSalvarEdicao');
+    btn.disabled = true;
+    try{
+      await apiFetch(`/api/contratos-prestadores/${contrato.id}`, {method:'PATCH', body: JSON.stringify({
+        status: document.getElementById('cprNovoStatus').value,
+        data_vencimento: document.getElementById('cprNovoVencimento').value || undefined,
+        numero_contrato: document.getElementById('cprNovoNumero').value || undefined,
+        descricao_servico: document.getElementById('cprNovaDescricao').value || undefined,
+        observacoes: document.getElementById('cprNovaObs').value || undefined,
+      })});
+      await atualizarBadgeContratosPrestadores();
+      await openContratosPrestadoresPanel();
+    }catch(err){
+      alert('Não foi possível salvar: ' + err.message);
+      btn.disabled = false;
+    }
+  });
+}
+
+// Campos de cadastro (Prestador/Fornecedor e Categoria) reaproveitando o mesmo helper
+// renderCadastroField/resolverCadastro/CADASTROS já usado no formulário geral de "Novo
+// lançamento" — nomes de campo próprios ('prestador'/'categoria_contrato', não 'credor'/
+// 'categoria') pra não colidir com os ids "novo_..." daquele outro formulário, ainda que os
+// dois nunca fiquem abertos ao mesmo tempo (overlays diferentes).
+function renderCamposNovoContratoPrestador(){
+  const campos = [
+    {name:'prestador', label:'Prestador (Fornecedor)', type:'cadastro', cadastro:'fornecedores', full:true},
+    {name:'categoria_contrato', label:'Categoria', type:'cadastro', cadastro:'categoriasDespesa', full:true},
+  ];
+  document.getElementById('cprFormFields').innerHTML = campos.map(f => renderCadastroField(f, {})).join('') + `
+    <div class="field full"><label>Descrição do serviço</label><input type="text" name="descricao_servico" placeholder="ex: segurança patrimonial, limpeza, suporte de TI"></div>
+    <div class="field"><label>Número do contrato</label><input type="text" name="numero_contrato"></div>
+    <div class="field"><label>Data de início</label><input type="date" name="data_inicio" value="${todayISO()}"></div>
+    <div class="field"><label>Data de vencimento do contrato</label><input type="date" name="data_vencimento" required></div>
+    <div class="field full"><label>Observações</label><input type="text" name="observacoes"></div>
+    <div class="field full"><label>Contrato (PDF, imagem ou Word) — opcional, dá pra anexar depois também</label><input type="file" id="cprArquivoContrato" accept="application/pdf,image/*,.doc,.docx"></div>
+  `;
+}
+
+/* Parcelas de pagamento do contrato de prestador — mesmo "gerador em lote" (quantidade, valor,
+   1º vencimento, periodicidade) já usado em Contas a Pagar (ver renderParcelasPagar), só que
+   com array e container próprios, pra não interferir com aquele outro formulário. */
+function renderParcelasContratoPrestador(){
+  if(!parcelasContratoPrestador.length){
+    parcelasContratoPrestador = [{ valor:'', vencimento: todayISO() }];
+  }
+  const linhas = parcelasContratoPrestador.map((p, i) => `
+    <div class="parcela-row" data-idx="${i}" style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; margin-bottom:8px;">
+      <div class="field" style="flex:1; min-width:120px; margin:0;">
+        <label>${i===0 ? 'Valor (R$)' : `Valor parcela ${i+1} (R$)`}</label>
+        <input type="number" step="0.01" class="cpr-parcela-valor" value="${escapeHtml(String(p.valor))}" />
+      </div>
+      <div class="field" style="flex:1; min-width:130px; margin:0;">
+        <label>${i===0 ? 'Vencimento' : `Vencimento parcela ${i+1}`}</label>
+        <input type="date" class="cpr-parcela-vencimento" value="${escapeHtml(p.vencimento)}" />
+      </div>
+      ${parcelasContratoPrestador.length>1 ? `<button type="button" class="btn-mini cpr-parcela-remover" data-idx="${i}" title="Remover parcela" style="height:34px;">✕</button>` : ''}
+    </div>`).join('');
+  const geradorHTML = `
+    <div style="background:var(--paper-2); border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:14px;">
+      <p style="font-size:12px; color:var(--ink-soft); margin:0 0 8px;">Contrato com muitas parcelas? Gere todas de uma vez em vez de adicionar uma por uma.</p>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end;">
+        <div class="field" style="margin:0; min-width:100px;"><label>Quantidade</label><input type="number" min="1" step="1" id="cprGerarQtd" placeholder="Ex.: 12"></div>
+        <div class="field" style="margin:0; min-width:130px;"><label>Valor de cada (R$)</label><input type="number" step="0.01" min="0" id="cprGerarValor" placeholder="0,00"></div>
+        <div class="field" style="margin:0; min-width:140px;"><label>Vencimento da 1ª</label><input type="date" id="cprGerarPrimeiro" value="${todayISO()}"></div>
+        <div class="field" style="margin:0; min-width:160px;">
+          <label>Repetir</label>
+          <select id="cprGerarPeriodicidade">
+            <option value="mensal">Mensal (mesmo dia do mês)</option>
+            <option value="quinzenal">A cada 15 dias</option>
+            <option value="semanal">A cada 7 dias</option>
+          </select>
+        </div>
+        <button type="button" class="btn" id="cprGerarBtn" style="height:38px;">Gerar parcelas</button>
+      </div>
+    </div>`;
+  document.getElementById('cprParcelasWrap').innerHTML = `
+    <div class="section-title" style="margin-top:4px;">Parcelas de pagamento</div>
+    ${geradorHTML}
+    ${linhas}
+    <button type="button" class="btn ghost" id="cprParcelaAdicionar" style="margin-top:4px;">+ Adicionar parcela</button>
+  `;
+  document.querySelectorAll('#cprParcelasWrap .parcela-row').forEach(row=>{
+    const idx = Number(row.dataset.idx);
+    row.querySelector('.cpr-parcela-valor').addEventListener('input', e=>{ parcelasContratoPrestador[idx].valor = e.target.value; });
+    row.querySelector('.cpr-parcela-vencimento').addEventListener('input', e=>{ parcelasContratoPrestador[idx].vencimento = e.target.value; });
+  });
+  document.getElementById('cprParcelaAdicionar').addEventListener('click', ()=>{
+    parcelasContratoPrestador.push({valor:'', vencimento:''});
+    renderParcelasContratoPrestador();
+  });
+  document.querySelectorAll('#cprParcelasWrap .cpr-parcela-remover').forEach(btn=>{
+    btn.addEventListener('click', e=>{
+      const idx = Number(e.currentTarget.dataset.idx);
+      parcelasContratoPrestador.splice(idx, 1);
+      renderParcelasContratoPrestador();
+    });
+  });
+  document.getElementById('cprGerarBtn').addEventListener('click', ()=>{
+    const qtd = parseInt(document.getElementById('cprGerarQtd').value, 10);
+    const valor = parseFloat(document.getElementById('cprGerarValor').value);
+    const primeiro = document.getElementById('cprGerarPrimeiro').value;
+    const periodicidade = document.getElementById('cprGerarPeriodicidade').value;
+    if(!qtd || qtd < 1){ alert('Informe a quantidade de parcelas.'); return; }
+    if(!valor || valor <= 0){ alert('Informe o valor de cada parcela.'); return; }
+    if(!primeiro){ alert('Informe o vencimento da 1ª parcela.'); return; }
+    const temDadoPreenchido = parcelasContratoPrestador.length > 1 || parcelasContratoPrestador.some(p => p.valor);
+    if(temDadoPreenchido && !confirm(`Isso vai substituir a(s) ${parcelasContratoPrestador.length} parcela(s) já preenchida(s) por ${qtd} nova(s). Continuar?`)) return;
+    const [ay, am, ad] = primeiro.split('-').map(Number);
+    const novasParcelas = [];
+    for(let i=0; i<qtd; i++){
+      let venc;
+      if(periodicidade === 'mensal'){
+        venc = new Date(ay, (am-1)+i, ad);
+      } else {
+        const dias = periodicidade === 'quinzenal' ? 15 : 7;
+        venc = new Date(ay, am-1, ad + (dias*i));
+      }
+      const iso = `${venc.getFullYear()}-${String(venc.getMonth()+1).padStart(2,'0')}-${String(venc.getDate()).padStart(2,'0')}`;
+      novasParcelas.push({ valor: valor.toFixed(2), vencimento: iso });
+    }
+    parcelasContratoPrestador = novasParcelas;
+    renderParcelasContratoPrestador();
+  });
+}
+
+async function submeterNovoContratoPrestador(e){
+  e.preventDefault();
+  const formEl = e.target;
+  const fd = new FormData(formEl);
+  const obj = Object.fromEntries(fd.entries());
+  const msg = document.getElementById('cprNovoMsg');
+  msg.style.display = 'none';
+  const btn = formEl.querySelector('button[type="submit"]');
+  btn.disabled = true;
+  try{
+    const resolved = {};
+    resolved.prestador = await resolverCadastro({name:'prestador', cadastro:'fornecedores', label:'Prestador'}, obj);
+    resolved.categoria_contrato = await resolverCadastro({name:'categoria_contrato', cadastro:'categoriasDespesa', label:'Categoria'}, obj);
+
+    const linhasParcelas = Array.from(document.querySelectorAll('#cprParcelasWrap .parcela-row')).map(row=>({
+      valor: parseFloat(row.querySelector('.cpr-parcela-valor').value) || 0,
+      vencimento: row.querySelector('.cpr-parcela-vencimento').value,
+    })).filter(p => p.valor > 0 && p.vencimento);
+    if(!linhasParcelas.length){
+      throw new Error('Informe ao menos uma parcela com valor e vencimento.');
+    }
+    if(!obj.data_vencimento){
+      throw new Error('Informe a data de vencimento do contrato.');
+    }
+
+    const resp = await apiFetch('/api/contratos-prestadores', {method:'POST', body: JSON.stringify({
+      fornecedor_id: resolved.prestador, categoria_id: resolved.categoria_contrato,
+      descricao_servico: obj.descricao_servico || null, numero_contrato: obj.numero_contrato || null,
+      data_inicio: obj.data_inicio || null, data_vencimento: obj.data_vencimento,
+      observacoes: obj.observacoes || null, parcelas: linhasParcelas,
+    })});
+
+    // Anexo do contrato (opcional) — enviado só depois do contrato existir, reaproveitando o
+    // mesmo endpoint genérico de upload usado no card "Contratos" (financiamentos).
+    const arquivoInput = document.getElementById('cprArquivoContrato');
+    if(arquivoInput && arquivoInput.files[0]){
+      const fdArquivo = new FormData();
+      fdArquivo.append('arquivo', arquivoInput.files[0]);
+      fdArquivo.append('entidade_id', resp.contrato.id);
+      await apiFetch('/api/upload/contratos_prestadores', {method:'POST', body: fdArquivo});
+    }
+
+    parcelasContratoPrestador = [];
+    await atualizarBadgeContratosPrestadores();
+    await openContratosPrestadoresPanel();
+  }catch(err){
+    msg.textContent = 'Erro: ' + err.message; msg.style.color = 'var(--red)'; msg.style.display = 'block';
+    btn.disabled = false;
+  }
+}
+
   /* ==========================================================================================
      DESPESAS FINANCEIRAS — juros e encargos bancários (financiamentos/empréstimos), separados
         de Compras/COGS no plano de contas. Alimentado pelas tabelas contratos_financiamento e
@@ -5120,6 +5475,7 @@ document.getElementById('btnFuncionarios').addEventListener('click', openFuncion
 document.getElementById('btnContasPagas').addEventListener('click', ()=>openContasPagasPanel());
 document.getElementById('btnConciliacao').addEventListener('click', ()=>openConciliacaoPanel());
 document.getElementById('btnChequesRecebidos').addEventListener('click', ()=>openChequesRecebidosPanel());
+document.getElementById('btnContratosPrestadores').addEventListener('click', ()=>openContratosPrestadoresPanel());
 
 document.getElementById('loginForm').addEventListener('submit', async e=>{
   e.preventDefault();
