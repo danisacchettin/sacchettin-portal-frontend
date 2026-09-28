@@ -3315,7 +3315,7 @@ function labelMes(m){
 // Estado do filtro fica em módulo (mesmo padrão do painel de Vencidos): a tela se
 // redesenha a cada troca de filtro (mês ou credor), sem embutir nome de fornecedor
 // (que pode ter aspas/acentos) dentro de atributo onchange.
-let filtroPagar = { mes: null, credor: 'todos' };
+let filtroPagar = { mes: null, credor: []};
 
 function credoresPagar(){
   const nomes = new Set(DATA.contasPagar.map(x=>x.credor || 'Fornecedor não informado'));
@@ -3324,7 +3324,7 @@ function credoresPagar(){
 
 function openPagarPanel(mesFiltro){
   const hoje = todayISO();
-  filtroPagar = { mes: mesFiltro || hoje.slice(0,7), credor: 'todos' };
+  filtroPagar = { mes: mesFiltro || hoje.slice(0,7), credor: [] };
   renderPagarPanel();
 }
 
@@ -3333,13 +3333,13 @@ function renderPagarPanel(){
   const meses = mesesDisponiveisPagar();
   const { mes, credor } = filtroPagar;
   let lista = mes === 'todos' ? DATA.contasPagar : DATA.contasPagar.filter(x=> x.vencimento && String(x.vencimento).slice(0,7)===mes);
-  if(credor !== 'todos') lista = lista.filter(x=>(x.credor || 'Fornecedor não informado')===credor);
-  const vencidos = lista.filter(x=> saldoAberto(x,'pagar')>0 && String(x.vencimento).slice(0,10) < hoje);
+  if(credor.length) lista = lista.filter(x=>credor.includes(x.credor || 'Fornecedor não informado'));
+    const vencidos = lista.filter(x=> saldoAberto(x,'pagar')>0 && String(x.vencimento).slice(0,10) < hoje);
   const aVencer = lista.filter(x=> saldoAberto(x,'pagar')>0 && String(x.vencimento).slice(0,10) >= hoje);
   const pagos = lista.filter(x=> saldoAberto(x,'pagar')<=0);
   const optsMes = meses.map(m=>`<option value="${m}" ${m===mes?'selected':''}>${labelMes(m)}</option>`).join('');
-  const optsCredor = credoresPagar().map(c=>`<option value="${escapeHtml(c)}" ${c===credor?'selected':''}>${escapeHtml(c)}</option>`).join('');
-  const estiloSelect = 'width:auto; margin-top:0; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:var(--paper-2); font-family:inherit; font-size:13px; color:var(--ink);';
+  const optsCredor = credoresPagar().map(c=>`<option value="${escapeHtml(c)}" ${credor.includes(c)?'selected':''}>${escapeHtml(c)}</option>`).join('');
+    const estiloSelect = 'width:auto; margin-top:0; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:var(--paper-2); font-family:inherit; font-size:13px; color:var(--ink);';
 
   openOverlay(`
     <div class="panel-head">
@@ -3353,8 +3353,7 @@ function renderPagarPanel(){
         <option value="todos" ${mes==='todos'?'selected':''}>Todos os meses</option>
         ${optsMes}
       </select>
-      <select id="filtroCredorPagar" style="${estiloSelect}">
-        <option value="todos" ${credor==='todos'?'selected':''}>Todos os credores</option>
+    <select id="filtroCredorPagar" multiple size="5" title="Segure Ctrl (ou Cmd no Mac) e clique para selecionar mais de um credor" style="${estiloSelect}">
         ${optsCredor}
       </select>
     </div>
@@ -3373,14 +3372,14 @@ function renderPagarPanel(){
   `);
 
   document.getElementById('filtroMesPagar').addEventListener('change', e=>{ filtroPagar.mes = e.target.value; renderPagarPanel(); });
-  document.getElementById('filtroCredorPagar').addEventListener('change', e=>{ filtroPagar.credor = e.target.value; renderPagarPanel(); });
+  document.getElementById('filtroCredorPagar').addEventListener('change', e=>{ filtroPagar.credor = Array.from(e.target.selectedOptions).map(o=>o.value); renderPagarPanel(); });
 }
 // Card "Vencidos" (19/08/2026) — todos os títulos de contas a pagar em atraso, de qualquer
 // mês, com filtro por fornecedor e por faixa de atraso, para dar base a estratégias de
 // renegociação. Estado do filtro fica em módulo (filtroVencidos) e a tela se redesenha a
 // cada troca de filtro — evita ter que embutir nome de fornecedor (que pode ter aspas/
 // acentos) dentro de atributo onchange, mesmo padrão de outras telas de edição do sistema.
-let filtroVencidos = { credor: 'todos', faixa: 'todos' };
+let filtroVencidos = { credor: [], faixa: 'todos' };
 
 function credoresVencidos(){
   const nomes = new Set(DATA.contasPagar.filter(x=>emAtraso(x,'pagar')).map(x=>x.credor || 'Fornecedor não informado'));
@@ -3388,14 +3387,14 @@ function credoresVencidos(){
 }
 
 function openVencidosPanel(){
-  filtroVencidos = { credor: 'todos', faixa: 'todos' };
+  filtroVencidos = { credor: [], faixa: 'todos' };
   renderVencidosPanel();
 }
 
 function renderVencidosPanel(){
   const { credor, faixa } = filtroVencidos;
   let lista = DATA.contasPagar.filter(x=>emAtraso(x,'pagar'));
-  if(credor !== 'todos') lista = lista.filter(x=>(x.credor || 'Fornecedor não informado')===credor);
+  if(credor.length) lista = lista.filter(x=>credor.includes(x.credor || 'Fornecedor não informado'));
   if(faixa !== 'todos'){
     const minDias = Number(faixa);
     lista = lista.filter(x=>Math.abs(diffDays(x.vencimento)) > minDias);
@@ -3408,16 +3407,17 @@ function renderVencidosPanel(){
   // "soltar" sozinho pra Todos (pedido da Danielle, 21/09/2026), então garantimos que a opção
   // dele continue aparecendo no <select> mesmo com zero vencidos, selecionada.
   const nomesComVencido = credoresVencidos();
-  const nomesParaMostrar = (credor !== 'todos' && !nomesComVencido.includes(credor))
-    ? [credor, ...nomesComVencido].sort((a,b)=>a.localeCompare(b,'pt-BR'))
+  const faltantes = credor.filter(c => !nomesComVencido.includes(c));
+  const nomesParaMostrar = faltantes.length
+    ? [...faltantes, ...nomesComVencido].sort((a,b)=>a.localeCompare(b,'pt-BR'))
     : nomesComVencido;
-  const optsCredor = nomesParaMostrar.map(c=>`<option value="${escapeHtml(c)}" ${c===credor?'selected':''}>${escapeHtml(c)}</option>`).join('');
+  const optsCredor = nomesParaMostrar.map(c=>`<option value="${escapeHtml(c)}" ${credor.includes(c)?'selected':''}>${escapeHtml(c)}</option>`).join('');
   const estiloSelect = 'width:auto; margin-top:0; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:var(--paper-2); font-family:inherit; font-size:13px; color:var(--ink);';
 
   // Mensagem de lista vazia: quando é um fornecedor específico que zerou os vencidos, avisa
   // isso explicitamente (em vez do texto genérico) e indica como voltar pra listagem completa.
-  const mensagemVazia = (credor !== 'todos')
-    ? `<p style="font-size:13.5px; color:var(--olive-strong); font-weight:600; background:var(--olive-wash); padding:12px 14px; border-radius:10px;">FORNECEDOR SEM DÉBITOS VENCIDOS — ${escapeHtml(credor)} não tem nenhum título em atraso${faixa!=='todos' ? ' nessa faixa de atraso' : ''}. Selecione "Todos os vencidos" para voltar à listagem completa.</p>`
+  const mensagemVazia = (credor.length)
+    ? `<p style="font-size:13.5px; color:var(--olive-strong); font-weight:600; background:var(--olive-wash); padding:12px 14px; border-radius:10px;">SEM DÉBITOS VENCIDOS — ${escapeHtml(credor.join(', '))} não ${credor.length>1?'têm':'tem'} nenhum título em atraso${faixa!=='todos' ? ' nessa faixa de atraso' : ''}. Selecione "Todos os vencidos" para voltar à listagem completa.</p>`
     : `<p style="font-size:13px; color:var(--ink-soft);">Nenhum título vencido para esse filtro.</p>`;
 
   openOverlay(`
@@ -3427,8 +3427,7 @@ function renderVencidosPanel(){
     </div>
     <div class="panel-actions" style="flex-wrap:wrap; gap:10px;">
       <button class="btn" onclick="window.print()">Imprimir</button>
-      <select id="filtroCredorVencidos" style="${estiloSelect}">
-        <option value="todos" ${credor==='todos'?'selected':''}>Todos os vencidos</option>
+      <select id="filtroCredorVencidos" multiple size="5" title="Segure Ctrl (ou Cmd no Mac) e clique para selecionar mais de um credor" style="${estiloSelect}">
         ${optsCredor}
       </select>
       <select id="filtroFaixaVencidos" style="${estiloSelect}">
@@ -3442,7 +3441,7 @@ function renderVencidosPanel(){
     ${lista.length ? reportTable(lista,'pagar','vencidos') : mensagemVazia}
   `);
 
-  document.getElementById('filtroCredorVencidos').addEventListener('change', e=>{ filtroVencidos.credor = e.target.value; renderVencidosPanel(); });
+  document.getElementById('filtroCredorVencidos').addEventListener('change', e=>{ filtroVencidos.credor = Array.from(e.target.selectedOptions).map(o=>o.value); renderVencidosPanel(); });
   document.getElementById('filtroFaixaVencidos').addEventListener('change', e=>{ filtroVencidos.faixa = e.target.value; renderVencidosPanel(); });
 }
 
