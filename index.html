@@ -156,6 +156,10 @@
 
   /* ---------- grid de cards ---------- */
   .grid{display:grid; grid-template-columns:repeat(auto-fit, minmax(230px,1fr)); gap:18px;}
+    /* .kpi-grid — pedido da Danielle, 29/09/2026: fileiras fixas de 3 cards, centralizadas */
+    .kpi-grid{grid-template-columns:repeat(3, minmax(230px,320px)); justify-content:center;}
+    @media(max-width:900px){ .kpi-grid{grid-template-columns:repeat(2, minmax(230px,320px));} }
+    @media(max-width:640px){ .kpi-grid{grid-template-columns:1fr;} }
 
   .card{
     position:relative; border-radius:20px; padding:22px 22px 20px;
@@ -481,7 +485,7 @@ Fica fora de .wrap para continuar visível quando .wrap é escondido em @media p
   </div>
 
   <div class="section-title">Visão geral do dia</div>
-  <div class="grid" id="kpiGrid"></div>
+  <div class="grid kpi-grid" id="kpiGrid"></div>
 
   <div class="section-title">Fluxo de caixa &amp; vencimentos</div>
   <div class="grid" id="flowGrid"></div>
@@ -984,19 +988,19 @@ function renderKPIs(){
   const k = computeKPIs();
   const fs = k.fechamentoSemana;
   document.getElementById('kpiGrid').innerHTML = `
-    ${cardHTML({label:'Saldo atual em contas bancárias', value:fmtBRL(k.saldoCaixa), tone:'gold', valueClass:'pos', expandable:true, id:'cardSaldo',
-      sub: DATA.saldoContas.map(c=>c.conta.split('—')[0].trim()).join(' · ')})}
-    ${cardHTML({label:'Fechamento de caixa da semana', value:fmtBRL(fs.saldo), tone:'gold', expandable:true, id:'cardFechamentoSemana',
-      sub:`Desde ${fmtDate(fs.inicio.toISOString().slice(0,10))} · Dinheiro ${fmtBRL(fs.porForma.Dinheiro)} · Cartão ${fmtBRL(fs.porForma['Cartão'])} · PIX ${fmtBRL(fs.porForma.PIX)}`})}
     ${cardHTML({label:'A PAGAR', value:fmtBRL(k.pagarMes), tone:'gold', expandable:true, id:'cardPagar',
-      sub:`Referente a ${nomeMesAtual()} · ${DATA.contasPagar.length} título(s) em aberto · clique para trocar o período`})}
-    ${cardHTML({label:'A pagar hoje', value:fmtBRL(k.pagarHoje), tone: k.pagarHoje>0?'urgent':'', valueClass:k.pagarHoje>0?'neg':'', expandable:true, id:'cardPagarHoje',
-      sub:`Hoje, ${fmtDate(todayISO())} (${nomeDiaSemanaHoje()})`})}
-    ${cardHTML({label:'Vencidos', value:fmtBRL(k.vencidosTotal), tone: k.vencidosTotal>0?'red':'', valueClass:k.vencidosTotal>0?'neg':'', expandable:true, id:'cardVencidos',
-      sub:`${k.vencidosCount} título(s) em atraso, de qualquer mês · para negociação com fornecedor`})}
-        ${cardHTML({label:'A receber', value:fmtBRL(k.receberMes), expandable:true, id:'cardReceber',
-      sub:`Referente a ${nomeMesAtual()} · ${DATA.contasReceber.length} título(s) em aberto — venda da Cristal é majoritariamente à vista`})}
-  `;
+                sub:`Referente a ${nomeMesAtual()} · ${DATA.contasPagar.length} título(s) em aberto · clique para trocar o período`})}
+                ${cardHTML({label:'A pagar hoje', value:fmtBRL(k.pagarHoje), tone: k.pagarHoje>0?'urgent':'', valueClass:k.pagarHoje>0?'neg':'', expandable:true, id:'cardPagarHoje',
+                            sub:`Hoje, ${fmtDate(todayISO())} (${nomeDiaSemanaHoje()})`})}
+                            ${cardHTML({label:'A receber', value:fmtBRL(k.receberMes), expandable:true, id:'cardReceber',
+                                        sub:`Referente a ${nomeMesAtual()} · ${DATA.contasReceber.length} título(s) em aberto — venda da Cristal é majoritariamente à vista`})}
+                                        ${cardHTML({label:'Saldo atual em contas bancárias', value:fmtBRL(k.saldoCaixa), tone:'gold', valueClass:'pos', expandable:true, id:'cardSaldo',
+                                                    sub: DATA.saldoContas.map(c=>c.conta.split('—')[0].trim()).join(' · ')})}
+                                                    ${cardHTML({label:'Fechamento de caixa da semana', value:fmtBRL(fs.saldo), tone:'gold', expandable:true, id:'cardFechamentoSemana',
+                                                                sub:`Desde ${fmtDate(fs.inicio.toISOString().slice(0,10))} · Dinheiro ${fmtBRL(fs.porForma.Dinheiro)} · Cartão ${fmtBRL(fs.porForma['Cartão'])} · PIX ${fmtBRL(fs.porForma.PIX)}`})}
+                                                                ${cardHTML({label:'Vencidos', value:fmtBRL(k.vencidosTotal), tone: k.vencidosTotal>0?'red':'', valueClass:k.vencidosTotal>0?'neg':'', expandable:true, id:'cardVencidos',
+                                                                            sub:`${k.vencidosCount} título(s) em atraso, de qualquer mês · para negociação com fornecedor`})}
+                                                                            `;
 }
 
 function renderFlowCards(){
