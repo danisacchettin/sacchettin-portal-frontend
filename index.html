@@ -10,7 +10,9 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="custo_produto.js" defer></script>
-<style>
+      <script src="carga_tributaria.js" defer></script>
+    <script src="maquininhas.js" defer></script>
+    <style>
   :root{
     /* paleta clara — ivory quente + cards brancos foscos */
     --paper:#F7F4EC;
@@ -548,6 +550,16 @@ Fica fora de .wrap para continuar visível quando .wrap é escondido em @media p
         <div class="val" style="font-size:19px;">Rateio de compra / CMV</div>
         <div class="sub">Custo por corte/produto, preço de venda, margem e estoque</div>
     </div>
+        <div class="card" id="btnCargaTributaria">
+                <div class="lbl">Carga Tributária</div>
+                <div class="val" style="font-size:19px;">DAS Mensal</div>
+                <div class="sub">Apuração do Simples Nacional por competência, evolução mês a mês</div>
+        </div>
+        <div class="card" id="btnMaquininhas">
+                <div class="lbl">Taxas de Maquininha</div>
+                <div class="val" style="font-size:19px;">Recebimentos do PDV</div>
+                <div class="sub">Vigência de taxas por operadora e lançamento diário de recebimentos</div>
+        </div>
   </div>
 
   <footer class="foot">
@@ -1104,13 +1116,13 @@ function reportTable(list, tipo, origin){
         if(aberto) btns.push(`<button type="button" class="btn-mini" onclick="openBaixaForItem('${tipo}','${x.id}','${org}')">${acaoLbl}</button>`);
         if(tipo==='pagar' && x.forma_pagamento==='Dinheiro') btns.push(`<button type="button" class="btn-mini" onclick="openReciboForm('${x.id}')">🧾 Recibo</button>`);
         btns.push(`<button type="button" class="btn-mini" onclick="openDetalhesForItem('${tipo}','${x.id}','${org}')">👁 Detalhes</button>`);
-        return `<div style="display:flex;flex-wrap:wrap;gap:4px;">${btns.join('')}</div>`;
+                  return `<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start;">${btns.join('')}</div>`;
       })()}</td>
     </tr>`;
   }).join('');
-  return `<table class="report"><thead><tr>
+    return `<div style="overflow-x:auto;"><table class="report"><thead><tr>
     <th>${nomeCol}</th><th>Categoria</th>${tipo==='pagar' ? '<th>Nº Boleto</th>' : ''}<th>Vencimento</th><th>Valor</th><th>Saldo em aberto</th><th>Status</th><th>Origem</th><th>Ação</th>
-  </tr></thead><tbody>${rows}</tbody></table>`;
+    </tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 /* ---------- tela de detalhes de um lançamento (pago ou em aberto) ---------- */
@@ -5495,6 +5507,8 @@ document.getElementById('btnConciliacao').addEventListener('click', ()=>openConc
 document.getElementById('btnChequesRecebidos').addEventListener('click', ()=>openChequesRecebidosPanel());
 document.getElementById('btnContratosPrestadores').addEventListener('click', ()=>openContratosPrestadoresPanel());
 document.getElementById('btnCustoProduto').addEventListener('click', ()=>openCustoProdutoPanel());
+  document.getElementById('btnCargaTributaria').addEventListener('click', ()=>openCargaTributariaPanel());
+  document.getElementById('btnMaquininhas').addEventListener('click', ()=>openMaquininhasPanel());
 
 document.getElementById('loginForm').addEventListener('submit', async e=>{
   e.preventDefault();
