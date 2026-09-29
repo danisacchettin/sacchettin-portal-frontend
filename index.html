@@ -1572,28 +1572,30 @@ async function openEditFornecedores(){
   openOverlay(`<div class="panel-head"><div><h2>Editar fornecedores</h2><p>Carregando…</p></div><button class="close-x" onclick="closeOverlay()">✕</button></div>`);
   const lista = await apiFetch('/api/cadastros/fornecedores').catch(()=>[]);
   const optTipoPessoa = tp => `<option value="">— A confirmar —</option>
-    <option value="PJ" ${tp==='PJ'?'selected':''}>PJ</option>
-    <option value="PF" ${tp==='PF'?'selected':''}>PF</option>`;
+  <option value="PJ" ${tp==='PJ'?'selected':''}>PJ</option>
+  <option value="PF" ${tp==='PF'?'selected':''}>PF</option>`;
+  const categoriaOpts = catId => `<option value="">— Não classificado —</option>` + CADASTROS.categoriasDespesa.map(c=>`<option value="${c.id}" ${String(catId)===String(c.id)?'selected':''}>${escapeHtml(c.nome_categoria)}</option>`).join('');
   const linhas = (lista||[]).map(f => `
-    <tr data-id="${f.id}">
-      <td><input type="text" class="ec-nome" value="${escapeHtml(f.nome)}" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
-      <td><input type="text" class="ec-cnpj" data-mask="cnpjCpf" value="${escapeHtml(f.cnpj_cpf||'')}" placeholder="CNPJ/CPF" style="width:100%; ${ESTILO_INPUT_MENU}"><span class="doc-feedback" style="font-size:10px; display:block; margin-top:2px;"></span></td>
-      <td><select class="ec-tipo-pessoa" style="width:100%; ${ESTILO_INPUT_MENU}">${optTipoPessoa(f.tipo_pessoa)}</select></td>
-      <td><input type="text" class="ec-contato" data-mask="telefone" value="${escapeHtml(f.contato||'')}" placeholder="Contato" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
-      <td><input type="text" class="ec-pix" value="${escapeHtml(f.chave_pix||'')}" placeholder="Chave PIX" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
-      <td><input type="text" class="ec-banco" value="${escapeHtml(f.dados_bancarios||'')}" placeholder="Dados bancários" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
-      <td><button type="button" class="btn-mini ec-salvar">Salvar</button><span class="ec-msg" style="font-size:10.5px; margin-left:6px;"></span></td>
-    </tr>`).join('');
+  <tr data-id="${f.id}">
+  <td><input type="text" class="ec-nome" value="${escapeHtml(f.nome)}" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
+  <td><input type="text" class="ec-cnpj" data-mask="cnpjCpf" value="${escapeHtml(f.cnpj_cpf||'')}" placeholder="CNPJ/CPF" style="width:100%; ${ESTILO_INPUT_MENU}"><span class="doc-feedback" style="font-size:10px; display:block; margin-top:2px;"></span></td>
+  <td><select class="ec-tipo-pessoa" style="width:100%; ${ESTILO_INPUT_MENU}">${optTipoPessoa(f.tipo_pessoa)}</select></td>
+  <td><select class="ec-categoria" style="width:100%; ${ESTILO_INPUT_MENU}">${categoriaOpts(f.categoria_padrao_id)}</select></td>
+  <td><input type="text" class="ec-contato" data-mask="telefone" value="${escapeHtml(f.contato||'')}" placeholder="Contato" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
+  <td><input type="text" class="ec-pix" value="${escapeHtml(f.chave_pix||'')}" placeholder="Chave PIX" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
+  <td><input type="text" class="ec-banco" value="${escapeHtml(f.dados_bancarios||'')}" placeholder="Dados bancários" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
+  <td><button type="button" class="btn-mini ec-salvar">Salvar</button><span class="ec-msg" style="font-size:10.5px; margin-left:6px;"></span></td>
+  </tr>`).join('');
   openOverlay(`
-    <div class="panel-head">
-      <div><h2>Editar fornecedores</h2><p>Corrija nome, documento, contato ou dados de pagamento (PIX/conta) de um fornecedor já cadastrado. O campo PJ/PF define se os pagamentos a esse fornecedor entram como despesa normal ou como retirada de prólabore no DRE.</p></div>
-      <button class="close-x" onclick="closeOverlay()">✕</button>
-    </div>
-    <div style="overflow-x:auto;">
-    <table class="report"><thead><tr><th>Nome</th><th>CNPJ/CPF</th><th>PJ/PF</th><th>Contato</th><th>Chave PIX</th><th>Dados bancários</th><th></th></tr></thead>
-    <tbody id="ecFornecedoresBody">${linhas || '<tr><td colspan="7">Nenhum fornecedor cadastrado ainda.</td></tr>'}</tbody></table>
-    </div>
-    <div class="panel-actions" style="margin-top:20px;"><button type="button" class="btn ghost" onclick="openMenuPanel()">Voltar ao menu</button></div>
+  <div class="panel-head">
+  <div><h2>Editar fornecedores</h2><p>Corrija nome, documento, contato ou dados de pagamento (PIX/conta) de um fornecedor já cadastrado. O campo PJ/PF define se os pagamentos a esse fornecedor entram como despesa normal ou como retirada de prólabore no DRE.</p></div>
+  <button class="close-x" onclick="closeOverlay()">✕</button>
+  </div>
+  <div style="overflow-x:auto;">
+  <table class="report"><thead><tr><th>Nome</th><th>CNPJ/CPF</th><th>PJ/PF</th><th>Classificação</th><th>Contato</th><th>Chave PIX</th><th>Dados bancários</th><th></th></tr></thead>
+  <tbody id="ecFornecedoresBody">${linhas || '<tr><td colspan="8">Nenhum fornecedor cadastrado ainda.</td></tr>'}</tbody></table>
+  </div>
+  <div class="panel-actions" style="margin-top:20px;"><button type="button" class="btn ghost" onclick="openMenuPanel()">Voltar ao menu</button></div>
   `);
   document.querySelectorAll('#ecFornecedoresBody .ec-salvar').forEach(btn=>{
     btn.addEventListener('click', async e=>{
@@ -1604,6 +1606,7 @@ async function openEditFornecedores(){
           nome: tr.querySelector('.ec-nome').value,
           cnpj_cpf: tr.querySelector('.ec-cnpj').value || null,
           tipo_pessoa: tr.querySelector('.ec-tipo-pessoa').value || null,
+          categoria_padrao_id: tr.querySelector('.ec-categoria').value || null,
           contato: tr.querySelector('.ec-contato').value || null,
           chave_pix: tr.querySelector('.ec-pix').value || null,
           dados_bancarios: tr.querySelector('.ec-banco').value || null,
@@ -1614,7 +1617,6 @@ async function openEditFornecedores(){
     });
   });
 }
-
 /* Editar clientes/sacados — mesmo padrão de openEditFornecedores(), usando o PATCH
    /api/cadastros/sacados/:id que já existia no backend (edição por id, sem duplicar). */
 async function openEditSacados(){
