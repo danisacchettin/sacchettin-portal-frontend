@@ -5243,15 +5243,14 @@ function optionsContaBancaria(selecionadoId){
 // card), com botão "Salvar código" (grava na hora, sem marcar como pago) e, quando já há
 // valor salvo, botão "Copiar" para colar direto no aplicativo do banco.
 function campoCodigoBarrasHTML(item){
-  if(!item) return '';
-  const valor = item.codigo_barras_boleto || '';
-  const inner = `
-    <div style="display:flex; gap:8px; align-items:center;">
-      <input type="text" name="codigo_barras_boleto" value="${escapeHtml(valor)}" placeholder="Somente números do boleto" style="flex:1;">
-      <button type="button" class="btn-mini" id="salvarCodigoBarrasBtn">Salvar código</button>
-      ${valor ? `<button type="button" class="btn-mini" id="copiarCodigoBarrasBtn">Copiar</button>` : ''}
-    </div>`;
-  return `<div class="field full campo-codigo-barras" style="display:none;"><label>Código de Barras / Linha Digitável</label>${inner}</div>`;
+    if(!item) return '';
+    const valor = item.codigo_barras_boleto || '';
+    const souCliente = !!(USUARIO && USUARIO.papel === 'cliente');
+    const inner = souCliente
+      ? (valor ? `<div style="display:flex; gap:8px; align-items:center;"><input type="text" name="codigo_barras_boleto" value="${escapeHtml(valor)}" readonly style="flex:1; background:var(--paper-2);"><button type="button" class="btn-mini" id="copiarCodigoBarrasBtn">Copiar</button></div>`
+               : `<div style="background:var(--paper-2); border:1px dashed var(--border); border-radius:10px; padding:9px 13px; font-size:12px; color:var(--ink-faint);">Codigo de barras deste boleto ainda nao foi informado pelo escritorio.</div>`)
+          : `<div style="display:flex; gap:8px; align-items:center;"><input type="text" name="codigo_barras_boleto" value="${escapeHtml(valor)}" placeholder="Somente numeros do boleto" style="flex:1;"><button type="button" class="btn-mini" id="salvarCodigoBarrasBtn">Salvar codigo</button>${valor ? `<button type="button" class="btn-mini" id="copiarCodigoBarrasBtn">Copiar</button>` : ''}</div>`;
+    return `<div class="field full campo-codigo-barras" style="display:none;"><label>Codigo de Barras / Linha Digitavel</label>${inner}</div>`;
 }
 
 // Mostra/esconde o campo de código de barras conforme a forma de pagamento selecionada, wira
