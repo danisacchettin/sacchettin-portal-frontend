@@ -9,6 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;1,500&family=Cormorant+Garamond:ital@1&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="custo_produto.js" defer></script>
 <style>
   :root{
     /* paleta clara — ivory quente + cards brancos foscos */
@@ -541,6 +542,11 @@ Fica fora de .wrap para continuar visível quando .wrap é escondido em @media p
       <div class="lbl">Contratos de Prestadores</div>
       <div class="val" style="font-size:19px;">Serviços terceirizados</div>
       <div class="sub">Contrato anexado, parcelas de pagamento e alerta de vencimento<span id="badgeContratosPrestadores"></span></div>
+    </div>
+    <div class="card" id="btnCustoProduto">
+        <div class="lbl">Custo de Produto</div>
+        <div class="val" style="font-size:19px;">Rateio de compra / CMV</div>
+        <div class="sub">Custo por corte/produto, preço de venda, margem e estoque</div>
     </div>
   </div>
 
@@ -3936,10 +3942,11 @@ const CADASTRO_META = {
     postExtra:{tipo:'receita'}, extraFields:[] },
   contasBancarias:{ endpoint:'/api/cadastros/contas-bancarias', nomeKey:'nome_conta', novoLabel:'conta bancária',
     extraFields:[{name:'banco', label:'Banco (opcional)'}, {name:'agencia', label:'Agência (opcional)'}, {name:'numero_conta', label:'Número da conta (opcional)'}] },
+    produtos:{ endpoint:'/api/produtos', nomeKey:'nome', novoLabel:'produto', extraFields:[] },
 };
 // Cache em memória das listas já cadastradas — recarregado sempre que o formulário "Novo
 // lançamento" é aberto, para já trazer cadastros criados em outra sessão/aba.
-let CADASTROS = { fornecedores:[], sacados:[], categoriasDespesa:[], categoriasReceita:[], contasBancarias:[] };
+let CADASTROS = { fornecedores:[], sacados:[], categoriasDespesa:[], categoriasReceita:[], contasBancarias:[], produtos:[] };
 
 function escapeHtml(s){
   return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -4032,14 +4039,15 @@ document.addEventListener('input', e=>{
 
 async function carregarCadastros(){
   try{
-    const [forn, sac, catD, catR, contas] = await Promise.all([
+    const [forn, sac, catD, catR, contas, prod] = await Promise.all([
       apiFetch('/api/cadastros/fornecedores'),
       apiFetch('/api/cadastros/sacados'),
       apiFetch('/api/cadastros/categorias?tipo=despesa'),
       apiFetch('/api/cadastros/categorias?tipo=receita'),
       apiFetch('/api/cadastros/contas-bancarias'),
+      apiFetch('/api/produtos'),
     ]);
-    CADASTROS = { fornecedores:forn||[], sacados:sac||[], categoriasDespesa:catD||[], categoriasReceita:catR||[], contasBancarias:contas||[] };
+    CADASTROS = { fornecedores:forn||[], sacados:sac||[], categoriasDespesa:catD||[], categoriasReceita:catR||[], contasBancarias:contas||[], produtos:prod||[] };
   }catch(err){
     console.error('Não consegui carregar os cadastros (fornecedores/categorias/contas):', err);
   }
@@ -5486,6 +5494,7 @@ document.getElementById('btnContasPagas').addEventListener('click', ()=>openCont
 document.getElementById('btnConciliacao').addEventListener('click', ()=>openConciliacaoPanel());
 document.getElementById('btnChequesRecebidos').addEventListener('click', ()=>openChequesRecebidosPanel());
 document.getElementById('btnContratosPrestadores').addEventListener('click', ()=>openContratosPrestadoresPanel());
+document.getElementById('btnCustoProduto').addEventListener('click', ()=>openCustoProdutoPanel());
 
 document.getElementById('loginForm').addEventListener('submit', async e=>{
   e.preventDefault();
