@@ -982,22 +982,19 @@ function cardHTML({label, value, valueClass='', sub='', tone='', expandable=fals
 
 function renderKPIs(){
   const k = computeKPIs();
-  const fimSemana = new Date(); fimSemana.setDate(fimSemana.getDate()+6);
   const fs = k.fechamentoSemana;
   document.getElementById('kpiGrid').innerHTML = `
     ${cardHTML({label:'Saldo atual em contas bancárias', value:fmtBRL(k.saldoCaixa), tone:'gold', valueClass:'pos', expandable:true, id:'cardSaldo',
       sub: DATA.saldoContas.map(c=>c.conta.split('—')[0].trim()).join(' · ')})}
     ${cardHTML({label:'Fechamento de caixa da semana', value:fmtBRL(fs.saldo), tone:'gold', expandable:true, id:'cardFechamentoSemana',
       sub:`Desde ${fmtDate(fs.inicio.toISOString().slice(0,10))} · Dinheiro ${fmtBRL(fs.porForma.Dinheiro)} · Cartão ${fmtBRL(fs.porForma['Cartão'])} · PIX ${fmtBRL(fs.porForma.PIX)}`})}
-    ${cardHTML({label:'A pagar no mês', value:fmtBRL(k.pagarMes), tone:'gold', expandable:true, id:'cardPagar',
-      sub:`Referente a ${nomeMesAtual()} · ${DATA.contasPagar.length} título(s) em aberto`})}
-    ${cardHTML({label:'A pagar na semana', value:fmtBRL(k.pagarSemana), tone:'gold', expandable:true, id:'cardPagarSemana',
-      sub:`De ${fmtDate(todayISO())} a ${fmtDate(fimSemana.toISOString().slice(0,10))}`})}
+    ${cardHTML({label:'A PAGAR', value:fmtBRL(k.pagarMes), tone:'gold', expandable:true, id:'cardPagar',
+      sub:`Referente a ${nomeMesAtual()} · ${DATA.contasPagar.length} título(s) em aberto · clique para trocar o período`})}
     ${cardHTML({label:'A pagar hoje', value:fmtBRL(k.pagarHoje), tone: k.pagarHoje>0?'urgent':'', valueClass:k.pagarHoje>0?'neg':'', expandable:true, id:'cardPagarHoje',
       sub:`Hoje, ${fmtDate(todayISO())} (${nomeDiaSemanaHoje()})`})}
     ${cardHTML({label:'Vencidos', value:fmtBRL(k.vencidosTotal), tone: k.vencidosTotal>0?'red':'', valueClass:k.vencidosTotal>0?'neg':'', expandable:true, id:'cardVencidos',
       sub:`${k.vencidosCount} título(s) em atraso, de qualquer mês · para negociação com fornecedor`})}
-    ${cardHTML({label:'A receber no mês', value:fmtBRL(k.receberMes), expandable:true, id:'cardReceber',
+        ${cardHTML({label:'A receber', value:fmtBRL(k.receberMes), expandable:true, id:'cardReceber',
       sub:`Referente a ${nomeMesAtual()} · ${DATA.contasReceber.length} título(s) em aberto — venda da Cristal é majoritariamente à vista`})}
   `;
 }
@@ -1086,6 +1083,7 @@ function reportTable(list, tipo, origin){
     <tr>
       <td>${tipo==='pagar'?x.credor:x.cliente}</td>
       <td>${x.categoria || '—'}</td>
+      ${tipo==='pagar' ? `<td>${x.numero_boleto || '—'}</td>` : ''}
       <td>${fmtDate(x.vencimento)}</td>
       <td>${fmtBRL(x.valor_original)}</td>
       <td>${fmtBRL(saldoAberto(x,tipo))}</td>
@@ -1101,7 +1099,7 @@ function reportTable(list, tipo, origin){
     </tr>`;
   }).join('');
   return `<table class="report"><thead><tr>
-    <th>${nomeCol}</th><th>Categoria</th><th>Vencimento</th><th>Valor</th><th>Saldo em aberto</th><th>Status</th><th>Origem</th><th>Ação</th>
+    <th>${nomeCol}</th><th>Categoria</th>${tipo==='pagar' ? '<th>Nº Boleto</th>' : ''}<th>Vencimento</th><th>Valor</th><th>Saldo em aberto</th><th>Status</th><th>Origem</th><th>Ação</th>
   </tr></thead><tbody>${rows}</tbody></table>`;
 }
 
@@ -3340,7 +3338,16 @@ function renderPagarPanel(){
   const hoje = todayISO();
   const meses = mesesDisponiveisPagar();
   const { mes, credor } = filtroPagar;
-  let lista = mes === 'todos' ? DATA.contasPagar : DATA.contasPagar.filter(x=> x.vencimento && String(x.vencimento).slice(0,7)===mes);
+      let lista;
+      if(mes === 'todos') lista = DATA.contasPagar;
+      else if(mes === 'hoje') lista = DATA.contasPagar.filter(x=> String(x.vencimento).slice(0,10) === hoje);
+      else if(mes === 'semana'){
+        const fimSemanaPagar = new Date(); fimSemanaPagar.setDate(fimSemanaPagar.getDate()+6);
+        const fimSemanaPagarStr = fimSemanaPagar.toISOString().slice(0,10);
+        lista = DATA.contasPagar.filter(x=> { const d=String(x.vencimento).slice(0,10); return d>=hoje && d<=fimSemanaPagarStr; });
+      } else {
+        lista = DATA.contasPagar.filter(x=> x.vencimento && String(x.vencimento).slice(0,7)===mes);
+      }
   if(credor.length) lista = lista.filter(x=>credor.includes(x.credor || 'Fornecedor não informado'));
     const vencidos = lista.filter(x=> saldoAberto(x,'pagar')>0 && String(x.vencimento).slice(0,10) < hoje);
   const aVencer = lista.filter(x=> saldoAberto(x,'pagar')>0 && String(x.vencimento).slice(0,10) >= hoje);
@@ -3351,13 +3358,15 @@ function renderPagarPanel(){
 
   openOverlay(`
     <div class="panel-head">
-      <div><h2>Contas a pagar</h2><p>Filtre por mês de vencimento e/ou por credor para ver o que está vencido ou a vencer nesse período. Clique em "Adicionar" para lançar uma nova conta.</p></div>
+        <div><h2>Contas a pagar</h2><p>Filtre por período de vencimento (hoje, próximos 7 dias ou mês) e/ou por credor para ver o que está vencido ou a vencer nesse período. Clique em "Adicionar" para lançar uma nova conta.</p></div>
       <button class="close-x" onclick="closeOverlay()">✕</button>
     </div>
     <div class="panel-actions" style="flex-wrap:wrap; gap:10px;">
       <button class="btn gold" onclick="closeOverlay(); openForm('pagar')">+ Adicionar conta a pagar</button>
       <button class="btn" onclick="window.print()">Imprimir</button>
       <select id="filtroMesPagar" style="${estiloSelect}">
+      <option value="hoje" ${mes==='hoje'?'selected':''}>Vencimentos de hoje</option>
+      <option value="semana" ${mes==='semana'?'selected':''}>Próximos 7 dias</option>
         <option value="todos" ${mes==='todos'?'selected':''}>Todos os meses</option>
         ${optsMes}
       </select>
@@ -3453,23 +3462,6 @@ function renderVencidosPanel(){
   document.getElementById('filtroFaixaVencidos').addEventListener('change', e=>{ filtroVencidos.faixa = e.target.value; renderVencidosPanel(); });
 }
 
-function openPagarSemanaPanel(){
-  const inicioSemana = new Date(); const fimSemana = new Date(); fimSemana.setDate(fimSemana.getDate()+6);
-  const lista = DATA.contasPagar.filter(x=>{
-    const d = new Date(x.vencimento); return d>=inicioSemana && d<=fimSemana;
-  });
-  openOverlay(`
-    <div class="panel-head">
-      <div><h2>A pagar na semana</h2><p>Vencimentos entre ${fmtDate(todayISO())} e ${fmtDate(fimSemana.toISOString().slice(0,10))}.</p></div>
-      <button class="close-x" onclick="closeOverlay()">✕</button>
-    </div>
-    <div class="panel-actions">
-      <button class="btn gold" onclick="closeOverlay(); openForm('pagar')">+ Adicionar conta a pagar</button>
-      <button class="btn" onclick="window.print()">Imprimir</button>
-    </div>
-    ${reportTable(lista,'pagar')}
-  `);
-}
 function openPagarHojePanel(){
   const hoje = todayISO();
   const lista = DATA.contasPagar.filter(x=>String(x.vencimento).slice(0,10)===hoje);
@@ -4437,6 +4429,12 @@ document.getElementById('entryForm').addEventListener('submit', async e=>{
       })).filter(p => p.valor > 0 && p.vencimento);
       if(!linhasParcelas.length){
         throw new Error('Informe ao menos uma parcela com valor e vencimento.');
+      }
+      // Nº do boleto obrigatório a partir de 29/09/2026 (pedido da Danielle) — lançamentos
+      // antigos sem esse dado continuam existindo normalmente, mas daqui pra frente o
+      // salvamento é bloqueado sem ele.
+      if(linhasParcelas.some(p => !p.numero_boleto)){
+        throw new Error('Informe o número do boleto em todas as parcelas antes de salvar.');
       }
       // "Data de pagamento" + "Conta bancária" (quando preenchidas) marcam TODAS as parcelas
       // deste lançamento como já pagas na hora, alimentando o Fluxo de Caixa automaticamente —
@@ -5594,7 +5592,6 @@ async function init(){
     if(e.target.closest('#cardPagar')) openPagarPanel();
     if(e.target.closest('#cardVencidos')) openVencidosPanel();
     if(e.target.closest('#cardSaldo')) openSaldoPanel();
-    if(e.target.closest('#cardPagarSemana')) openPagarSemanaPanel();
     if(e.target.closest('#cardPagarHoje')) openPagarHojePanel();
   });
   document.getElementById('flowGrid').addEventListener('click', e=>{
