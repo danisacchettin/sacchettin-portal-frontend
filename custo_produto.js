@@ -15,6 +15,7 @@ let custoProdutoAba = 'rateio';
 function custoProdutoTabsHtml(){
     const abas = [
       {key:'rateio', label:'Rateio de Compra'},
+       {key:'multiplo', label:'Vários Produtos (1 nota)'},
       {key:'direto', label:'Lançamento Direto'},
       {key:'produtos', label:'Produtos & Preços'},
       {key:'estoque', label:'Estoque'},
@@ -47,6 +48,7 @@ function renderCustoProdutoPanel(){
           btn.addEventListener('click', ()=>{ custoProdutoAba = btn.dataset.aba; renderCustoProdutoPanel(); });
     });
     if(custoProdutoAba==='rateio') renderAbaRateioModo1();
+       else if(custoProdutoAba==='multiplo') renderAbaMultiplo();
     else if(custoProdutoAba==='direto') renderAbaRateioModo2();
     else if(custoProdutoAba==='produtos') renderAbaProdutos();
     else if(custoProdutoAba==='estoque') renderAbaEstoque();
@@ -302,6 +304,163 @@ async function salvarDireto(){
       await carregarCadastros();
           msg.textContent = 'Lançamento salvo com sucesso ✓'; msg.style.color='var(--olive)'; msg.style.display='block';
           renderAbaRateioModo2();
+    }catch(err){
+          msg.textContent = 'Erro: ' + err.message; msg.style.color='var(--red)'; msg.style.display='block';
+          btn.disabled = false;
+    }
+}
+
+
+/* ---------- Modo 3: Vários Produtos, 1 nota (cada produto com seu próprio valor pago) ---------- */
+
+let multiploItens = [];
+
+function optsProdutosMultiplo(selectedId){
+    const lista = CADASTROS.produtos || [];
+    const opts = [`<option value="" disabled ${!selectedId?'selected':''}>— Selecione —</option>`]
+      .concat(lista.map(p=>`<option value="${p.id}" data-preco="${p.preco_venda!=null?p.preco_venda:''}" ${String(selectedId)===String(p.id)?'selected':''}>${escapeHtml(p.nome)}</option>`))
+      .concat([`<option value="__novo__" ${selectedId==='__novo__'?'selected':''}>+ Cadastrar novo produto</option>`]);
+    return opts.join('');
+}
+
+function renderAbaMultiplo(){
+    if(!multiploItens.length){
+          multiploItens = [{produto_id:'', produto_nome:'', quantidade:'', valor_pago:'', preco_venda:'', observacao:''}];
+    }
+    const linhas = multiploItens.map((it,i)=>`
+        <tr class="multiplo-row" data-idx="${i}">
+              <td style="min-width:180px;">
+                    <select class="multiplo-produto">${optsProdutosMultiplo(it.produto_id)}</select>
+                    <input type="text" class="multiplo-produto-novo" placeholder="Nome do novo produto" style="display:${it.produto_id==='__novo__'?'block':'none'}; margin-top:4px;" value="${escapeHtml(it.produto_nome||'')}">
+                  </td>
+                        <td style="min-width:100px;"><input type="number" step="0.001" min="0" class="multiplo-qtd" value="${escapeHtml(String(it.quantidade))}"></td>
+                              <td style="min-width:110px;"><input type="number" step="0.01" min="0" class="multiplo-valor" value="${escapeHtml(String(it.valor_pago))}"></td>
+                                    <td class="multiplo-custo-unit" style="text-align:right;">—</td>
+                                          <td style="min-width:110px;"><input type="number" step="0.01" min="0" class="multiplo-preco" value="${escapeHtml(String(it.preco_venda))}"></td>
+                                                <td class="multiplo-lucro-unit" style="text-align:right;">—</td>
+                                                      <td class="multiplo-lucro-total" style="text-align:right;">—</td>
+                                                            <td><input type="text" class="multiplo-obs" placeholder="opcional" value="${escapeHtml(it.observacao||'')}"></td>
+                                                                  <td>${multiploItens.length>1?`<button type="button" class="btn-mini multiplo-remover" data-idx="${i}">✕</button>`:''}</td>
+                                                                      </tr>`).join('');
+
+  document.getElementById('cpAbaContent').innerHTML = `
+      <div class="form-grid">
+            ${renderCadastroField({name:'multiplo_fornecedor', label:'Fornecedor', cadastro:'fornecedores', full:false}, {})}
+                  <div class="field"><label>Data da compra</label><input type="date" id="multiploData" value="${todayISO()}"></div>
+                        <div class="field"><label>Nº da nota (opcional)</label><input type="text" id="multiploNota" placeholder="ex: NF 12345"></div>
+                              </div>
+                                  <p style="font-size:12px; color:var(--ink-soft); margin:-4px 0 10px;">Uma nota com vários produtos diferentes, cada um com o valor efetivamente pago por ele (sem rateio proporcional).</p>
+                                      <div style="overflow-x:auto;">
+                                            <table class="report">
+                                                    <thead><tr><th>Produto</th><th>Qtd/Peso</th><th>Valor pago</th><th>Custo/un</th><th>Preço venda</th><th>Lucro/un</th><th>Lucro total</th><th>Obs.</th><th></th></tr></thead>
+                                                            <tbody id="multiploBody">${linhas}</tbody>
+                                                                    <tfoot><tr style="font-weight:600;"><td>Total</td><td></td><td id="multiploTotalValor">—</td><td></td><td></td><td></td><td id="multiploTotalLucro">—</td><td></td><td></td></tr></tfoot>
+                                                                          </table>
+                                                                              </div>
+                                                                                  <button type="button" class="btn ghost" id="multiploAdicionarLinha" style="margin-top:8px;">+ Adicionar produto</button>
+                                                                                      <div id="multiploMsg" style="font-size:12px; margin-top:12px; display:none;"></div>
+                                                                                          <div class="panel-actions" style="margin-top:14px;"><button type="button" class="btn gold" id="multiploSalvar">Salvar lançamentos</button></div>
+                                                                                            `;
+
+  wireAbaMultiplo();
+    recalcularMultiplo();
+}
+
+function wireAbaMultiplo(){
+    document.querySelectorAll('#multiploBody .multiplo-row').forEach(row=>{
+          const idx = Number(row.dataset.idx);
+          const selProduto = row.querySelector('.multiplo-produto');
+          selProduto.addEventListener('change', e=>{
+                  multiploItens[idx].produto_id = e.target.value;
+                  const novoWrap = row.querySelector('.multiplo-produto-novo');
+                  novoWrap.style.display = e.target.value==='__novo__' ? 'block' : 'none';
+                  if(e.target.value && e.target.value!=='__novo__'){
+                            const opt = e.target.selectedOptions[0];
+                            const preco = opt ? opt.dataset.preco : '';
+                            if(preco && !multiploItens[idx].preco_venda){
+                                        multiploItens[idx].preco_venda = preco;
+                                        row.querySelector('.multiplo-preco').value = preco;
+                            }
+                  }
+                  recalcularMultiplo();
+          });
+          row.querySelector('.multiplo-produto-novo').addEventListener('input', e=>{ multiploItens[idx].produto_nome = e.target.value; });
+          row.querySelector('.multiplo-qtd').addEventListener('input', e=>{ multiploItens[idx].quantidade = e.target.value; recalcularMultiplo(); });
+          row.querySelector('.multiplo-valor').addEventListener('input', e=>{ multiploItens[idx].valor_pago = e.target.value; recalcularMultiplo(); });
+          row.querySelector('.multiplo-preco').addEventListener('input', e=>{ multiploItens[idx].preco_venda = e.target.value; recalcularMultiplo(); });
+          row.querySelector('.multiplo-obs').addEventListener('input', e=>{ multiploItens[idx].observacao = e.target.value; });
+    });
+    document.querySelectorAll('#multiploBody .multiplo-remover').forEach(btn=>{
+          btn.addEventListener('click', e=>{
+                  const idx = Number(e.currentTarget.dataset.idx);
+                  multiploItens.splice(idx,1);
+                  renderAbaMultiplo();
+          });
+    });
+    document.getElementById('multiploAdicionarLinha').addEventListener('click', ()=>{
+          multiploItens.push({produto_id:'', produto_nome:'', quantidade:'', valor_pago:'', preco_venda:'', observacao:''});
+          renderAbaMultiplo();
+    });
+    document.getElementById('multiploSalvar').addEventListener('click', salvarMultiplo);
+}
+
+function recalcularMultiplo(){
+    let valorTotalGeral = 0, lucroTotalGeral = 0;
+    document.querySelectorAll('#multiploBody .multiplo-row').forEach(row=>{
+          const idx = Number(row.dataset.idx);
+          const qtd = parseFloat(multiploItens[idx].quantidade) || 0;
+          const valorPago = parseFloat(multiploItens[idx].valor_pago) || 0;
+          const preco = parseFloat(multiploItens[idx].preco_venda) || 0;
+          const custoUnit = qtd>0 ? valorPago/qtd : 0;
+          const lucroUnit = preco>0 ? preco-custoUnit : 0;
+          const lucroTotal = lucroUnit*qtd;
+          valorTotalGeral += valorPago;
+          if(preco>0) lucroTotalGeral += lucroTotal;
+          row.querySelector('.multiplo-custo-unit').textContent = qtd>0 ? fmtBRL(custoUnit) : '—';
+          row.querySelector('.multiplo-lucro-unit').textContent = preco>0 ? fmtBRL(lucroUnit) : '—';
+          row.querySelector('.multiplo-lucro-total').textContent = preco>0 ? fmtBRL(lucroTotal) : '—';
+    });
+    document.getElementById('multiploTotalValor').textContent = fmtBRL(valorTotalGeral);
+    document.getElementById('multiploTotalLucro').textContent = fmtBRL(lucroTotalGeral);
+}
+
+async function salvarMultiplo(){
+    const msg = document.getElementById('multiploMsg');
+    msg.style.display = 'none';
+    const btn = document.getElementById('multiploSalvar');
+    btn.disabled = true;
+    try{
+          const fornecedorSelect = document.querySelector('select[name="multiplo_fornecedor"]');
+          const fornecedorForm = { multiplo_fornecedor: fornecedorSelect ? fornecedorSelect.value : '', novo_multiplo_fornecedor: (document.querySelector('input[name="novo_multiplo_fornecedor"]')||{}).value || '' };
+          const fornecedorId = await resolverCadastro({name:'multiplo_fornecedor', cadastro:'fornecedores', label:'Fornecedor'}, fornecedorForm);
+
+      const dataCompra = document.getElementById('multiploData').value;
+          const nota = document.getElementById('multiploNota').value.trim();
+
+      if(!dataCompra) throw new Error('Informe a data da compra.');
+
+      const itensValidos = multiploItens.filter(it => (it.produto_id || it.produto_nome) && (parseFloat(it.quantidade)||0)>0 && (parseFloat(it.valor_pago)||0)>0);
+          if(!itensValidos.length) throw new Error('Informe ao menos um produto com quantidade e valor pago maiores que zero.');
+
+      for(const it of itensValidos){
+              const observacao = [nota ? `Nota ${nota}` : '', it.observacao || ''].filter(Boolean).join(' — ') || undefined;
+              await apiFetch('/api/produtos/rateio', {method:'POST', body: JSON.stringify({
+                        fornecedor_id: fornecedorId, data_compra: dataCompra, valor_total_pago: parseFloat(it.valor_pago),
+                        base_rateio: 'quantidade', modo: 'direto',
+                        itens: [{
+                                    produto_id: it.produto_id && it.produto_id!=='__novo__' ? it.produto_id : undefined,
+                                    produto_nome: it.produto_id==='__novo__' ? it.produto_nome : undefined,
+                                    peso_ou_quantidade: parseFloat(it.quantidade) || 0,
+                                    preco_venda: it.preco_venda ? parseFloat(it.preco_venda) : undefined,
+                                    observacao,
+                        }],
+              })});
+      }
+
+      multiploItens = [];
+          await carregarCadastros();
+          msg.textContent = 'Lançamentos salvos com sucesso ✓'; msg.style.color = 'var(--olive)'; msg.style.display='block';
+          renderAbaMultiplo();
     }catch(err){
           msg.textContent = 'Erro: ' + err.message; msg.style.color='var(--red)'; msg.style.display='block';
           btn.disabled = false;
