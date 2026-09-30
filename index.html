@@ -1595,7 +1595,7 @@ async function openEditFornecedores(){
   const categoriaOpts = catId => `<option value="">— Não classificado —</option>` + CADASTROS.categoriasDespesa.map(c=>`<option value="${c.id}" ${String(catId)===String(c.id)?'selected':''}>${escapeHtml(c.nome_categoria)}</option>`).join('');
   const linhas = (lista||[]).map(f => `
   <tr data-id="${f.id}">
-  <td><input type="text" class="ec-nome" value="${escapeHtml(f.nome)}" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
+  <td><input type="text" class="ec-nome" value="${escapeHtml(f.nome)}" style="width:100%; min-width:220px; ${ESTILO_INPUT_MENU}"></td>
   <td><input type="text" class="ec-cnpj" data-mask="cnpjCpf" value="${escapeHtml(f.cnpj_cpf||'')}" placeholder="CNPJ/CPF" style="width:100%; ${ESTILO_INPUT_MENU}"><span class="doc-feedback" style="font-size:10px; display:block; margin-top:2px;"></span></td>
   <td><select class="ec-tipo-pessoa" style="width:100%; ${ESTILO_INPUT_MENU}">${optTipoPessoa(f.tipo_pessoa)}</select></td>
   <td><select class="ec-categoria" style="width:100%; ${ESTILO_INPUT_MENU}">${categoriaOpts(f.categoria_padrao_id)}</select></td>
@@ -1642,7 +1642,7 @@ async function openEditSacados(){
   const lista = await apiFetch('/api/cadastros/sacados').catch(()=>[]);
   const linhas = (lista||[]).map(s => `
     <tr data-id="${s.id}">
-      <td><input type="text" class="ec-nome" value="${escapeHtml(s.nome)}" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
+      <td><input type="text" class="ec-nome" value="${escapeHtml(s.nome)}" style="width:100%; min-width:220px; ${ESTILO_INPUT_MENU}"></td>
       <td><input type="text" class="ec-cnpj" data-mask="cnpjCpf" value="${escapeHtml(s.cnpj_cpf||'')}" placeholder="CNPJ/CPF" style="width:100%; ${ESTILO_INPUT_MENU}"><span class="doc-feedback" style="font-size:10px; display:block; margin-top:2px;"></span></td>
       <td><input type="text" class="ec-contato" data-mask="telefone" value="${escapeHtml(s.contato||'')}" placeholder="Contato" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
       <td><input type="text" class="ec-endereco" value="${escapeHtml(s.endereco||'')}" placeholder="Endereço" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
@@ -1683,7 +1683,7 @@ async function openEditCategorias(){
   const gruposOpts = g => `<option value="">— Não classificado —</option>` + GRUPOS_DRE.map(x=>`<option value="${x}" ${g===x?'selected':''}>${x}</option>`).join('');
   const linhas = (lista||[]).map(c => `
     <tr data-id="${c.id}">
-      <td><input type="text" class="ec-nome" value="${escapeHtml(c.nome_categoria)}" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
+      <td><input type="text" class="ec-nome" value="${escapeHtml(c.nome_categoria)}" style="width:100%; min-width:220px; ${ESTILO_INPUT_MENU}"></td>
       <td>${c.tipo === 'receita' ? 'Receita' : 'Despesa'}</td>
       <td><select class="ec-grupo" style="width:100%; ${ESTILO_INPUT_MENU}">${gruposOpts(c.grupo_dre)}</select></td>
       <td><button type="button" class="btn-mini ec-salvar">Salvar</button><span class="ec-msg" style="font-size:10.5px; margin-left:6px;"></span></td>
@@ -1720,7 +1720,7 @@ async function openEditContasBancarias(){
   const lista = await apiFetch('/api/cadastros/contas-bancarias').catch(()=>[]);
   const linhas = (lista||[]).map(c => `
     <tr data-id="${c.id}">
-      <td><input type="text" class="ec-nome" value="${escapeHtml(c.nome_conta)}" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
+      <td><input type="text" class="ec-nome" value="${escapeHtml(c.nome_conta)}" style="width:100%; min-width:220px; ${ESTILO_INPUT_MENU}"></td>
       <td><input type="text" class="ec-banco" value="${escapeHtml(c.banco||'')}" placeholder="Banco" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
       <td><input type="text" class="ec-agencia" value="${escapeHtml(c.agencia||'')}" placeholder="Agência" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
       <td><input type="text" class="ec-numero" value="${escapeHtml(c.numero_conta||'')}" placeholder="Nº conta" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
