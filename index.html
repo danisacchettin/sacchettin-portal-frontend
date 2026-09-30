@@ -4096,12 +4096,24 @@ function renderCadastroField(f, prefill){
   return `
     <div class="field ${f.full?'full':''}">
       <label>${f.label}${f.required ? ' *' : ''}</label>
-      <select name="${f.name}" onchange="toggleCadastroNovo('${f.name}', this.value)"${requiredAttr}>${optionsHtml}</select>
+      <select name="${f.name}" onchange="toggleCadastroNovo('${f.name}', this.value); if('${f.name}'==='credor') autoPreencherCategoriaFornecedor(this.value);"${requiredAttr}>${optionsHtml}</select>
       <div id="novo_${f.name}" class="novo-cadastro" style="display:${selectedValue==='__novo__'?'flex':'none'};">
         <input name="novo_${f.name}" type="text" placeholder="Nome do novo ${meta.novoLabel}" value="${escapeHtml(novoNome)}" />
         ${extraFieldsHtml}
       </div>
     </div>`;
+}
+
+function autoPreencherCategoriaFornecedor(fornecedorId){
+  if(currentType !== 'pagar') return;
+  const categoriaSelect = document.querySelector('#formFields select[name="categoria"]');
+  if(!categoriaSelect) return;
+  const fornecedor = (CADASTROS.fornecedores||[]).find(f => String(f.id)===String(fornecedorId));
+  const catId = fornecedor && fornecedor.categoria_padrao_id;
+  if(catId && !categoriaSelect.value){
+    const opt = categoriaSelect.querySelector(`option[value="${catId}"]`);
+    if(opt){ categoriaSelect.value = String(catId); }
+  }
 }
 
 function renderFormFields(prefill){
