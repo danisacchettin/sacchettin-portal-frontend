@@ -503,7 +503,7 @@ Fica fora de .wrap para continuar visível quando .wrap é escondido em @media p
     <div class="card" id="btnPrint">
       <div class="lbl">Impressão</div>
       <div class="val" style="font-size:19px;">Relatório para impressão</div>
-      <div class="sub">Consolida os cards acima em um documento pronto para PDF</div>
+      <div class="sub">Estoque, produtos, contas a pagar/receber e fluxo — em PDF ou planilha Excel</div>
     </div>
     <div class="card" id="btnImportar">
       <div class="lbl">Importação em lote</div>
@@ -3876,19 +3876,153 @@ async function handleImportUpload(file){
   }
 }
 
-function openPrintAll(){
+let printSelecao = { estoque:true, produtos:true, vencidos:true, pagar:true, receber:true, fluxo:true };
+let printDadosExtra = { produtos:null, estoque:null };
+
+const PRINT_SECOES = [
+  {key:'estoque', label:'Estoque'},
+  {key:'produtos', label:'Produtos & Preços'},
+  {key:'vencidos', label:'Inadimplência (vencidos)'},
+  {key:'pagar', label:'Contas a pagar'},
+  {key:'receber', label:'Contas a receber'},
+  {key:'fluxo', label:'Fluxo de caixa'},
+];
+
+async function openPrintAll(){
   openOverlay(`
     <div class="panel-head">
       <div><h2>Relatório consolidado</h2><p>${document.getElementById('clientSelect').value} — ${fmtDate(todayISO())}</p></div>
       <button class="close-x" onclick="closeOverlay()">✕</button>
     </div>
-    <div class="panel-actions"><button class="btn gold" onclick="window.print()">Imprimir / salvar PDF</button></div>
-    <p style="font-size:12px; color:var(--ink-soft); margin:14px 0 6px;">Contas a receber</p>
-    ${reportTable(DATA.contasReceber,'receber')}
-    <p style="font-size:12px; color:var(--ink-soft); margin:20px 0 6px;">Contas a pagar</p>
-    ${reportTable(DATA.contasPagar,'pagar')}
+    <p style="font-size:12.5px; color:var(--ink-soft);">Carregando dados de estoque e produtos…</p>
   `);
+  try{
+    if(!printDadosExtra.produtos) printDadosExtra.produtos = await apiFetch('/api/produtos') || [];
+  }catch(err){ printDadosExtra.produtos = printDadosExtra.produtos || []; }
+  try{
+    if(!printDadosExtra.estoque) printDadosExtra.estoque = await apiFetch('/api/produtos/estoque/saldo') || [];
+  }catch(err){ printDadosExtra.estoque = printDadosExtra.estoque || []; }
+  renderPrintAll();
 }
+
+function renderPrintAll(){
+  const checkboxesHtml = PRINT_SECOES.map(s=>`
+    <label style="display:flex; align-items:center; gap:6px; font-size:13px; margin-right:16px; margin-bottom:8px;">
+      <input type="checkbox" class="print-check" data-secao="${s.key}" ${printSelecao[s.key] ? 'checked' : ''}> ${s.label}
+    </label>
+  `).join('');
+
+  const vencidosList = DATA.contasPagar.filter(x=>emAtraso(x,'pagar'));
+  const totalVencidos = vencidosList.reduce((s,x)=>s+saldoAberto(x,'pagar'),0);
+
+  const k = computeKPIs();
+  let acumulado = k.saldoCaixa;
+  const fluxoRows = DATA.fluxoProjetado.map(m=>{
+    acumulado += (m.receber - m.pagar);
+    return `<tr><td>${m.mes}</td><td>${fmtBRL(m.receber)}</td><td>${fmtBRL(m.pagar)}</td><td>${fmtBRL(m.receber-m.pagar)}</td><td>${fmtBRL(acumulado)}</td></tr>`;
+  }).join('');
+
+  const estoqueRows = (printDadosExtra.estoque||[]).map(s=>`
+    <tr><td>${escapeHtml(s.produto_nome||'')}</td><td>${Number(s.saldo_atual||0).toLocaleString('pt-BR',{maximumFractionDigits:3})} ${escapeHtml(s.unidade_padrao||'')}</td><td>${s.ultima_movimentacao ? fmtDate(s.ultima_movimentacao) : '—'}</td></tr>
+  `).join('');
+
+  const produtosRows = (printDadosExtra.produtos||[]).map(p=>`
+    <tr><td>${escapeHtml(p.nome||'')}</td><td>${escapeHtml(p.categoria||'—')}</td><td>${escapeHtml(p.unidade_padrao||'')}</td><td>${p.preco_venda!=null ? fmtBRL(p.preco_venda) : '—'}</td><td>${Number(p.saldo_atual||0).toLocaleString('pt-BR',{maximumFractionDigits:3})} ${escapeHtml(p.unidade_padrao||'')}</td></tr>
+  `).join('');
+
+  const secoesHtml = `
+    ${printSelecao.estoque ? `<div class="print-secao"><p style="font-size:12px; color:var(--ink-soft); margin:20px 0 6px;">Estoque</p>
+      <div style="overflow-x:auto;"><table class="report"><thead><tr><th>Produto</th><th>Saldo atual</th><th>Última movimentação</th></tr></thead><tbody>${estoqueRows || '<tr><td colspan="3">Nenhum movimento de estoque ainda.</td></tr>'}</tbody></table></div>
+    </div>` : ''}
+    ${printSelecao.produtos ? `<div class="print-secao"><p style="font-size:12px; color:var(--ink-soft); margin:20px 0 6px;">Produtos &amp; Preços</p>
+      <div style="overflow-x:auto;"><table class="report"><thead><tr><th>Produto</th><th>Categoria</th><th>Unidade</th><th>Preço de venda</th><th>Saldo em estoque</th></tr></thead><tbody>${produtosRows || '<tr><td colspan="5">Nenhum produto cadastrado ainda.</td></tr>'}</tbody></table></div>
+    </div>` : ''}
+    ${printSelecao.vencidos ? `<div class="print-secao"><p style="font-size:12px; color:var(--ink-soft); margin:20px 0 6px;">Inadimplência (vencidos) — ${vencidosList.length} título(s), ${fmtBRL(totalVencidos)}</p>
+      ${vencidosList.length ? reportTable(vencidosList,'pagar','vencidos') : '<p style="font-size:13px; color:var(--ink-soft);">Nenhum título vencido no momento.</p>'}
+    </div>` : ''}
+    ${printSelecao.pagar ? `<div class="print-secao"><p style="font-size:12px; color:var(--ink-soft); margin:20px 0 6px;">Contas a pagar</p>${reportTable(DATA.contasPagar,'pagar')}</div>` : ''}
+    ${printSelecao.receber ? `<div class="print-secao"><p style="font-size:12px; color:var(--ink-soft); margin:20px 0 6px;">Contas a receber</p>${reportTable(DATA.contasReceber,'receber')}</div>` : ''}
+    ${printSelecao.fluxo ? `<div class="print-secao"><p style="font-size:12px; color:var(--ink-soft); margin:20px 0 6px;">Fluxo de caixa projetado</p>
+      <table class="report"><thead><tr><th>Mês</th><th>A receber</th><th>A pagar</th><th>Saldo do mês</th><th>Acumulado</th></tr></thead><tbody>${fluxoRows}</tbody></table>
+    </div>` : ''}
+  `;
+
+  openOverlay(`
+    <div class="panel-head">
+      <div><h2>Relatório consolidado</h2><p>${document.getElementById('clientSelect').value} — ${fmtDate(todayISO())}</p></div>
+      <button class="close-x" onclick="closeOverlay()">✕</button>
+    </div>
+    <div class="panel-actions" style="flex-wrap:wrap; align-items:flex-start; row-gap:10px;">
+      <div style="display:flex; flex-wrap:wrap; width:100%;">${checkboxesHtml}</div>
+      <button class="btn gold" onclick="window.print()">Imprimir / salvar PDF</button>
+      <button class="btn ghost" id="btnExportarExcelConsolidado">Exportar Excel (.xlsx)</button>
+    </div>
+    <div id="printSecoesWrap">${secoesHtml}</div>
+  `);
+
+  document.querySelectorAll('.print-check').forEach(chk=>{
+    chk.addEventListener('change', e=>{
+      printSelecao[e.target.dataset.secao] = e.target.checked;
+      renderPrintAll();
+    });
+  });
+  const btnExcel = document.getElementById('btnExportarExcelConsolidado');
+  if(btnExcel) btnExcel.addEventListener('click', exportarRelatorioConsolidadoExcel);
+}
+
+function exportarRelatorioConsolidadoExcel(){
+  if(typeof XLSX === 'undefined'){
+    alert('Não consegui carregar a biblioteca de planilhas agora. Verifique sua conexão e tente novamente.');
+    return;
+  }
+  const wb = XLSX.utils.book_new();
+
+  if(printSelecao.estoque){
+    const linhas = [['Produto','Saldo atual','Unidade','Última movimentação']];
+    (printDadosExtra.estoque||[]).forEach(s=>linhas.push([s.produto_nome||'', Number(s.saldo_atual)||0, s.unidade_padrao||'', s.ultima_movimentacao ? fmtDate(s.ultima_movimentacao) : '']));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(linhas), 'Estoque');
+  }
+  if(printSelecao.produtos){
+    const linhas = [['Produto','Categoria','Unidade','Preço de venda (R$)','Saldo em estoque']];
+    (printDadosExtra.produtos||[]).forEach(p=>linhas.push([p.nome||'', p.categoria||'', p.unidade_padrao||'', p.preco_venda!=null ? p.preco_venda : '', Number(p.saldo_atual)||0]));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(linhas), 'Produtos e Precos');
+  }
+  if(printSelecao.vencidos){
+    const lista = DATA.contasPagar.filter(x=>emAtraso(x,'pagar'));
+    const linhas = [['Fornecedor','Categoria','Nº Boleto','Vencimento','Valor original (R$)','Saldo em aberto (R$)','Status']];
+    lista.forEach(x=>linhas.push([x.credor||'', x.categoria||'', x.numero_boleto||'', fmtDate(x.vencimento), Number(x.valor_original)||0, saldoAberto(x,'pagar'), x.status||'']));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(linhas), 'Inadimplencia');
+  }
+  if(printSelecao.pagar){
+    const linhas = [['Fornecedor','Categoria','Nº Boleto','Vencimento','Valor original (R$)','Saldo em aberto (R$)','Status']];
+    DATA.contasPagar.forEach(x=>linhas.push([x.credor||'', x.categoria||'', x.numero_boleto||'', fmtDate(x.vencimento), Number(x.valor_original)||0, saldoAberto(x,'pagar'), x.status||'']));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(linhas), 'Contas a Pagar');
+  }
+  if(printSelecao.receber){
+    const linhas = [['Cliente','Categoria','Vencimento','Valor original (R$)','Saldo em aberto (R$)','Status']];
+    DATA.contasReceber.forEach(x=>linhas.push([x.cliente||'', x.categoria||'', fmtDate(x.vencimento), Number(x.valor_original)||0, saldoAberto(x,'receber'), x.status||'']));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(linhas), 'Contas a Receber');
+  }
+  if(printSelecao.fluxo){
+    const k = computeKPIs();
+    let acumulado = k.saldoCaixa;
+    const linhas = [['Mês','A receber (R$)','A pagar (R$)','Saldo do mês (R$)','Acumulado (R$)']];
+    DATA.fluxoProjetado.forEach(m=>{
+      acumulado += (m.receber - m.pagar);
+      linhas.push([m.mes, m.receber, m.pagar, m.receber-m.pagar, acumulado]);
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(linhas), 'Fluxo de Caixa');
+  }
+
+  if(wb.SheetNames.length === 0){
+    alert('Selecione pelo menos um módulo para exportar.');
+    return;
+  }
+  const proibidos = '\\/*?:[]';
+  const nomeCliente = (document.getElementById('clientSelect').value || 'Portal').split('').filter(c=>proibidos.indexOf(c)===-1).join('');
+  XLSX.writeFile(wb, `Relatorio ${nomeCliente} - ${fmtDate(todayISO())}.xlsx`);
+}
+
 
 /* ---------- formulário "Inserir" ---------- */
 // Campos do tipo 'cadastro' viram um <select> alimentado por /api/cadastros/* em vez de texto
