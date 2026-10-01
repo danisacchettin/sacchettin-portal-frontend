@@ -628,3 +628,82 @@ async function renderAbaEstoque(){
   });
 }
 
+
+/* ---------- Tipo de peça: auto-popula cortes no Rateio de Compra ----------
+   Pedido da Danielle (01/10/2026): quando a Cristal compra uma peça inteira (ex: capote
+   traseiro bovino, dianteiro bovino, suíno inteiro) e desossa internamente em vários cortes
+   de venda, selecionar o tipo aqui auto-popula as linhas do Rateio de Compra (aba "Rateio de
+   Compra") com os cortes certos, bastando preencher peso e preço de venda de cada um.
+   Implementado sem alterar renderAbaRateioModo1/wireAbaRateioModo1 originais — só "encapsula"
+   a função original e insere uma barra de seleção acima da tabela depois que ela renderiza.
+   Backend: GET/POST /api/produtos/tipos-peca (src/routes/produtos.js). */
+let TIPOS_PECA_CACHE = null;
+
+async function carregarTiposPeca(forcar){
+  if(TIPOS_PECA_CACHE && !forcar) return TIPOS_PECA_CACHE;
+  try{
+    TIPOS_PECA_CACHE = await apiFetch('/api/produtos/tipos-peca') || [];
+  }catch(err){
+    TIPOS_PECA_CACHE = [];
+  }
+  return TIPOS_PECA_CACHE;
+}
+
+function tipoPecaBarraHtml(tipos){
+  const opts = ['<option value="">Tipo de peça (opcional) — selecione para auto-popular os cortes</option>']
+    .concat(tipos.map(t => `<option value="${t.id}">${escapeHtml(t.nome)}</option>`))
+    .join('');
+  return `<div class="field full" style="margin-bottom:12px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+    <select id="tipoPecaSelect" style="min-width:280px;">${opts}</select>
+    <button type="button" class="btn ghost" id="tipoPecaNovoBtn" style="font-size:12px;">+ Novo tipo de peça</button>
+  </div>`;
+}
+
+function wireTipoPecaBarra(){
+  const sel = document.getElementById('tipoPecaSelect');
+  if(sel){
+    sel.addEventListener('change', (e)=>{
+      const tipoId = e.target.value;
+      if(!tipoId) return;
+      const tipo = (TIPOS_PECA_CACHE || []).find(t => String(t.id) === tipoId);
+      if(!tipo || !tipo.cortes || !tipo.cortes.length) return;
+      rateioItens = tipo.cortes.map(nomeCorte => ({
+        produto_id: '', produto_nome: nomeCorte, peso_ou_quantidade: '', preco_venda: '', observacao: ''
+      }));
+      renderAbaRateioModo1();
+    });
+  }
+  const novoBtn = document.getElementById('tipoPecaNovoBtn');
+  if(novoBtn){
+    novoBtn.addEventListener('click', async ()=>{
+      const nome = prompt('Nome do tipo de peça (ex: Capote traseiro bovino):');
+      if(!nome || !nome.trim()) return;
+      const cortesTxt = prompt('Cole os cortes que essa peça origina, um por linha:');
+      if(!cortesTxt) return;
+      const cortes = cortesTxt.split('\n').map(c => c.trim()).filter(Boolean);
+      if(!cortes.length) return;
+      try{
+        await apiFetch('/api/produtos/tipos-peca', {method:'POST', body: JSON.stringify({ nome: nome.trim(), cortes })});
+        await carregarTiposPeca(true);
+        renderAbaRateioModo1();
+      }catch(err){
+        alert('Erro ao salvar tipo de peça: ' + err.message);
+      }
+    });
+  }
+}
+
+const __renderAbaRateioModo1Base = renderAbaRateioModo1;
+renderAbaRateioModo1 = function(){
+  __renderAbaRateioModo1Base();
+  const wrap = document.getElementById('cpAbaContent');
+  if(wrap && !document.getElementById('tipoPecaSelect')){
+    carregarTiposPeca().then(tipos=>{
+      if(!document.getElementById('cpAbaContent') || document.getElementById('tipoPecaSelect')) return;
+      const bar = document.createElement('div');
+      bar.innerHTML = tipoPecaBarraHtml(tipos);
+      wrap.insertBefore(bar.firstElementChild, wrap.firstElementChild);
+      wireTipoPecaBarra();
+    });
+  }
+};
