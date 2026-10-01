@@ -538,57 +538,93 @@ async function renderAbaProdutos(){
 /* ---------- Estoque: saldo + baixa manual ---------- */
 
 async function renderAbaEstoque(){
-    document.getElementById('cpAbaContent').innerHTML = `<p style="font-size:12.5px; color:var(--ink-soft);">Carregando estoque…</p>`;
-    let saldo = [];
-    try{
-          saldo = await apiFetch('/api/produtos/estoque/saldo') || [];
-    }catch(err){
-          document.getElementById('cpAbaContent').innerHTML = `<p style="color:var(--red);">Erro ao carregar estoque: ${err.message}</p>`;
-          return;
-    }
-    const linhas = saldo.map(s => `
-        <tr>
-              <td>${escapeHtml(s.produto_nome)}</td>
-                    <td>${Number(s.saldo_atual).toLocaleString('pt-BR',{maximumFractionDigits:3})} ${escapeHtml(s.unidade_padrao)}</td>
-                          <td>${s.ultima_movimentacao ? fmtDate(s.ultima_movimentacao) : '—'}</td>
-                              </tr>`).join('');
+  document.getElementById('cpAbaContent').innerHTML = `<p style="font-size:12.5px; color:var(--ink-soft);">Carregando estoque…</p>`;
+  let saldo;
+  try{
+    saldo = await apiFetch('/api/produtos/estoque/saldo') || [];
+  }catch(err){
+    document.getElementById('cpAbaContent').innerHTML = `<p style="color:var(--red);">Erro ao carregar estoque: ${err.message}</p>`;
+    return;
+  }
+  const linhas = saldo.map(s => `<tr data-produto="${escapeHtml(s.produto_nome)}">
+    <td>${escapeHtml(s.produto_nome)}</td>
+    <td><input type="number" step="0.001" min="0" class="estoque-saldo" value="${Number(s.saldo_atual||0)}" style="width:110px;"> ${escapeHtml(s.unidade_padrao||'')}</td>
+    <td>${s.ultima_movimentacao ? fmtDate(s.ultima_movimentacao) : '—'}</td>
+    <td><span class="estoque-msg" style="font-size:10.5px;"></span></td>
+  </tr>`).join('');
 
   document.getElementById('cpAbaContent').innerHTML = `
-      <div style="overflow-x:auto;">
-            <table class="report">
-                    <thead><tr><th>Produto</th><th>Saldo atual</th><th>Última movimentação</th></tr></thead>
-                            <tbody>${linhas || '<tr><td colspan="3">Nenhum movimento de estoque ainda.</td></tr>'}</tbody>
-                                  </table>
-                                      </div>
-                                          <div class="section-title">Baixa manual de estoque</div>
-                                              <p style="font-size:12px; color:var(--ink-soft); margin-top:-6px;">Venda avulsa, perda, consumo interno etc. — enquanto não há integração automática com o relatório de vendas do PDV/distribuidora.</p>
-                                                  <div class="form-grid">
-                                                        ${renderCadastroField({name:'baixa_produto', label:'Produto', cadastro:'produtos', full:true}, {})}
-                                                              <div class="field"><label>Quantidade</label><input type="number" step="0.001" min="0" id="baixaQtd"></div>
-                                                                    <div class="field"><label>Data</label><input type="date" id="baixaData" value="${todayISO()}"></div>
-                                                                          <div class="field full"><label>Observação (opcional)</label><input type="text" id="baixaObs" placeholder="ex: venda balcão, perda no gelo"></div>
-                                                                              </div>
-                                                                                  <div id="baixaMsg" style="font-size:12px; margin-top:8px; display:none;"></div>
-                                                                                      <button type="button" class="btn gold" id="baixaSalvar" style="margin-top:8px;">Registrar baixa</button>
-                                                                                        `;
+    <div style="overflow-x:auto;">
+      <table class="report">
+        <thead><tr><th>Produto</th><th>Saldo atual</th><th>Última movimentação</th><th></th></tr></thead>
+        <tbody>${linhas || '<tr><td colspan="4">Nenhum movimento de estoque ainda.</td></tr>'}</tbody>
+      </table>
+    </div>
+    <p style="font-size:11.5px; color:var(--ink-soft); margin-top:-4px;">Edite o saldo diretamente para corrigir uma contagem física — o ajuste fica registrado no histórico de movimentações, igual a uma entrada ou baixa normal.</p>
+    <div class="section-title">Baixa manual de estoque</div>
+    <p style="font-size:12px; color:var(--ink-soft); margin-top:-6px;">Venda avulsa, perda, consumo interno — não lança nem referencia contas a pagar/receber.</p>
+    <div class="form-grid">
+      ${renderCadastroField({name:'baixa_produto', label:'Produto', cadastro:'produtos', full:true})}
+      <div class="field"><label>Quantidade</label><input type="number" step="0.001" min="0" id="baixaQtd"></div>
+      <div class="field"><label>Data</label><input type="date" id="baixaData" value="${todayISO()}"></div>
+      <div class="field full"><label>Observação (opcional)</label><input type="text" id="baixaObs"></div>
+    </div>
+    <div id="baixaMsg" style="font-size:12px; margin-top:8px; display:none;"></div>
+    <button type="button" class="btn gold" id="baixaSalvar" style="margin-top:8px;">Registrar baixa</button>
+  `;
+
+  document.querySelectorAll('.estoque-saldo').forEach(inp=>{
+    inp.addEventListener('change', async (e)=>{
+      const produtoNome = e.target.closest('tr').dataset.produto;
+      const msg = e.target.closest('tr').querySelector('.estoque-msg');
+      msg.style.display = 'none';
+      const novoSaldo = parseFloat(e.target.value);
+      if(!(novoSaldo >= 0)){
+        msg.textContent = 'Valor inválido.';
+        msg.style.color = 'var(--red)';
+        msg.style.display = 'block';
+        return;
+      }
+      try{
+        await apiFetch('/api/produtos/estoque/ajuste', {method:'POST', body: JSON.stringify({
+          produto_nome: produtoNome, novo_saldo: novoSaldo, observacao: 'Ajuste manual via aba Estoque'
+        })});
+        msg.textContent = 'Salvo ✓';
+        msg.style.color = 'var(--olive)';
+        msg.style.display = 'block';
+        await carregarCadastros();
+      }catch(err){
+        msg.textContent = 'Erro: ' + err.message;
+        msg.style.color = 'var(--red)';
+        msg.style.display = 'block';
+      }
+    });
+  });
 
   document.getElementById('baixaSalvar').addEventListener('click', async ()=>{
-        const msg = document.getElementById('baixaMsg');
-        msg.style.display = 'none';
-        try{
-                const produtoSelect = document.querySelector('select[name="baixa_produto"]');
-                const produtoForm = { baixa_produto: produtoSelect ? produtoSelect.value : '', novo_baixa_produto: (document.querySelector('input[name="novo_baixa_produto"]')||{}).value || '' };
-                const produtoId = await resolverCadastro({name:'baixa_produto', cadastro:'produtos', label:'Produto'}, produtoForm);
-                if(!produtoId) throw new Error('Selecione um produto.');
-                const qtd = parseFloat(document.getElementById('baixaQtd').value) || 0;
-                const data = document.getElementById('baixaData').value;
-                if(!(qtd>0)) throw new Error('Informe a quantidade.');
-                if(!data) throw new Error('Informe a data.');
-                await apiFetch('/api/produtos/estoque/baixa', {method:'POST', body: JSON.stringify({
-                          produto_id: produtoId, quantidade: qtd, data, observacao: document.getElementById('baixaObs').value.trim() || undefined,
-                })});
-                msg.textContent = 'Baixa registrada ✓'; msg.style.color='var(--olive)'; msg.style.display='block';
-                renderAbaEstoque();
-        }catch(err){ msg.textContent = 'Erro: '+err.message; msg.style.color='var(--red)'; msg.style.display='block'; }
+    const msg = document.getElementById('baixaMsg');
+    msg.style.display = 'none';
+    try{
+      const produtoSelect = document.querySelector('select[name="baixa_produto"]');
+      const produtoForm = produtoSelect ? { baixa_produto: produtoSelect.value } : { novo_baixa_produto: document.querySelector('input[name="novo_baixa_produto"]').value };
+      const produtoId = await resolverCadastro({ name:'baixa_produto', cadastro:'produtos', label:'Produto', form: produtoForm });
+      if(!produtoId) throw new Error('Selecione um produto.');
+      const qtd = parseFloat(document.getElementById('baixaQtd').value) || 0;
+      const data = document.getElementById('baixaData').value;
+      if(!(qtd > 0)) throw new Error('Informe a quantidade.');
+      if(!data) throw new Error('Informe a data.');
+      await apiFetch('/api/produtos/estoque/baixa', {method:'POST', body: JSON.stringify({
+        produto_id: produtoId, quantidade: qtd, data, observacao: document.getElementById('baixaObs').value.trim() || undefined
+      })});
+      msg.textContent = 'Baixa registrada ✓';
+      msg.style.color = 'var(--olive)';
+      msg.style.display = 'block';
+      renderAbaEstoque();
+    }catch(err){
+      msg.textContent = 'Erro: ' + err.message;
+      msg.style.color = 'var(--red)';
+      msg.style.display = 'block';
+    }
   });
 }
+
