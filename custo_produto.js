@@ -80,7 +80,7 @@ function renderAbaRateioModo1(){
                                                             <td style="min-width:110px;"><input type="number" step="0.01" min="0" class="rateio-preco" value="${escapeHtml(String(it.preco_venda))}"></td>
                                                                   <td class="rateio-lucro-unit" style="text-align:right;">—</td>
                                                                         <td class="rateio-lucro-total" style="text-align:right;">—</td>
-                                                                              <td><input type="text" class="rateio-obs" placeholder="opcional" value="${escapeHtml(it.observacao||'')}"></td>
+                                                                              <td style="min-width:130px;"><input type="text" class="rateio-obs" placeholder="opcional" style="width:100%; box-sizing:border-box;" value="${escapeHtml(it.observacao||'')}"></td>
                                                                                     <td>${rateioItens.length>1?`<button type="button" class="btn-mini rateio-remover" data-idx="${i}">✕</button>`:''}</td>
                                                                                         </tr>`).join('');
 
@@ -339,7 +339,7 @@ function renderAbaMultiplo(){
                                           <td style="min-width:110px;"><input type="number" step="0.01" min="0" class="multiplo-preco" value="${escapeHtml(String(it.preco_venda))}"></td>
                                                 <td class="multiplo-lucro-unit" style="text-align:right;">—</td>
                                                       <td class="multiplo-lucro-total" style="text-align:right;">—</td>
-                                                            <td><input type="text" class="multiplo-obs" placeholder="opcional" value="${escapeHtml(it.observacao||'')}"></td>
+                                                            <td style="min-width:130px;"><input type="text" class="multiplo-obs" placeholder="opcional" style="width:100%; box-sizing:border-box;" value="${escapeHtml(it.observacao||'')}"></td>
                                                                   <td>${multiploItens.length>1?`<button type="button" class="btn-mini multiplo-remover" data-idx="${i}">✕</button>`:''}</td>
                                                                       </tr>`).join('');
 
