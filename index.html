@@ -1791,6 +1791,7 @@ function renderContratosPanel(lista){
         ${c.saldo_em_aberto!=null ? `<div style="font-size:11px; color:var(--ink-faint); margin-top:4px;">Saldo em aberto: ${fmtBRL(Number(c.saldo_em_aberto))}</div>` : ''}
       </td>
       <td><span class="tag-status ${c.status==='Ativo'?'tag-aberto':'tag-pago'}">${escapeHtml(c.status)}</span></td>
+      <td><button type="button" class="btn-mini ct-editar">✏️ Editar</button></td>
       <td>
         <input type="file" class="ct-anexo-input" style="display:none;" accept="application/pdf,image/*">
         <button type="button" class="btn-mini ct-anexar">Anexar cópia</button>
@@ -1802,12 +1803,12 @@ function renderContratosPanel(lista){
 
   openOverlay(`
     <div class="panel-head">
-      <div><h2>Contratos</h2><p>Empréstimos, financiamentos e renegociações. As parcelas pagas são calculadas automaticamente a partir das baixas dadas em Contas a Pagar vinculadas a cada contrato.</p></div>
+      <div><h2>Contratos</h2><p>Empréstimos, financiamentos e renegociações. As parcelas pagas são calculadas automaticamente a partir das baixas dadas em Contas a Pagar vinculadas a cada contrato. Use "✏️ Editar" para corrigir valor da parcela, quantidade de parcelas ou data da 1ª parcela — as mudanças refletem automaticamente em Contas a Pagar, Caixa e DRE.</p></div>
       <button class="close-x" onclick="closeOverlay()">✕</button>
     </div>
     <div style="overflow-x:auto;">
-    <table class="report"><thead><tr><th>Credor / nº</th><th>Finalidade</th><th>Valor total</th><th>Valor parcela</th><th>Juros</th><th>Parcelas</th><th>Status</th><th>Anexo</th></tr></thead>
-    <tbody id="ctBody">${linhas || '<tr><td colspan="8">Nenhum contrato cadastrado ainda.</td></tr>'}</tbody></table>
+    <table class="report"><thead><tr><th>Credor / nº</th><th>Finalidade</th><th>Valor total</th><th>Valor parcela</th><th>Juros</th><th>Parcelas</th><th>Status</th><th>Ações</th><th>Anexo</th></tr></thead>
+    <tbody id="ctBody">${linhas || '<tr><td colspan="9">Nenhum contrato cadastrado ainda.</td></tr>'}</tbody></table>
     </div>
 
     <div class="section-title">Adicionar contrato</div>
@@ -1819,6 +1820,7 @@ function renderContratosPanel(lista){
       ${campoMenu('Valor da parcela (R$)', '<input type="number" step="0.01" name="valor_parcela" style="' + ESTILO_INPUT_MENU + '">')}
       ${campoMenu('Taxa de juros', '<input type="text" name="taxa_juros" placeholder="ex: 0,48% a.m. + 100% Selic" style="' + ESTILO_INPUT_MENU + '">')}
       ${campoMenu('Quantidade total de parcelas', '<input type="number" name="num_parcelas_total" style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Quantas parcelas já foram pagas antes de cadastrar aqui (não gera lançamento em Contas a Pagar)', '<input type="number" name="parcelas_pagas_anteriores" min="0" value="0" style="' + ESTILO_INPUT_MENU + '">')}
       ${campoMenu('Data de emissão', '<input type="date" name="data_emissao" style="' + ESTILO_INPUT_MENU + '">')}
       ${campoMenu('Data da 1ª parcela', '<input type="date" name="data_primeira_parcela" style="' + ESTILO_INPUT_MENU + '">')}
       ${campoMenu('Data da última parcela', '<input type="date" name="data_ultima_parcela" style="' + ESTILO_INPUT_MENU + '">')}
@@ -1842,6 +1844,7 @@ function renderContratosPanel(lista){
         finalidade: fd.get('finalidade') || null,
         valor_total: fd.get('valor_total') || null, valor_parcela: fd.get('valor_parcela') || null,
         taxa_juros: fd.get('taxa_juros') || null, num_parcelas_total: fd.get('num_parcelas_total') || null,
+        parcelas_pagas_anteriores: fd.get('parcelas_pagas_anteriores') || 0,
         data_emissao: fd.get('data_emissao') || null, data_primeira_parcela: fd.get('data_primeira_parcela') || null,
         data_ultima_parcela: fd.get('data_ultima_parcela') || null, avalista: fd.get('avalista') || null,
         observacoes: fd.get('observacoes') || null,
@@ -1852,6 +1855,13 @@ function renderContratosPanel(lista){
     }
   });
 
+  document.querySelectorAll('#ctBody .ct-editar').forEach(btn=>{
+    btn.addEventListener('click', e=>{
+      const id = e.target.closest('tr').dataset.id;
+      const contrato = (lista||[]).find(c => String(c.id) === String(id));
+      if (contrato) abrirEditarContrato(contrato);
+    });
+  });
   document.querySelectorAll('#ctBody .ct-anexar').forEach(btn=>{
     btn.addEventListener('click', e=>{ e.target.closest('tr').querySelector('.ct-anexo-input').click(); });
   });
@@ -1870,6 +1880,81 @@ function renderContratosPanel(lista){
   });
   document.querySelectorAll('#ctBody tr[data-id]').forEach(tr=>{
     carregarAnexosEntidade('contratos', tr.dataset.id, tr.querySelector('.ct-anexos-lista'));
+  });
+}
+
+/* ==========================================================================================
+   EDITAR CONTRATO — pedido da Danielle (02/10/2026): poder editar valor da parcela, quantidade
+   de parcelas, data da 1ª parcela e quantas parcelas já foram pagas antes de o contrato entrar
+   no Portal. O backend (PATCH /api/contratos/:id) sincroniza automaticamente os lançamentos em
+   Contas a Pagar a partir dessas mudanças (gera parcela nova, atualiza valor de parcela em
+   aberto, ou cancela parcela que ficou fora do novo total) — nunca toca parcela já paga. Depois
+   de salvar, mostramos quantos lançamentos foram gerados/atualizados/cancelados, para a Danielle
+   conferir antes de voltar para a lista.
+   ========================================================================================== */
+function abrirEditarContrato(contrato){
+  const dataISO = v => v ? String(v).slice(0,10) : '';
+  openOverlay(`
+    <div class="panel-head">
+      <div><h2>Editar contrato</h2><p>${escapeHtml(contrato.credor)}${contrato.numero_contrato ? ' — ' + escapeHtml(contrato.numero_contrato) : ''}. Mudar valor da parcela, quantidade de parcelas ou data da 1ª parcela atualiza automaticamente Contas a Pagar (e, por consequência, Caixa e DRE) — parcelas já pagas nunca são alteradas.</p></div>
+      <button class="close-x" onclick="closeOverlay()">✕</button>
+    </div>
+    <form id="formEditarContrato" class="notes-box" style="border-top:none; padding-top:0;">
+      ${campoMenu('Credor', '<input type="text" name="credor" value="' + escapeHtml(contrato.credor||'') + '" required style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Número do contrato', '<input type="text" name="numero_contrato" value="' + escapeHtml(contrato.numero_contrato||'') + '" style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Finalidade', '<input type="text" name="finalidade" value="' + escapeHtml(contrato.finalidade||'') + '" style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Valor total contratado (R$)', '<input type="number" step="0.01" name="valor_total" value="' + (contrato.valor_total!=null?Number(contrato.valor_total):'') + '" style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Valor da parcela (R$)', '<input type="number" step="0.01" name="valor_parcela" value="' + (contrato.valor_parcela!=null?Number(contrato.valor_parcela):'') + '" style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Taxa de juros', '<input type="text" name="taxa_juros" value="' + escapeHtml(contrato.taxa_juros||'') + '" style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Quantidade total de parcelas', '<input type="number" name="num_parcelas_total" value="' + (contrato.num_parcelas_total!=null?Number(contrato.num_parcelas_total):'') + '" style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Quantas parcelas já foram pagas antes de cadastrar aqui (não gera lançamento em Contas a Pagar)', '<input type="number" name="parcelas_pagas_anteriores" min="0" value="' + (contrato.parcelas_pagas_anteriores!=null?Number(contrato.parcelas_pagas_anteriores):0) + '" style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Data de emissão', '<input type="date" name="data_emissao" value="' + dataISO(contrato.data_emissao) + '" style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Data da 1ª parcela', '<input type="date" name="data_primeira_parcela" value="' + dataISO(contrato.data_primeira_parcela) + '" style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Data da última parcela', '<input type="date" name="data_ultima_parcela" value="' + dataISO(contrato.data_ultima_parcela) + '" style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Avalista (opcional)', '<input type="text" name="avalista" value="' + escapeHtml(contrato.avalista||'') + '" style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Status', '<input type="text" name="status" value="' + escapeHtml(contrato.status||'') + '" style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Observações (uma nota de edição é anexada automaticamente, sem apagar o texto atual)', '<textarea name="observacoes" style="' + ESTILO_INPUT_MENU + ' min-height:60px;"></textarea>')}
+      <div id="editarContratoMsg" style="font-size:12.5px; margin-top:12px; display:none;"></div>
+      <div class="panel-actions" style="margin-top:14px;">
+        <button type="button" class="btn ghost" onclick="openContratosPanel()">Cancelar</button>
+        <button type="submit" class="btn gold">Salvar alterações</button>
+      </div>
+    </form>
+  `);
+
+  document.getElementById('formEditarContrato').addEventListener('submit', async e=>{
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const msg = document.getElementById('editarContratoMsg');
+    msg.style.display = 'none';
+    const body = {};
+    ['credor','numero_contrato','finalidade','taxa_juros','data_emissao','data_primeira_parcela','data_ultima_parcela','avalista','status'].forEach(k=>{
+      const v = fd.get(k);
+      if (v !== null && v !== '') body[k] = v;
+    });
+    const obsVal = fd.get('observacoes');
+    if (obsVal) body.observacoes = obsVal;
+    ['valor_total','valor_parcela'].forEach(k=>{
+      const v = fd.get(k);
+      if (v !== null && v !== '') body[k] = Number(v);
+    });
+    ['num_parcelas_total','parcelas_pagas_anteriores'].forEach(k=>{
+      const v = fd.get(k);
+      if (v !== null && v !== '') body[k] = parseInt(v, 10);
+    });
+    try{
+      const resultado = await apiFetch(`/api/contratos/${contrato.id}`, {method:'PATCH', body: JSON.stringify(body)});
+      const s = resultado.sincronizacao || {};
+      const partes = [];
+      if (s.geradas) partes.push(`${s.geradas} parcela(s) nova(s) gerada(s) em Contas a Pagar`);
+      if (s.atualizadas) partes.push(`${s.atualizadas} parcela(s) em aberto com valor atualizado`);
+      if (s.canceladas) partes.push(`${s.canceladas} parcela(s) em aberto cancelada(s) (fora do novo total)`);
+      const resumo = partes.length ? partes.join('; ') + '.' : (s.aviso || 'Contrato salvo. Nenhuma parcela foi gerada/alterada em Contas a Pagar (defina valor da parcela, quantidade de parcelas e data da 1ª parcela para isso acontecer).');
+      msg.innerHTML = '✓ Contrato salvo.<br>' + escapeHtml(resumo) + '<br><br><button type="button" class="btn gold" onclick="openContratosPanel()">Voltar para Contratos</button>';
+      msg.style.color = 'var(--olive)'; msg.style.display = 'block';
+    }catch(err){
+      msg.textContent = 'Erro: ' + err.message; msg.style.color = 'var(--red)'; msg.style.display = 'block';
+    }
   });
 }
 
