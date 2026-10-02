@@ -1111,6 +1111,7 @@ function reportTable(list, tipo, origin){
       <td>${fmtBRL(saldoAberto(x,tipo))}</td>
       <td>${statusTag(x,tipo)}</td>
       <td>${origemTag(x)}</td>
+      <td>${x.documento || '—'}</td>
       <td>${(() => {
         const btns = [];
         if(aberto) btns.push(`<button type="button" class="btn-mini" onclick="openBaixaForItem('${tipo}','${x.id}','${org}')">${acaoLbl}</button>`);
@@ -1121,7 +1122,7 @@ function reportTable(list, tipo, origin){
     </tr>`;
   }).join('');
     return `<div style="overflow-x:auto;"><table class="report"><thead><tr>
-    <th>${nomeCol}</th><th>Categoria</th>${tipo==='pagar' ? '<th>Nº Boleto</th>' : ''}<th>Vencimento</th><th>Valor</th><th>Saldo em aberto</th><th>Status</th><th>Origem</th><th>Ação</th>
+    <th>${nomeCol}</th><th>Categoria</th>${tipo==='pagar' ? '<th>Nº Boleto</th>' : ''}<th>Vencimento</th><th>Valor</th><th>Saldo em aberto</th><th>Status</th><th>Origem</th><th>Documento (NF)</th><th>Ação</th>
     </tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
