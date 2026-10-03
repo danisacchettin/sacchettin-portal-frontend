@@ -250,6 +250,7 @@
   .tag-aberto{background:var(--gold-wash); color:var(--gold);}
   .tag-atraso{background:var(--red-wash); color:var(--red);}
   .tag-pago{background:var(--olive-wash); color:var(--olive);}
+  .row-pago td{background:var(--olive-wash);}
 
   .origem-tag{padding:3px 9px; border-radius:999px; font-size:10px; letter-spacing:.3px; font-weight:600; background:var(--paper-2); color:var(--ink-faint); white-space:nowrap;}
   .origem-tag.tag-escritorio{background:var(--gold-wash); color:var(--gold);}
@@ -1100,9 +1101,10 @@ function reportTable(list, tipo, origin){
   const nomeCol = tipo==='pagar' ? 'Fornecedor' : 'Cliente';
   const rows = list.map(x=>{
     const aberto = saldoAberto(x,tipo) > 0;
+    const pago = ['Pago Total','Adiantado'].includes(x.status);
     const acaoLbl = tipo==='pagar' ? '💳 Pagar' : '✅ Receber';
     return `
-    <tr>
+    <tr class="${pago ? 'row-pago' : ''}">
       <td>${tipo==='pagar'?x.credor:x.cliente}</td>
       <td>${x.categoria || '—'}</td>
       ${tipo==='pagar' ? `<td>${x.numero_boleto || '—'}</td>` : ''}
