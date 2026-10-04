@@ -3940,17 +3940,26 @@ async function calcularSaudeEmpresa(periodo){
   const itensDespFinCad = pagarPeriodo.filter(x=>x.grupo_dre==='Despesas Financeiras');
   const itensNaoClass = pagarPeriodo.filter(x=>!x.grupo_dre);
   const itensSocios = pagarPeriodo.filter(x=>x.grupo_dre==='Retiradas de Sócios');
+  // "Divida" e "Cartao de Credito" são tratados pelo DRE automático (openDRE) como informativos,
+  // fora do resultado -- mesmo critério reaplicado aqui (04/10/2026, achado de auditoria externa:
+  // antes esses lançamentos simplesmente desapareciam do cálculo, sem aparecer em nenhum lugar,
+  // nem como "não classificado" já que grupo_dre está preenchido). Mantidos visíveis na seção
+  // "Fora do resultado operacional" do detalhe, nunca somados ao lucro líquido.
+  const itensDivida = pagarPeriodo.filter(x=>x.grupo_dre==='Divida');
+  const itensCartao = pagarPeriodo.filter(x=>x.grupo_dre==='Cartao de Credito');
 
   const custosVar = itensVar.reduce((s,x)=>s+x.valor_original,0);
   const custosFixos = itensFixos.reduce((s,x)=>s+x.valor_original,0);
   const despFinCad = itensDespFinCad.reduce((s,x)=>s+x.valor_original,0);
   const naoClass = itensNaoClass.reduce((s,x)=>s+x.valor_original,0);
   const socios = itensSocios.reduce((s,x)=>s+x.valor_original,0);
+  const divida = itensDivida.reduce((s,x)=>s+x.valor_original,0);
+  const cartao = itensCartao.reduce((s,x)=>s+x.valor_original,0);
 
   // Juros/encargos de financiamentos (contratos PJ) -- soma os meses da janela a partir da
   // mesma série de 12 meses que a tela de Despesas Financeiras já usa (resumoFin.serieMensal),
   // pedindo o resumo com `mes` = o mês mais recente da janela.
-  let jurosFinanciamentos = 0, chequeEspecialDisponivel = false, chequeEspecialValor = 0;
+  let jurosFinanciamentos = 0, chequeEspecialDisponivel = false, chequeEspecialValor = 0, jurosDisponiveis = true;
   try{
     const mesRef = chaves[chaves.length - 1];
     const resumoFin = await apiFetch('/api/financiamentos/resumo?mes=' + mesRef);
@@ -3958,6 +3967,11 @@ async function calcularSaudeEmpresa(periodo){
     jurosFinanciamentos = serie.filter(m => chaves.includes(m.mes)).reduce((s,m)=>s+(m.total||0),0);
     if(resumoFin.chequeEspecial != null){ chequeEspecialDisponivel = true; chequeEspecialValor = resumoFin.chequeEspecial; }
   }catch(err){
+    // 04/10/2026, achado de auditoria externa: antes esse erro só ia pro console e o cálculo
+    // seguia com juros=0, silenciosamente, podendo gerar um veredito "Saudável"/"Atenção" com
+    // despesas incompletas. Agora o malogro fica marcado em jurosDisponiveis=false e é mostrado
+    // de forma visível no card e no detalhe (ver statusSaudeEmpresa/abrirDetalheSaudeEmpresa).
+    jurosDisponiveis = false;
     console.error('Não foi possível carregar juros de financiamentos para Saúde da Empresa:', err);
   }
   const despFin = despFinCad + jurosFinanciamentos + (chequeEspecialDisponivel ? chequeEspecialValor : 0);
@@ -3972,10 +3986,18 @@ async function calcularSaudeEmpresa(periodo){
   const margemSegurancaRS = pontoEquilibrio != null ? (receitaBruta - pontoEquilibrio) : null;
   const margemSegurancaPct = (pontoEquilibrio != null && pontoEquilibrio > 0) ? (margemSegurancaRS/pontoEquilibrio*100) : null;
 
+  // Avisos de confiabilidade -- motivos concretos (não um "achismo") pra marcar o veredito como
+  // parcial em vez de apresentar certeza que o dado não sustenta (pedido direto de uma auditoria
+  // externa em 04/10/2026). Cada aviso só entra se houver uma causa verificável.
+  const avisos = [];
+  if(!jurosDisponiveis) avisos.push('Não foi possível carregar os juros de financiamentos agora (falha na consulta) — Despesas Financeiras e Lucro Líquido abaixo podem estar subestimados.');
+  if((divida + cartao) > 0) avisos.push(`${fmtBRL(divida+cartao)} em parcelas de dívida/cartão de crédito deste período não entram no resultado abaixo (mesmo critério do DRE automático — ver "Fora do resultado operacional").`);
+
   return {
     periodo, chaves, receitaBruta, custosVar, custosFixos, margem, margemPct,
-    lucroOperacional, despFin, lucroLiquido, socios, naoClass,
+    lucroOperacional, despFin, lucroLiquido, socios, naoClass, divida, cartao,
     pontoEquilibrio, margemSegurancaRS, margemSegurancaPct, chequeEspecialDisponivel,
+    jurosDisponiveis, avisos,
   };
 }
 
@@ -3985,19 +4007,24 @@ const LIMIAR_SAUDE_VERDE_PCT = 10;    // margem de segurança >= 10% acima do po
 const LIMIAR_SAUDE_VERMELHO_PCT = -10; // margem de segurança <= -10% do ponto de equilíbrio
 
 function statusSaudeEmpresa(calc){
+  // parcial=true só quando há um motivo concreto registrado em calc.avisos (falha real ao buscar
+  // juros, ou valor relevante de dívida/cartão fora do resultado) -- nunca um "achismo" sobre a
+  // receita estar incompleta, já que isso não tem um sinal de dado verificável disponível hoje.
+  const parcial = (calc.avisos||[]).length > 0;
+  const sufixoLabel = parcial ? ' · dados parciais' : '';
   if(calc.pontoEquilibrio == null){
-    return { cor:'vermelho', label:'Risco', frase:'Margem de contribuição zerada ou negativa neste período — cada venda está custando mais do que gera de receita. Revisar preço ou custo variável antes de qualquer outra coisa.' };
+    return { cor:'vermelho', label:'Risco' + sufixoLabel, parcial, frase:'Margem de contribuição zerada ou negativa neste período — cada venda está custando mais do que gera de receita. Revisar preço ou custo variável antes de qualquer outra coisa.' };
   }
   const msp = calc.margemSegurancaPct;
   if(calc.lucroLiquido < 0 || msp <= LIMIAR_SAUDE_VERMELHO_PCT){
-    return { cor:'vermelho', label:'Risco', frase: calc.margemSegurancaRS >= 0
+    return { cor:'vermelho', label:'Risco' + sufixoLabel, parcial, frase: calc.margemSegurancaRS >= 0
       ? 'A receita já está acima do ponto de equilíbrio, mas o resultado do período ainda é negativo — revisar despesas financeiras e lançamentos não classificados.'
       : `Faltam ${fmtBRL(Math.abs(calc.margemSegurancaRS))} em vendas para cobrir todos os custos e juros do período.` };
   }
   if(msp < LIMIAR_SAUDE_VERDE_PCT){
-    return { cor:'amarelo', label:'Atenção', frase:`A empresa está no lucro, mas com pouca folga acima do ponto de equilíbrio (${msp.toFixed(1)}%) — qualquer queda de venda ou alta de custo pode virar prejuízo.` };
+    return { cor:'amarelo', label:'Atenção' + sufixoLabel, parcial, frase:`A empresa está no lucro, mas com pouca folga acima do ponto de equilíbrio (${msp.toFixed(1)}%) — qualquer queda de venda ou alta de custo pode virar prejuízo.` };
   }
-  return { cor:'verde', label:'Saudável', frase:`A empresa está lucrativa e ${msp.toFixed(1)}% acima do ponto de equilíbrio neste período.` };
+  return { cor:'verde', label:'Saudável' + sufixoLabel, parcial, frase:`A empresa está lucrativa e ${msp.toFixed(1)}% acima do ponto de equilíbrio neste período.` };
 }
 
 function corSaudeEmpresa(cor){
@@ -4050,11 +4077,17 @@ function abrirDetalheSaudeEmpresa(calc, status){
   const c = corSaudeEmpresa(status.cor);
   const linha = (label, valor, destaque) => `
     <tr><td${destaque?' style="font-weight:600;"':''}>${label}</td><td style="text-align:right;${destaque?' font-weight:600;':''}">${valor}</td></tr>`;
+  const avisosHtml = (calc.avisos||[]).length ? `
+    <div style="border-radius:14px; padding:12px 16px; margin-bottom:14px; background:var(--gold-wash); border:1px solid var(--gold-soft);">
+      <div style="font-size:11px; letter-spacing:1px; text-transform:uppercase; color:var(--gold); font-weight:600; margin-bottom:4px;">⚠ Dados parciais neste cálculo</div>
+      ${calc.avisos.map(a => `<div style="font-size:12.5px; color:var(--ink); margin-top:4px;">${a}</div>`).join('')}
+    </div>` : '';
   openOverlay(`
     <div class="panel-head">
-      <div><h2>Saúde da Empresa — ${LABELS_PERIODO_SAUDE[calc.periodo]}</h2><p>Calculado a partir dos mesmos lançamentos que alimentam o DRE automático (regime de competência, por vencimento).</p></div>
+      <div><h2>Saúde da Empresa — ${LABELS_PERIODO_SAUDE[calc.periodo]}</h2><p>Calculado a partir dos mesmos lançamentos que alimentam o DRE automático (regime de competência, por vencimento). A Receita Bruta considera só os lançamentos de Contas a Receber — vendas à vista/PDV não lançadas nesse módulo não entram aqui.</p></div>
       <button class="close-x" onclick="closeOverlay()">✕</button>
     </div>
+    ${avisosHtml}
     <div style="border-radius:14px; padding:14px 18px; margin-bottom:18px; background:${c.fundo}; border:1px solid ${c.borda};">
       <div style="font-size:11px; letter-spacing:1.5px; text-transform:uppercase; color:${c.texto}; font-weight:600;">${status.label}</div>
       <div style="font-size:14px; color:var(--ink); margin-top:4px;">${status.frase}</div>
@@ -4079,10 +4112,12 @@ function abrirDetalheSaudeEmpresa(calc, status){
         ${calc.margemSegurancaRS != null ? linha(calc.margemSegurancaRS >= 0 ? 'Margem de segurança (já acima do equilíbrio)' : 'Faltam para atingir o equilíbrio', fmtBRL(Math.abs(calc.margemSegurancaRS)) + (calc.margemSegurancaPct!=null ? ` (${calc.margemSegurancaPct.toFixed(1)}%)` : '')) : ''}
       </tbody>
     </table>
-    <div class="panel-head" style="margin-top:22px; margin-bottom:8px;"><div><h2 style="font-size:15px;">Fora do resultado operacional</h2><p>Não entram no lucro líquido acima — estrutura de capital/retirada, não custo da operação.</p></div></div>
+    <div class="panel-head" style="margin-top:22px; margin-bottom:8px;"><div><h2 style="font-size:15px;">Fora do resultado operacional</h2><p>Não entram no lucro líquido acima — estrutura de capital/retirada ou dívida/cartão tratados como informativos (mesmo critério do DRE automático), não custo da operação.</p></div></div>
     <table class="report">
       <tbody>
         ${linha('Retiradas de Sócios / Pró-labore (total do período)', fmtBRL(calc.socios))}
+        ${calc.divida ? linha('Dívida (parcelas de contratos/empréstimos, informativo)', fmtBRL(calc.divida)) : ''}
+        ${calc.cartao ? linha('Cartão de Crédito (informativo)', fmtBRL(calc.cartao)) : ''}
       </tbody>
     </table>
     ${!calc.chequeEspecialDisponivel ? `<p style="font-size:11px; color:var(--gold); margin-top:14px;">⚠ Juros de cheque especial: sem fonte de dado ainda (falta extrato bancário) — não incluído nos valores acima.</p>` : ''}
@@ -4558,7 +4593,7 @@ function renderCadastroField(f, prefill){
   return `
     <div class="field ${f.full?'full':''}">
       <label>${f.label}${f.required ? ' *' : ''}</label>
-      <select name="${f.name}" onchange="toggleCadastroNovo('${f.name}', this.value); if('${f.name}'==='credor'||'${f.name}'==='cliente') sugerirCategoriaPorHistorico('${f.name}', this.value);"${requiredAttr}>${optionsHtml}</select>
+      <select name="${f.name}" onchange="toggleCadastroNovo('${f.name}', this.value); if('${f.name}'==='credor'||'${f.name}'==='cliente') sugerirCategoriaPorHistorico('${f.name}', this.value); if('${f.name}'==='categoria') this.dataset.autoSugerida='false';"${requiredAttr}>${optionsHtml}</select>
       <div id="novo_${f.name}" class="novo-cadastro" style="display:${selectedValue==='__novo__'?'flex':'none'};">
         <input name="novo_${f.name}" type="text" placeholder="Nome do novo ${meta.novoLabel}" value="${escapeHtml(novoNome)}" />
         ${extraFieldsHtml}
@@ -4590,7 +4625,14 @@ function categoriaMaisUsada(lista, chaveNome, nomeAlvo){
 
 function sugerirCategoriaPorHistorico(campo, cadastroId){
   const categoriaSelect = document.querySelector('#formFields select[name="categoria"]');
-  if(!categoriaSelect || categoriaSelect.value) return; // não sobrescreve escolha já feita manualmente
+  if(!categoriaSelect) return;
+  // Só pula a sugestão se já houver um valor que foi ESCOLHA MANUAL da pessoa (campo tocado
+  // diretamente, marcado via o próprio onchange do select de categoria -- ver renderCadastroField).
+  // Antes, qualquer valor presente bloqueava a sugestão, inclusive um valor que a própria função
+  // tinha preenchido automaticamente pro fornecedor/cliente anterior -- resultado: ao trocar de
+  // fornecedor A pra B sem tocar na categoria, a sugestão ficava "presa" na categoria de A, dando
+  // a falsa impressão de que era a sugestão certa pra B (achado de auditoria externa, 04/10/2026).
+  if(categoriaSelect.value && categoriaSelect.dataset.autoSugerida !== 'true') return;
 
   let nomeCategoriaSugerida = null;
 
@@ -4602,7 +4644,8 @@ function sugerirCategoriaPorHistorico(campo, cadastroId){
       // Sem histórico ainda -- cai pro campo "categoria padrão" do cadastro, se alguém já
       // tiver preenchido manualmente alguma vez (mecanismo antigo, mantido como fallback).
       const opt = categoriaSelect.querySelector(`option[value="${fornecedor.categoria_padrao_id}"]`);
-      if(opt) categoriaSelect.value = String(fornecedor.categoria_padrao_id);
+      if(opt){ categoriaSelect.value = String(fornecedor.categoria_padrao_id); categoriaSelect.dataset.autoSugerida = 'true'; }
+      else { categoriaSelect.value = ''; categoriaSelect.dataset.autoSugerida = 'false'; }
       return;
     }
   } else if(campo === 'cliente' && currentType === 'receber'){
@@ -4613,9 +4656,14 @@ function sugerirCategoriaPorHistorico(campo, cadastroId){
     return;
   }
 
-  if(!nomeCategoriaSugerida) return;
+  if(!nomeCategoriaSugerida){
+    // Fornecedor/cliente novo sem histórico: se o campo tinha uma sugestão automática de uma
+    // seleção anterior, limpa (não faz sentido manter a sugestão de outro fornecedor/cliente).
+    if(categoriaSelect.dataset.autoSugerida === 'true'){ categoriaSelect.value = ''; categoriaSelect.dataset.autoSugerida = 'false'; }
+    return;
+  }
   const opt = Array.from(categoriaSelect.options).find(o => o.textContent.trim() === nomeCategoriaSugerida.trim());
-  if(opt) categoriaSelect.value = opt.value;
+  if(opt){ categoriaSelect.value = opt.value; categoriaSelect.dataset.autoSugerida = 'true'; }
 }
 
 function renderFormFields(prefill){
