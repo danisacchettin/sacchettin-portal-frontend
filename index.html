@@ -488,6 +488,8 @@ Fica fora de .wrap para continuar visível quando .wrap é escondido em @media p
     <button type="button" class="btn-mini" id="btnLogout">Sair</button>
   </div>
 
+  <div id="saudeEmpresaCard"></div>
+
   <div class="section-title">Visão geral do dia</div>
   <div class="grid kpi-grid" id="kpiGrid"></div>
 
@@ -816,6 +818,9 @@ async function carregarDados(){
   // chamada própria, com seu próprio try/catch, para nunca travar o carregamento do resto do
   // dashboard se essa parte falhar (mesmo cuidado do bloco acima).
   atualizarBadgeContratosPrestadores();
+  // Card "Saúde da Empresa" (04/10/2026) — mesmo cuidado: chamada própria, com seu próprio
+  // try/catch interno (ver renderSaudeEmpresaCard), pra nunca travar o resto do dashboard.
+  renderSaudeEmpresaCard();
 }
 
 function loadMockData(){
@@ -1773,9 +1778,16 @@ async function openContratosPanel(){
 
 function renderContratosPanel(lista){
   const linhas = (lista||[]).map(c => {
-    const pagas = Number(c.parcelas_pagas||0);
+    // "Parcelas pagas" pro contador visual precisa somar as pagas DENTRO do Portal (status
+    // 'Pago Total' em contas_pagar, contado pelo backend) com as pagas ANTES de o contrato
+    // entrar no Portal (parcelas_pagas_anteriores, informadas no cadastro) -- usar só
+    // parcelas_pagas sozinho fazia um contrato com histórico anterior aparecer com progresso
+    // 0% mesmo já tendo dezenas de parcelas pagas de fato (achado em auditoria, 03/10/2026).
+    const pagasAnteriores = Number(c.parcelas_pagas_anteriores||0);
+    const pagas = Number(c.parcelas_pagas||0) + pagasAnteriores;
     const total = c.num_parcelas_total ? Number(c.num_parcelas_total) : (Number(c.parcelas_lancadas)||0);
-    const pct = total ? Math.round((pagas/total)*100) : 0;
+    const inconsistente = total && pagas > total;
+    const pct = total ? Math.min(100, Math.round((pagas/total)*100)) : 0;
     return `
     <tr data-id="${c.id}">
       <td>
@@ -1787,7 +1799,7 @@ function renderContratosPanel(lista){
       <td>${c.valor_parcela!=null ? fmtBRL(Number(c.valor_parcela)) : '—'}</td>
       <td>${escapeHtml(c.taxa_juros||'—')}</td>
       <td>
-        <div style="font-size:11.5px; margin-bottom:4px;">${pagas} / ${total || '?'} parcelas</div>
+        <div style="font-size:11.5px; margin-bottom:4px;">${pagas} / ${total || '?'} parcelas${inconsistente ? ` <span style="color:var(--red);" title="Parcelas pagas (portal + histórico informado) excede o total de parcelas do contrato -- confira o cadastro.">⚠️</span>` : ''}</div>
         <div style="background:var(--paper-2); border-radius:6px; height:6px; overflow:hidden;">
           <div style="background:var(--olive); height:100%; width:${pct}%;"></div>
         </div>
@@ -2516,7 +2528,7 @@ async function submeterNovoContratoPrestador(e){
     </div>
 
     <div class="notes-box" style="border:1px dashed var(--border); border-radius:14px; padding:16px; margin-top:22px;">
-    <div class="section-title" style="margin-top:0;">Dívida pessoal do sócio — informativo, fora do DRE da empresa</div>
+    <div class="section-title" style="margin-top:0;">Contratos em nome do sócio (PF) — tratamento no DRE varia por contrato, ver observação de cada um</div>
     ${linhasPF || '<p style="font-size:12.5px; color:var(--ink-faint);">Nenhum contrato PF-sócio importado ainda.</p>'}
     </div>
 
@@ -3433,7 +3445,7 @@ function labelMes(m){
 // Estado do filtro fica em módulo (mesmo padrão do painel de Vencidos): a tela se
 // redesenha a cada troca de filtro (mês ou credor), sem embutir nome de fornecedor
 // (que pode ter aspas/acentos) dentro de atributo onchange.
-let filtroPagar = { mes: null, credor: []};
+let filtroPagar = { mes: null, credor: [], busca: ''};
 
 function credoresPagar(){
   const nomes = new Set(DATA.contasPagar.map(x=>x.credor || 'Fornecedor não informado'));
@@ -3442,35 +3454,61 @@ function credoresPagar(){
 
 function openPagarPanel(mesFiltro){
   const hoje = todayISO();
-  filtroPagar = { mes: mesFiltro || hoje.slice(0,7), credor: [] };
+  filtroPagar = { mes: mesFiltro || hoje.slice(0,7), credor: [], busca: '' };
   renderPagarPanel();
 }
 
-function renderPagarPanel(){
+// Monta só o bloco de tabelas (Vencidos/A vencer/Pagos), separado do shell do overlay --
+// permite refiltrar a cada tecla no campo de busca sem reconstruir o overlay inteiro (que
+// perderia o foco do campo). Mesmo padrão já usado em tabelasReceber().
+function tabelasPagar(){
   const hoje = todayISO();
-  const meses = mesesDisponiveisPagar();
-  const { mes, credor } = filtroPagar;
-      let lista;
-      if(mes === 'todos') lista = DATA.contasPagar;
-      else if(mes === 'hoje') lista = DATA.contasPagar.filter(x=> String(x.vencimento).slice(0,10) === hoje);
-      else if(mes === 'semana'){
-        const fimSemanaPagar = new Date(); fimSemanaPagar.setDate(fimSemanaPagar.getDate()+6);
-        const fimSemanaPagarStr = fimSemanaPagar.toISOString().slice(0,10);
-        lista = DATA.contasPagar.filter(x=> { const d=String(x.vencimento).slice(0,10); return d>=hoje && d<=fimSemanaPagarStr; });
-      } else {
-        lista = DATA.contasPagar.filter(x=> x.vencimento && String(x.vencimento).slice(0,7)===mes);
-      }
+  const { mes, credor, busca } = filtroPagar;
+  const termoBusca = normalizarBusca(busca);
+  let lista;
+  if(termoBusca){
+    // Localizar por nº de NF/documento ou nº de boleto ignora o filtro de mês -- o objetivo é
+    // achar o título onde quer que ele esteja, não só dentro do período em exibição (pedido da
+    // Danielle, 03/10/2026).
+    lista = DATA.contasPagar;
+  } else if(mes === 'todos') lista = DATA.contasPagar;
+  else if(mes === 'hoje') lista = DATA.contasPagar.filter(x=> String(x.vencimento).slice(0,10) === hoje);
+  else if(mes === 'semana'){
+    const fimSemanaPagar = new Date(); fimSemanaPagar.setDate(fimSemanaPagar.getDate()+6);
+    const fimSemanaPagarStr = fimSemanaPagar.toISOString().slice(0,10);
+    lista = DATA.contasPagar.filter(x=> { const d=String(x.vencimento).slice(0,10); return d>=hoje && d<=fimSemanaPagarStr; });
+  } else {
+    lista = DATA.contasPagar.filter(x=> x.vencimento && String(x.vencimento).slice(0,7)===mes);
+  }
   if(credor.length) lista = lista.filter(x=>credor.includes(x.credor || 'Fornecedor não informado'));
-    const vencidos = lista.filter(x=> saldoAberto(x,'pagar')>0 && String(x.vencimento).slice(0,10) < hoje);
+  if(termoBusca){
+    lista = lista.filter(x => normalizarBusca(x.documento||'').includes(termoBusca) || normalizarBusca(x.numero_boleto||'').includes(termoBusca));
+  }
+  const vencidos = lista.filter(x=> saldoAberto(x,'pagar')>0 && String(x.vencimento).slice(0,10) < hoje);
   const aVencer = lista.filter(x=> saldoAberto(x,'pagar')>0 && String(x.vencimento).slice(0,10) >= hoje);
   const pagos = lista.filter(x=> saldoAberto(x,'pagar')<=0);
+  return `
+    <p style="font-size:12px; color:var(--ink-soft); margin:18px 0 6px;">Vencidos (${vencidos.length}) — ${fmtBRL(vencidos.reduce((s,x)=>s+saldoAberto(x,'pagar'),0))}</p>
+    ${vencidos.length ? reportTable(vencidos,'pagar') : '<p style="font-size:13px; color:var(--ink-soft);">Nenhum título vencido para esse período/filtro.</p>'}
+    <p style="font-size:12px; color:var(--ink-soft); margin:22px 0 6px;">A vencer (${aVencer.length}) — ${fmtBRL(aVencer.reduce((s,x)=>s+saldoAberto(x,'pagar'),0))}</p>
+    ${aVencer.length ? reportTable(aVencer,'pagar') : '<p style="font-size:13px; color:var(--ink-soft);">Nenhum título a vencer para esse período/filtro.</p>'}
+    ${pagos.length ? `
+      <p style="font-size:12px; color:var(--ink-soft); margin:22px 0 6px;">Já pagos/quitados para esse período/filtro (${pagos.length})</p>
+      ${reportTable(pagos,'pagar')}
+    ` : ''}
+  `;
+}
+
+function renderPagarPanel(){
+  const meses = mesesDisponiveisPagar();
+  const { mes, credor, busca } = filtroPagar;
   const optsMes = meses.map(m=>`<option value="${m}" ${m===mes?'selected':''}>${labelMes(m)}</option>`).join('');
   const optsCredor = credoresPagar().map(c=>`<option value="${escapeHtml(c)}" ${credor.includes(c)?'selected':''}>${escapeHtml(c)}</option>`).join('');
-    const estiloSelect = 'width:auto; margin-top:0; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:var(--paper-2); font-family:inherit; font-size:13px; color:var(--ink);';
+  const estiloSelect = 'width:auto; margin-top:0; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:var(--paper-2); font-family:inherit; font-size:13px; color:var(--ink);';
 
   openOverlay(`
     <div class="panel-head">
-        <div><h2>Contas a pagar</h2><p>Filtre por período de vencimento (hoje, próximos 7 dias ou mês) e/ou por credor para ver o que está vencido ou a vencer nesse período. Clique em "Adicionar" para lançar uma nova conta.</p></div>
+        <div><h2>Contas a pagar</h2><p>Filtre por período de vencimento (hoje, próximos 7 dias ou mês), por credor, ou localize um título digitando o nº da nota fiscal/documento ou do boleto. Clique em "Adicionar" para lançar uma nova conta.</p></div>
       <button class="close-x" onclick="closeOverlay()">✕</button>
     </div>
     <div class="panel-actions" style="flex-wrap:wrap; gap:10px;">
@@ -3485,23 +3523,26 @@ function renderPagarPanel(){
     <select id="filtroCredorPagar" multiple size="5" title="Segure Ctrl (ou Cmd no Mac) e clique para selecionar mais de um credor" style="${estiloSelect}">
         ${optsCredor}
       </select>
+      <div class="field" style="max-width:260px; margin:0;">
+        <label>Localizar por nº de nota/documento ou boleto</label>
+        <input type="text" id="filtroBuscaPagar" placeholder="Digite o nº da NF ou do boleto..." value="${escapeHtml(busca)}" style="padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:var(--paper-2); font-family:inherit; font-size:13px; color:var(--ink); width:100%;">
+      </div>
     </div>
-    <p style="font-size:12px; color:var(--ink-soft); margin:18px 0 6px;">Vencidos (${vencidos.length}) — ${fmtBRL(vencidos.reduce((s,x)=>s+saldoAberto(x,'pagar'),0))}</p>
-    ${vencidos.length ? reportTable(vencidos,'pagar') : '<p style="font-size:13px; color:var(--ink-soft);">Nenhum título vencido neste período.</p>'}
-    <p style="font-size:12px; color:var(--ink-soft); margin:22px 0 6px;">A vencer (${aVencer.length}) — ${fmtBRL(aVencer.reduce((s,x)=>s+saldoAberto(x,'pagar'),0))}</p>
-    ${aVencer.length ? reportTable(aVencer,'pagar') : '<p style="font-size:13px; color:var(--ink-soft);">Nenhum título a vencer neste período.</p>'}
-    ${pagos.length ? `
-      <p style="font-size:12px; color:var(--ink-soft); margin:22px 0 6px;">Já pagos/quitados neste período (${pagos.length})</p>
-      ${reportTable(pagos,'pagar')}
-    ` : ''}
+    <div id="pagarTabelasContainer">${tabelasPagar()}</div>
     <div class="notes-box">
       <label style="font-size:11px; letter-spacing:1px; text-transform:uppercase; color:var(--ink-faint);">Notas do cliente</label>
       <textarea placeholder="Observações sobre estas contas — sincroniza com a planilha ao salvar."></textarea>
     </div>
   `);
 
-  document.getElementById('filtroMesPagar').addEventListener('change', e=>{ filtroPagar.mes = e.target.value; renderPagarPanel(); });
-  document.getElementById('filtroCredorPagar').addEventListener('change', e=>{ filtroPagar.credor = Array.from(e.target.selectedOptions).map(o=>o.value); renderPagarPanel(); });
+  document.getElementById('filtroMesPagar').addEventListener('change', e=>{ filtroPagar.mes = e.target.value; document.getElementById('pagarTabelasContainer').innerHTML = tabelasPagar(); });
+  document.getElementById('filtroCredorPagar').addEventListener('change', e=>{ filtroPagar.credor = Array.from(e.target.selectedOptions).map(o=>o.value); document.getElementById('pagarTabelasContainer').innerHTML = tabelasPagar(); });
+  // Mantém o foco/cursor no campo ao digitar: refiltra só o container de tabelas, sem
+  // reconstruir o overlay inteiro -- mesmo padrão já usado no filtro de nome em Contas a Receber.
+  document.getElementById('filtroBuscaPagar').addEventListener('input', e=>{
+    filtroPagar.busca = e.target.value;
+    document.getElementById('pagarTabelasContainer').innerHTML = tabelasPagar();
+  });
 }
 // Card "Vencidos" (19/08/2026) — todos os títulos de contas a pagar em atraso, de qualquer
 // mês, com filtro por fornecedor e por faixa de atraso, para dar base a estratégias de
@@ -3846,6 +3887,205 @@ async function openDRE(){
         <tr><td>Serviço da Dívida (empréstimos/acordos)</td><td style="text-align:right;">${fmtBRL(divida)}</td></tr>
       </tbody>
     </table>
+    <div class="panel-actions" style="margin-top:20px;">
+      <button class="btn gold" onclick="window.print()">Imprimir / salvar PDF</button>
+    </div>
+  `);
+}
+
+/* ==========================================================================================
+   CARD "SAÚDE DA EMPRESA" — pedido da Danielle (04/10/2026): mostrar ao cliente empresário a
+   saúde do negócio com um clique. Margem de contribuição, lucro operacional, despesas
+   financeiras (juros) isoladas, lucro líquido, retiradas de sócios e ponto de equilíbrio
+   financeiro -- os MESMOS dados que já alimentam o DRE automático (openDRE acima), sem
+   cálculo novo nenhum, só uma camada de resumo/veredito em cima do que já existe. Seletor de
+   período (mês / últimos 3 meses / últimos 12 meses — sempre uma janela terminando no mês
+   corrente, mesmo princípio já usado na série mensal de Despesas Financeiras).
+
+   Ponto de Equilíbrio Financeiro = (Custos Fixos + Despesas Financeiras) ÷ Margem de
+   Contribuição % — inclui os juros bancários de propósito: a pergunta que ele responde é
+   "quanto a empresa precisa vender pra cobrir TUDO que sai de caixa no período, dívida
+   inclusive", não só a operação (decisão confirmada com a Danielle em 04/10/2026 — juros são
+   fixos em relação ao VOLUME DE VENDAS, mesmo que o valor em si oscile mês a mês por taxa
+   pós-fixada/amortização; é esse critério, não a estabilidade do valor no tempo, que importa
+   pra classificação de custo fixo x variável usada em ponto de equilíbrio).
+   ========================================================================================== */
+let periodoSaudeEmpresa = 'mes';
+
+const LABELS_PERIODO_SAUDE = { mes:'Este mês', trimestre:'Últimos 3 meses', ano:'Últimos 12 meses' };
+
+// Janela de N meses terminando no mês corrente (inclusive) — ex.: 'trimestre' em outubro/2026
+// devolve ['2026-08','2026-09','2026-10'].
+function janelaMesesSaude(periodo){
+  const hoje = new Date();
+  const n = periodo === 'ano' ? 12 : periodo === 'trimestre' ? 3 : 1;
+  const chaves = [];
+  for(let i = n - 1; i >= 0; i--){
+    const d = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
+    chaves.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);
+  }
+  return chaves;
+}
+
+async function calcularSaudeEmpresa(periodo){
+  const chaves = janelaMesesSaude(periodo);
+  const noPeriodo = iso => chaves.includes(String(iso).slice(0,7));
+
+  const receberPeriodo = (DATA.contasReceber||[]).filter(x=>noPeriodo(x.vencimento));
+  const pagarPeriodo = (DATA.contasPagar||[]).filter(x=>noPeriodo(x.vencimento));
+
+  const receitaBruta = receberPeriodo.reduce((s,x)=>s+x.valor_original,0);
+  const itensVar = pagarPeriodo.filter(x=>x.grupo_dre==='CMV' || x.grupo_dre==='Despesas Variáveis');
+  const itensFixos = pagarPeriodo.filter(x=>x.grupo_dre==='Despesas Fixas');
+  const itensDespFinCad = pagarPeriodo.filter(x=>x.grupo_dre==='Despesas Financeiras');
+  const itensNaoClass = pagarPeriodo.filter(x=>!x.grupo_dre);
+  const itensSocios = pagarPeriodo.filter(x=>x.grupo_dre==='Retiradas de Sócios');
+
+  const custosVar = itensVar.reduce((s,x)=>s+x.valor_original,0);
+  const custosFixos = itensFixos.reduce((s,x)=>s+x.valor_original,0);
+  const despFinCad = itensDespFinCad.reduce((s,x)=>s+x.valor_original,0);
+  const naoClass = itensNaoClass.reduce((s,x)=>s+x.valor_original,0);
+  const socios = itensSocios.reduce((s,x)=>s+x.valor_original,0);
+
+  // Juros/encargos de financiamentos (contratos PJ) -- soma os meses da janela a partir da
+  // mesma série de 12 meses que a tela de Despesas Financeiras já usa (resumoFin.serieMensal),
+  // pedindo o resumo com `mes` = o mês mais recente da janela.
+  let jurosFinanciamentos = 0, chequeEspecialDisponivel = false, chequeEspecialValor = 0;
+  try{
+    const mesRef = chaves[chaves.length - 1];
+    const resumoFin = await apiFetch('/api/financiamentos/resumo?mes=' + mesRef);
+    const serie = resumoFin.serieMensal || [];
+    jurosFinanciamentos = serie.filter(m => chaves.includes(m.mes)).reduce((s,m)=>s+(m.total||0),0);
+    if(resumoFin.chequeEspecial != null){ chequeEspecialDisponivel = true; chequeEspecialValor = resumoFin.chequeEspecial; }
+  }catch(err){
+    console.error('Não foi possível carregar juros de financiamentos para Saúde da Empresa:', err);
+  }
+  const despFin = despFinCad + jurosFinanciamentos + (chequeEspecialDisponivel ? chequeEspecialValor : 0);
+
+  const margem = receitaBruta - custosVar;
+  const margemPct = receitaBruta ? (margem/receitaBruta*100) : 0;
+  const lucroOperacional = margem - custosFixos;
+  const lucroLiquido = lucroOperacional - despFin - naoClass;
+
+  const custosFixosTotaisEquilibrio = custosFixos + despFin; // base do ponto de equilíbrio FINANCEIRO (inclui juros)
+  const pontoEquilibrio = margemPct > 0 ? (custosFixosTotaisEquilibrio / (margemPct/100)) : null;
+  const margemSegurancaRS = pontoEquilibrio != null ? (receitaBruta - pontoEquilibrio) : null;
+  const margemSegurancaPct = (pontoEquilibrio != null && pontoEquilibrio > 0) ? (margemSegurancaRS/pontoEquilibrio*100) : null;
+
+  return {
+    periodo, chaves, receitaBruta, custosVar, custosFixos, margem, margemPct,
+    lucroOperacional, despFin, lucroLiquido, socios, naoClass,
+    pontoEquilibrio, margemSegurancaRS, margemSegurancaPct, chequeEspecialDisponivel,
+  };
+}
+
+// Limiares de cor ajustáveis -- ponto de partida sugerido (confirmado com a Danielle em
+// 04/10/2026), não uma regra contábil universal; podem ser recalibrados a qualquer momento.
+const LIMIAR_SAUDE_VERDE_PCT = 10;    // margem de segurança >= 10% acima do ponto de equilíbrio
+const LIMIAR_SAUDE_VERMELHO_PCT = -10; // margem de segurança <= -10% do ponto de equilíbrio
+
+function statusSaudeEmpresa(calc){
+  if(calc.pontoEquilibrio == null){
+    return { cor:'vermelho', label:'Risco', frase:'Margem de contribuição zerada ou negativa neste período — cada venda está custando mais do que gera de receita. Revisar preço ou custo variável antes de qualquer outra coisa.' };
+  }
+  const msp = calc.margemSegurancaPct;
+  if(calc.lucroLiquido < 0 || msp <= LIMIAR_SAUDE_VERMELHO_PCT){
+    return { cor:'vermelho', label:'Risco', frase: calc.margemSegurancaRS >= 0
+      ? 'A receita já está acima do ponto de equilíbrio, mas o resultado do período ainda é negativo — revisar despesas financeiras e lançamentos não classificados.'
+      : `Faltam ${fmtBRL(Math.abs(calc.margemSegurancaRS))} em vendas para cobrir todos os custos e juros do período.` };
+  }
+  if(msp < LIMIAR_SAUDE_VERDE_PCT){
+    return { cor:'amarelo', label:'Atenção', frase:`A empresa está no lucro, mas com pouca folga acima do ponto de equilíbrio (${msp.toFixed(1)}%) — qualquer queda de venda ou alta de custo pode virar prejuízo.` };
+  }
+  return { cor:'verde', label:'Saudável', frase:`A empresa está lucrativa e ${msp.toFixed(1)}% acima do ponto de equilíbrio neste período.` };
+}
+
+function corSaudeEmpresa(cor){
+  return {
+    verde: { fundo:'var(--olive-wash)', borda:'var(--olive)', texto:'var(--olive-strong)' },
+    amarelo: { fundo:'var(--gold-wash)', borda:'var(--gold-soft)', texto:'var(--gold)' },
+    vermelho: { fundo:'var(--red-wash)', borda:'var(--red)', texto:'var(--red)' },
+  }[cor];
+}
+
+async function renderSaudeEmpresaCard(){
+  const el = document.getElementById('saudeEmpresaCard');
+  if(!el) return;
+  el.innerHTML = `<div style="padding:16px; text-align:center; color:var(--ink-faint); font-size:12.5px;">Calculando a saúde do negócio…</div>`;
+  let calc;
+  try{
+    calc = await calcularSaudeEmpresa(periodoSaudeEmpresa);
+  }catch(err){
+    console.error('Não foi possível calcular a Saúde da Empresa:', err);
+    el.innerHTML = '';
+    return;
+  }
+  const status = statusSaudeEmpresa(calc);
+  const c = corSaudeEmpresa(status.cor);
+  const optsPeriodo = Object.entries(LABELS_PERIODO_SAUDE).map(([v,l])=>`<option value="${v}" ${v===periodoSaudeEmpresa?'selected':''}>${l}</option>`).join('');
+
+  el.innerHTML = `
+    <div id="saudeEmpresaBanner" style="cursor:pointer; border-radius:18px; padding:20px 22px; margin:18px 0 26px; background:${c.fundo}; border:1.5px solid ${c.borda}; box-shadow:var(--shadow-soft); display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:16px;">
+      <div style="display:flex; align-items:center; gap:14px; flex:1; min-width:260px;">
+        <div style="width:14px; height:14px; border-radius:50%; background:${c.borda}; flex:none; box-shadow:0 0 0 5px ${c.fundo};"></div>
+        <div>
+          <div style="font-size:11px; letter-spacing:1.5px; text-transform:uppercase; color:${c.texto}; font-weight:600;">Saúde da empresa — ${status.label}</div>
+          <div style="font-family:'Playfair Display',serif; font-size:17px; color:var(--ink); margin-top:4px; max-width:620px;">${status.frase}</div>
+        </div>
+      </div>
+      <div style="display:flex; align-items:center; gap:10px;" onclick="event.stopPropagation();">
+        <select id="saudeEmpresaPeriodo" style="padding:8px 10px; border-radius:10px; border:1px solid var(--border); background:var(--surface); font-family:inherit; font-size:12.5px; color:var(--ink);">${optsPeriodo}</select>
+        <span style="font-size:12px; color:var(--ink-faint); white-space:nowrap;">ver detalhes ▸</span>
+      </div>
+    </div>
+  `;
+  document.getElementById('saudeEmpresaBanner').addEventListener('click', ()=> abrirDetalheSaudeEmpresa(calc, status));
+  document.getElementById('saudeEmpresaPeriodo').addEventListener('change', async e=>{
+    periodoSaudeEmpresa = e.target.value;
+    await renderSaudeEmpresaCard();
+  });
+}
+
+function abrirDetalheSaudeEmpresa(calc, status){
+  const c = corSaudeEmpresa(status.cor);
+  const linha = (label, valor, destaque) => `
+    <tr><td${destaque?' style="font-weight:600;"':''}>${label}</td><td style="text-align:right;${destaque?' font-weight:600;':''}">${valor}</td></tr>`;
+  openOverlay(`
+    <div class="panel-head">
+      <div><h2>Saúde da Empresa — ${LABELS_PERIODO_SAUDE[calc.periodo]}</h2><p>Calculado a partir dos mesmos lançamentos que alimentam o DRE automático (regime de competência, por vencimento).</p></div>
+      <button class="close-x" onclick="closeOverlay()">✕</button>
+    </div>
+    <div style="border-radius:14px; padding:14px 18px; margin-bottom:18px; background:${c.fundo}; border:1px solid ${c.borda};">
+      <div style="font-size:11px; letter-spacing:1.5px; text-transform:uppercase; color:${c.texto}; font-weight:600;">${status.label}</div>
+      <div style="font-size:14px; color:var(--ink); margin-top:4px;">${status.frase}</div>
+    </div>
+    <table class="report">
+      <tbody>
+        ${linha('Receita Bruta', fmtBRL(calc.receitaBruta))}
+        ${linha('(–) Custos Variáveis (CMV)', fmtBRL(calc.custosVar))}
+        ${linha('Margem de Contribuição', `${fmtBRL(calc.margem)} (${calc.margemPct.toFixed(1)}%)`, true)}
+        ${linha('(–) Custos Fixos', fmtBRL(calc.custosFixos))}
+        ${linha('Lucro Operacional', fmtBRL(calc.lucroOperacional), true)}
+        ${linha('(–) Despesas Financeiras (juros)', fmtBRL(calc.despFin))}
+        ${calc.naoClass ? linha('(–) Não classificado', fmtBRL(calc.naoClass)) : ''}
+        ${linha('Lucro Líquido', fmtBRL(calc.lucroLiquido), true)}
+      </tbody>
+    </table>
+    <div class="panel-head" style="margin-top:22px; margin-bottom:8px;"><div><h2 style="font-size:15px;">Ponto de equilíbrio</h2></div></div>
+    <table class="report">
+      <tbody>
+        ${calc.pontoEquilibrio != null ? linha('Ponto de Equilíbrio Financeiro (precisa vender)', fmtBRL(calc.pontoEquilibrio), true)
+          : `<tr><td colspan="2" style="color:var(--red);">Margem de contribuição zerada ou negativa neste período — ponto de equilíbrio indefinido (nenhum nível de venda cobre os custos nas condições atuais).</td></tr>`}
+        ${calc.margemSegurancaRS != null ? linha(calc.margemSegurancaRS >= 0 ? 'Margem de segurança (já acima do equilíbrio)' : 'Faltam para atingir o equilíbrio', fmtBRL(Math.abs(calc.margemSegurancaRS)) + (calc.margemSegurancaPct!=null ? ` (${calc.margemSegurancaPct.toFixed(1)}%)` : '')) : ''}
+      </tbody>
+    </table>
+    <div class="panel-head" style="margin-top:22px; margin-bottom:8px;"><div><h2 style="font-size:15px;">Fora do resultado operacional</h2><p>Não entram no lucro líquido acima — estrutura de capital/retirada, não custo da operação.</p></div></div>
+    <table class="report">
+      <tbody>
+        ${linha('Retiradas de Sócios / Pró-labore (total do período)', fmtBRL(calc.socios))}
+      </tbody>
+    </table>
+    ${!calc.chequeEspecialDisponivel ? `<p style="font-size:11px; color:var(--gold); margin-top:14px;">⚠ Juros de cheque especial: sem fonte de dado ainda (falta extrato bancário) — não incluído nos valores acima.</p>` : ''}
     <div class="panel-actions" style="margin-top:20px;">
       <button class="btn gold" onclick="window.print()">Imprimir / salvar PDF</button>
     </div>
@@ -4318,7 +4558,7 @@ function renderCadastroField(f, prefill){
   return `
     <div class="field ${f.full?'full':''}">
       <label>${f.label}${f.required ? ' *' : ''}</label>
-      <select name="${f.name}" onchange="toggleCadastroNovo('${f.name}', this.value); if('${f.name}'==='credor') autoPreencherCategoriaFornecedor(this.value);"${requiredAttr}>${optionsHtml}</select>
+      <select name="${f.name}" onchange="toggleCadastroNovo('${f.name}', this.value); if('${f.name}'==='credor'||'${f.name}'==='cliente') sugerirCategoriaPorHistorico('${f.name}', this.value);"${requiredAttr}>${optionsHtml}</select>
       <div id="novo_${f.name}" class="novo-cadastro" style="display:${selectedValue==='__novo__'?'flex':'none'};">
         <input name="novo_${f.name}" type="text" placeholder="Nome do novo ${meta.novoLabel}" value="${escapeHtml(novoNome)}" />
         ${extraFieldsHtml}
@@ -4326,16 +4566,56 @@ function renderCadastroField(f, prefill){
     </div>`;
 }
 
-function autoPreencherCategoriaFornecedor(fornecedorId){
-  if(currentType !== 'pagar') return;
+// Sugere a categoria do lançamento com base no HISTÓRICO real de lançamentos já feitos pra
+// aquele mesmo fornecedor (Contas a Pagar) ou cliente (Contas a Receber) -- categoria mais
+// usada nos lançamentos anteriores, sempre editável depois (é só uma pré-seleção no mesmo
+// campo normal, não trava nada). Pedido da Danielle (04/10/2026): antes a única sugestão
+// disponível dependia de um campo "categoria padrão" cadastrado manualmente no fornecedor
+// (quase sempre vazio na prática, então a sugestão quase nunca aparecia) e só existia em
+// Contas a Pagar. Agora funciona a partir do 1º lançamento repetido daquele fornecedor/
+// cliente, nos dois módulos, sem precisar de nenhum cadastro manual prévio -- e some sozinho
+// (não erra pra um valor fixo) se não houver nenhum histórico ainda.
+function categoriaMaisUsada(lista, chaveNome, nomeAlvo){
+  if(!nomeAlvo) return null;
+  const contagem = {};
+  lista.forEach(x=>{
+    if((x[chaveNome]||'') === nomeAlvo && x.categoria){
+      contagem[x.categoria] = (contagem[x.categoria]||0) + 1;
+    }
+  });
+  const nomes = Object.keys(contagem);
+  if(!nomes.length) return null;
+  return nomes.reduce((a,b)=> contagem[a] >= contagem[b] ? a : b);
+}
+
+function sugerirCategoriaPorHistorico(campo, cadastroId){
   const categoriaSelect = document.querySelector('#formFields select[name="categoria"]');
-  if(!categoriaSelect) return;
-  const fornecedor = (CADASTROS.fornecedores||[]).find(f => String(f.id)===String(fornecedorId));
-  const catId = fornecedor && fornecedor.categoria_padrao_id;
-  if(catId && !categoriaSelect.value){
-    const opt = categoriaSelect.querySelector(`option[value="${catId}"]`);
-    if(opt){ categoriaSelect.value = String(catId); }
+  if(!categoriaSelect || categoriaSelect.value) return; // não sobrescreve escolha já feita manualmente
+
+  let nomeCategoriaSugerida = null;
+
+  if(campo === 'credor' && currentType === 'pagar'){
+    const fornecedor = (CADASTROS.fornecedores||[]).find(f => String(f.id)===String(cadastroId));
+    const nomeFornecedor = fornecedor && fornecedor.nome;
+    nomeCategoriaSugerida = categoriaMaisUsada(DATA.contasPagar||[], 'credor', nomeFornecedor);
+    if(!nomeCategoriaSugerida && fornecedor && fornecedor.categoria_padrao_id){
+      // Sem histórico ainda -- cai pro campo "categoria padrão" do cadastro, se alguém já
+      // tiver preenchido manualmente alguma vez (mecanismo antigo, mantido como fallback).
+      const opt = categoriaSelect.querySelector(`option[value="${fornecedor.categoria_padrao_id}"]`);
+      if(opt) categoriaSelect.value = String(fornecedor.categoria_padrao_id);
+      return;
+    }
+  } else if(campo === 'cliente' && currentType === 'receber'){
+    const cliente = (CADASTROS.sacados||[]).find(s => String(s.id)===String(cadastroId));
+    const nomeCliente = cliente && cliente.nome;
+    nomeCategoriaSugerida = categoriaMaisUsada(DATA.contasReceber||[], 'cliente', nomeCliente);
+  } else {
+    return;
   }
+
+  if(!nomeCategoriaSugerida) return;
+  const opt = Array.from(categoriaSelect.options).find(o => o.textContent.trim() === nomeCategoriaSugerida.trim());
+  if(opt) categoriaSelect.value = opt.value;
 }
 
 function renderFormFields(prefill){
