@@ -407,9 +407,248 @@
         .print-header img{max-height:52px; max-width:220px; object-fit:contain;}
         .print-header .print-header-empresa{font-family:'Playfair Display',serif; font-size:16px; font-weight:600; color:#000 !important;}
   }
+
+  /* ==========================================================================================
+     LAYOUT NOVO — menu lateral, indicadores compactos e telas internas organizadas.
+     Referência aprovada: "Prévia — Novo layout Portal do Cliente" (04/10/2026).
+
+     Só vale com body.layout-novo (chave controlada em head: ?layout=novo liga, ?layout=antigo
+     desliga). Sem a classe, NADA deste bloco se aplica e o portal continua exatamente como era.
+
+     FASE 1 — tokens: administrador = verde (petróleo); cliente = bege claro. Os dois reaproveitam
+     as variáveis que o resto do CSS já usa (--paper, --surface, --gold…), então os painéis
+     internos acompanham sozinhos, sem regra nova por componente.
+     FASE 2 — casca: menu lateral + barra superior + indicadores compactos. Os cartões de módulo
+     originais continuam no HTML (escondidos) e o menu lateral aciona cada um deles — por isso
+     todo acesso, permissão e comportamento existentes ficam intactos.
+     ========================================================================================== */
+
+  /* ---------- Fase 1 · tokens comuns ---------- */
+  body.layout-novo{
+    --sidebar-w:248px;
+    --radius-novo:7px;
+    --nav-line:rgba(255,255,255,.10);
+    --shadow:0 14px 34px -22px rgba(20,40,36,.28), 0 1px 6px rgba(20,40,36,.06);
+    --shadow-soft:0 1px 3px rgba(20,40,36,.06);
+  }
+
+  /* Administrador — verde (petróleo) */
+  body.layout-novo.tema-escritorio{
+    --paper:#F3F6F5;
+    --paper-2:#F3F6F5;
+    --paper-3:#E7EEEC;
+    --surface:#FFFFFF;
+    --surface-soft:rgba(255,255,255,.80);
+    --ink:#1B2B3A;
+    --ink-soft:rgba(27,43,58,.64);
+    --ink-faint:rgba(27,43,58,.44);
+    --gold:#1F6F63;
+    --gold-soft:#4FA093;
+    --gold-line:rgba(79,160,147,.38);
+    --gold-wash:rgba(79,160,147,.11);
+    --olive:#0E3B36;
+    --olive-strong:#1F6F63;
+    --olive-wash:rgba(31,111,99,.11);
+    --border:#DFE7E4;
+    --nav-bg:#0E3B36;
+    --nav-ink:#EAF3F1;
+    --nav-ink-soft:rgba(234,243,241,.56);
+    --nav-hover:rgba(255,255,255,.06);
+    --nav-active:rgba(255,255,255,.10);
+    --nav-accent:#6FBBAE;
+    --nav-line:rgba(255,255,255,.10);
+  }
+  body.layout-novo.tema-escritorio .btn.gold{color:#fff;}
+  body.layout-novo.tema-escritorio .fab{box-shadow:0 12px 28px -10px rgba(14,59,54,.55);}
+  body.layout-novo.tema-escritorio .panel{box-shadow:0 30px 70px -26px rgba(14,59,54,.45);}
+
+  /* Cliente — bege claro (mantém a paleta marfim/dourado que o cliente já conhece) */
+  body.layout-novo:not(.tema-escritorio){
+    --nav-bg:#EDE5D1;
+    --nav-ink:#33291B;
+    --nav-ink-soft:rgba(51,41,27,.58);
+    --nav-hover:rgba(122,90,38,.07);
+    --nav-active:rgba(122,90,38,.12);
+    --nav-accent:#7A5A26;
+    --nav-line:rgba(122,90,38,.20);
+  }
+
+  body.layout-novo{background:var(--paper);}
+  body.layout-novo .blob, body.layout-novo .frame{display:none;}
+
+  /* ---------- Fase 2 · menu lateral ---------- */
+  .nav-lateral{display:none;}
+  body.layout-novo .nav-lateral{
+    display:flex; flex-direction:column; position:fixed; left:0; top:0; bottom:0; width:var(--sidebar-w);
+    background:var(--nav-bg); color:var(--nav-ink); z-index:40; overflow-y:auto; padding:20px 0 24px;
+    font-size:13.5px;
+  }
+  body.layout-novo.not-authed .nav-lateral{display:none;}
+  .nav-brand{padding:0 20px 18px; border-bottom:1px solid var(--nav-line); margin-bottom:10px;}
+  .nav-brand .nav-nome{font-family:'Playfair Display',serif; font-style:italic; font-weight:500; font-size:16px; line-height:1.2;}
+  .nav-brand .nav-papel{font-size:10px; line-height:1.35; letter-spacing:.8px; color:var(--nav-ink-soft); margin-top:3px; text-transform:uppercase;}
+  .nav-brand .nav-empresa{font-size:12.5px; font-weight:600; margin-top:10px; line-height:1.3;}
+  .nav-brand .nav-logo{margin-bottom:12px;}
+  /* o espaço da logo do cliente (id original clientLogoSlot) é movido para dentro do menu */
+  body.layout-novo .nav-brand #clientLogoSlot{max-width:100%; width:100%; height:auto; min-height:56px; justify-content:flex-start;}
+  body.layout-novo .nav-brand #clientLogoSlot img{max-height:64px; max-width:100%;}
+  body.layout-novo .nav-brand #clientLogoSlot.placeholder{
+    width:100%; min-height:0; padding:0; border:0; background:transparent; justify-content:flex-start; text-align:left;
+    font-size:0; line-height:0; height:0; margin:0;
+  }
+  .nav-grupo-titulo{font-size:11px; color:var(--nav-ink-soft); padding:14px 20px 6px; font-weight:500;}
+  .nav-item{
+    display:flex; align-items:center; gap:10px; width:100%; padding:9px 20px; background:transparent; border:0;
+    border-left:3px solid transparent; color:var(--nav-ink); opacity:.88; font:inherit; font-size:13.5px; text-align:left; cursor:pointer;
+  }
+  .nav-item:hover{background:var(--nav-hover); opacity:1;}
+  .nav-item:focus-visible{outline:2px solid var(--nav-accent); outline-offset:-2px;}
+  .nav-item.ativo{background:var(--nav-active); border-left-color:var(--nav-accent); opacity:1; font-weight:600;}
+  .nav-item .nav-ic{width:16px; text-align:center; font-size:13px; opacity:.85; flex:none;}
+  .nav-item .nav-badge{margin-left:auto; font-size:10.5px; font-weight:600;}
+  .nav-rodape{margin-top:auto; padding:18px 20px 0; border-top:1px solid var(--nav-line); font-size:10.5px; color:var(--nav-ink-soft); line-height:1.4;}
+
+  body.layout-novo .wrap{max-width:none; margin:0 0 0 var(--sidebar-w); padding:0 0 110px;}
+  body.layout-novo.not-authed .wrap{margin-left:0;}
+
+  /* ---------- Fase 2 · barra superior (a subbar original, com os mesmos botões e ids) ---------- */
+  body.layout-novo header.top{display:none;}
+  body.layout-novo .subbar{
+    position:sticky; top:0; z-index:30; margin:0; padding:12px 28px; gap:12px; justify-content:flex-start;
+    background:var(--surface); border-bottom:1px solid var(--border);
+  }
+  body.layout-novo .subbar .nav-espaco{flex:1;}
+  body.layout-novo .nav-toggle{display:none;}
+  body.layout-novo .subbar .btn-mini{border-radius:var(--radius-novo);}
+  body.layout-novo .client-select{border-radius:var(--radius-novo);}
+
+  /* ---------- Fase 2 · conteúdo ---------- */
+  body.layout-novo .wrap > .section-title{display:none;}
+  body.layout-novo .wrap > .grid:not(#kpiGrid):not(#flowGrid){display:none;} /* cartões de módulo: acionados pelo menu lateral */
+  body.layout-novo #kpiGrid, body.layout-novo #flowGrid, body.layout-novo #saudeEmpresaCard, body.layout-novo #avisoOffline,
+  body.layout-novo footer.foot{margin-left:28px; margin-right:28px;}
+  body.layout-novo #kpiGrid{margin-top:24px;}
+  body.layout-novo footer.foot{margin-top:40px;}
+
+  /* Saúde da empresa = faixa de alerta no topo, como na prévia */
+  body.layout-novo #saudeEmpresaCard{margin-top:24px;}
+  body.layout-novo #saudeEmpresaBanner{margin:0 !important; padding:13px 18px !important; border-radius:var(--radius-novo) !important; box-shadow:none !important;}
+  body.layout-novo #saudeEmpresaBanner [style*="Playfair"]{font-family:'Inter',sans-serif !important; font-size:13.5px !important; max-width:none !important;}
+
+  /* Indicadores compactos */
+  body.layout-novo #kpiGrid, body.layout-novo #flowGrid{display:grid; gap:14px; justify-content:stretch;}
+  body.layout-novo #kpiGrid{grid-template-columns:repeat(4, minmax(0,1fr));}
+  body.layout-novo #flowGrid{grid-template-columns:repeat(2, minmax(0,1fr)); margin-top:14px;}
+  body.layout-novo #kpiGrid .card, body.layout-novo #flowGrid .card{
+    border-radius:var(--radius-novo); padding:16px 18px; box-shadow:none; background:var(--surface); border:1px solid var(--border);
+  }
+  body.layout-novo .card:hover{transform:none; box-shadow:var(--shadow); border-color:var(--gold-soft);}
+  body.layout-novo .card::before{display:none;}
+  body.layout-novo .card .lbl{font-size:12.5px; letter-spacing:0; text-transform:none; font-weight:500; margin-bottom:8px;}
+  body.layout-novo .card .val{font-family:'Inter',sans-serif; font-size:24px; font-weight:600;}
+  body.layout-novo .card .sub{font-size:11.5px; margin-top:6px;}
+  body.layout-novo .card.expandable{padding-bottom:16px;}
+  body.layout-novo .card.expandable::after{
+    position:static; display:block; margin-top:9px; content:'Ver detalhes →'; font-size:11.5px; letter-spacing:0;
+    text-transform:none; color:var(--gold); font-weight:500;
+  }
+  body.layout-novo #flowGrid .card{grid-column:auto !important;}
+  body.layout-novo #flowGrid .card .val{font-size:18px !important;}
+  body.layout-novo .card.tone-urgent{background:var(--surface); border-color:rgba(193,85,75,.30);}
+
+  body.layout-novo #cardSaldo{order:1;}
+  body.layout-novo #cardPagar{order:2;}
+  body.layout-novo #cardReceber{order:3;}
+  body.layout-novo #cardVencidos{order:4;}
+  body.layout-novo #cardPagarHoje, body.layout-novo #cardFechamentoSemana{
+    grid-column:1 / -1; display:flex; align-items:center; flex-wrap:wrap; gap:6px 18px; padding:12px 18px !important;
+  }
+  body.layout-novo #cardPagarHoje{order:5;}
+  body.layout-novo #fechamentoSlot{margin:14px 28px 0;}
+  body.layout-novo #fechamentoSlot .card{border-radius:var(--radius-novo); box-shadow:none; border:1px solid var(--nav-bg);}
+  body.layout-novo #fechamentoSlot #cardFechamentoSemana{display:flex; align-items:center; flex-wrap:wrap; gap:6px 18px; padding:12px 18px !important;}
+  body.layout-novo #cardFechamentoSemana{order:6; background:var(--nav-bg) !important; border-color:var(--nav-bg) !important; color:var(--nav-ink);}
+  body.layout-novo #cardPagarHoje .lbl, body.layout-novo #cardFechamentoSemana .lbl{margin:0;}
+  body.layout-novo #cardPagarHoje .val, body.layout-novo #cardFechamentoSemana .val{font-size:17px !important;}
+  body.layout-novo #cardPagarHoje .sub, body.layout-novo #cardFechamentoSemana .sub{margin:0;}
+  body.layout-novo #cardPagarHoje.card.expandable::after, body.layout-novo #cardFechamentoSemana.card.expandable::after{margin:0 0 0 auto;}
+  body.layout-novo #cardFechamentoSemana .lbl, body.layout-novo #cardFechamentoSemana .val, body.layout-novo #cardFechamentoSemana .sub,
+  body.layout-novo #cardFechamentoSemana.card.expandable::after{color:var(--nav-ink);}
+  body.layout-novo #cardFechamentoSemana .val.neg{color:#F0A89F;}
+
+  /* botões flutuantes continuam, mais discretos */
+  body.layout-novo .fab{width:46px; height:46px;}
+
+  /* ---------- Telas estreitas ---------- */
+  @media(max-width:980px){
+    body.layout-novo #kpiGrid{grid-template-columns:repeat(2, minmax(0,1fr));}
+    body.layout-novo #flowGrid{grid-template-columns:1fr;}
+  }
+  @media(max-width:900px){
+    body.layout-novo .nav-lateral{transform:translateX(-100%); transition:transform .2s ease; box-shadow:0 0 40px rgba(0,0,0,.25);}
+    body.layout-novo.nav-aberto .nav-lateral{transform:none;}
+    body.layout-novo .wrap{margin-left:0;}
+    body.layout-novo .nav-toggle{display:inline-flex;}
+    body.layout-novo .subbar{padding:10px 16px;}
+    body.layout-novo #kpiGrid, body.layout-novo #flowGrid, body.layout-novo #saudeEmpresaCard, body.layout-novo #avisoOffline,
+    body.layout-novo footer.foot, body.layout-novo #fechamentoSlot{margin-left:16px; margin-right:16px;}
+  }
+  @media(max-width:640px){
+    body.layout-novo #kpiGrid{grid-template-columns:1fr;}
+    body.layout-novo .subbar .sync-pill{display:none;}
+  }
+    /* Cliente: a logo da empresa e o nome dela vêm primeiro; a assinatura do escritório fica logo abaixo, menor */
+  body.layout-novo:not(.tema-escritorio) .nav-brand{display:flex; flex-direction:column;}
+  body.layout-novo:not(.tema-escritorio) .nav-brand .nav-logo{order:1;}
+  body.layout-novo:not(.tema-escritorio) .nav-brand .nav-empresa{order:2; margin-top:0; font-size:14px;}
+  body.layout-novo:not(.tema-escritorio) .nav-brand .nav-nome{order:3; margin-top:14px; font-size:13px; opacity:.85;}
+  body.layout-novo:not(.tema-escritorio) .nav-brand .nav-papel{order:4; font-size:9px;}
+  body.layout-novo:not(.tema-escritorio) .fab{background:linear-gradient(135deg,#9A7633,#7A5A26); box-shadow:0 14px 30px -10px rgba(122,90,38,.55);}
+
+
+  /* ---------- Fase 3 (parcial) · telas internas com o menu sempre visível ----------
+     Os módulos extensos abrem no #overlay. No layout novo ele deixa de ser uma janela que cobre a
+     tela inteira e vira uma "página" à direita do menu (e abaixo da barra superior). Diálogos de
+     ação (#overlayBaixa = registrar pagamento; #overlayForm = novo lançamento) continuam modais. */
+  body.layout-novo #overlay{
+    left:var(--sidebar-w); top:var(--subbar-h,57px); padding:24px 28px 90px; z-index:35;
+    background:var(--paper); backdrop-filter:none; align-items:flex-start;
+  }
+  @media(min-width:901px){ body.layout-novo #overlay{padding-right:84px;} } /* espaço para os botões flutuantes não taparem a tabela */
+  body.layout-novo #overlay .panel{
+    max-width:none; border-radius:var(--radius-novo); box-shadow:var(--shadow-soft); transform:none; opacity:1;
+    padding:26px 28px 28px;
+  }
+  body.layout-novo #overlay .panel-head h2{font-family:'Inter',sans-serif; font-weight:600; font-size:20px;}
+  body.layout-novo #overlay .panel-head h2:focus{outline:none;}
+  body.layout-novo #overlay .panel-head h2:focus-visible{outline:2px solid var(--gold-soft); outline-offset:4px;}
+  .nav-scrim{display:none;}
+  @media(max-width:900px){
+    body.layout-novo #overlay{left:0; padding:12px 12px 90px;}
+    body.layout-novo #overlay .panel{padding:18px 14px 22px;}
+    body.layout-novo.nav-aberto .nav-scrim{display:block; position:fixed; inset:0; background:rgba(14,30,28,.35); z-index:39;}
+  }
+  @media print{
+    body.layout-novo #overlay{background:none !important;}
+    body.layout-novo #overlay .panel{padding:0 !important; border-radius:0 !important;}
+  }
+
+  @media print{ .nav-lateral{display:none !important;} body.layout-novo .wrap{margin-left:0 !important; max-width:none !important;} body.layout-novo .subbar{margin-left:0 !important;} }
 </style>
 </head>
 <body>
+<script>
+/* Chave do layout novo (por navegador, em localStorage 'layoutNovo'):
+   ?layout=novo   -> GRAVA a preferência; continua valendo nas visitas seguintes mesmo sem o parâmetro.
+   ?layout=antigo -> APAGA a preferência e volta ao layout atual.
+   Sem parâmetro e sem preferência gravada -> layout atual (padrão enquanto não houver "sim" para a troca). */
+(function(){ try{
+  var p = new URLSearchParams(location.search).get('layout');
+  if(p === 'novo') localStorage.setItem('layoutNovo','1');
+  else if(p === 'antigo') localStorage.removeItem('layoutNovo');
+  if(localStorage.getItem('layoutNovo') === '1') document.body.classList.add('layout-novo');
+}catch(e){} })();
+</script>
 
 <div class="blob blob-1"></div>
 <div class="blob blob-2"></div>
@@ -504,12 +743,12 @@ Fica fora de .wrap para continuar visível quando .wrap é escondido em @media p
     <div class="card" id="btnPrint">
       <div class="lbl">Impressão</div>
       <div class="val" style="font-size:19px;">Relatório para impressão</div>
-      <div class="sub">Estoque, produtos, contas a pagar/receber e fluxo — em PDF ou planilha Excel</div>
+      <div class="sub">Estoque, produtos, A pagar, A receber e fluxo — em PDF ou planilha Excel</div>
     </div>
     <div class="card" id="btnImportar">
       <div class="lbl">Importação em lote</div>
       <div class="val" style="font-size:19px;">Importar planilha</div>
-      <div class="sub">Sobe de uma vez um histórico de contas a pagar, a receber ou caixa</div>
+      <div class="sub">Sobe de uma vez um histórico de A pagar, A receber ou caixa</div>
     </div>
     <div class="card" id="btnContratos">
       <div class="lbl">Contratos</div>
@@ -598,8 +837,8 @@ Fica fora de .wrap para continuar visível quando .wrap é escondido em @media p
       <button class="close-x" data-close-form>✕</button>
     </div>
     <div class="type-toggle" id="typeToggle">
-      <button class="active" data-type="pagar">Conta a pagar</button>
-      <button data-type="receber">Conta a receber</button>
+      <button class="active" data-type="pagar">A pagar</button>
+      <button data-type="receber">A receber</button>
       <button data-type="caixa">Fluxo de Caixa</button>
     </div>
     <form id="entryForm">
@@ -650,7 +889,7 @@ function setUsuario(u){
 }
 
 function temaEscritorioAtivo(){ return document.body.classList.contains('tema-escritorio'); }
-function corEixoGrafico(){ return temaEscritorioAtivo() ? 'rgba(245,242,236,.5)' : 'rgba(27,43,58,.5)'; }
+function corEixoGrafico(){ return (temaEscritorioAtivo() && !document.body.classList.contains('layout-novo')) ? 'rgba(245,242,236,.5)' : 'rgba(27,43,58,.5)'; }
 function corAccentGrafico(){ return temaEscritorioAtivo() ? '#2A7A6E' : '#7A5A26'; }
 function corAccentGraficoWash(){ return temaEscritorioAtivo() ? 'rgba(42,122,110,.14)' : 'rgba(122,90,38,.10)'; }
 function coresAgingGrafico(){ return temaEscritorioAtivo() ? ['#2A7A6E','#1A4A44','#4FA093','#C1554B'] : ['#C9A961','#B08A3E','#8C6A2E','#C1554B']; }
@@ -1012,13 +1251,13 @@ function renderKPIs(){
   const k = computeKPIs();
   const fs = k.fechamentoSemana;
   document.getElementById('kpiGrid').innerHTML = `
-    ${cardHTML({label:'A PAGAR', value:fmtBRL(k.pagarMes), tone:'gold', expandable:true, id:'cardPagar',
+    ${cardHTML({label:'A pagar', value:fmtBRL(k.pagarMes), tone:'gold', expandable:true, id:'cardPagar',
                 sub:`Referente a ${nomeMesAtual()} · ${DATA.contasPagar.length} título(s) em aberto · clique para trocar o período`})}
                 ${cardHTML({label:'A pagar hoje', value:fmtBRL(k.pagarHoje), tone: k.pagarHoje>0?'urgent':'', valueClass:k.pagarHoje>0?'neg':'', expandable:true, id:'cardPagarHoje',
                             sub:`Hoje, ${fmtDate(todayISO())} (${nomeDiaSemanaHoje()})`})}
                             ${cardHTML({label:'A receber', value:fmtBRL(k.receberMes), expandable:true, id:'cardReceber',
                                         sub:`Referente a ${nomeMesAtual()} · ${DATA.contasReceber.length} título(s) em aberto — venda da Cristal é majoritariamente à vista`})}
-                                        ${cardHTML({label:'Saldo atual em contas bancárias', value:fmtBRL(k.saldoCaixa), tone:'gold', valueClass:'pos', expandable:true, id:'cardSaldo',
+                                        ${cardHTML({label:'Saldo atual em contas bancárias', value:fmtBRL(k.saldoCaixa), tone:'gold', valueClass:(k.saldoCaixa<0?'neg':(k.saldoCaixa>0?'pos':'')), expandable:true, id:'cardSaldo',
                                                     sub: DATA.saldoContas.map(c=>c.conta.split('—')[0].trim()).join(' · ')})}
                                                     ${cardHTML({label:'Fechamento de caixa da semana', value:fmtBRL(fs.saldo), tone:'gold', expandable:true, id:'cardFechamentoSemana',
                                                                 sub:`Desde ${fmtDate(fs.inicio.toISOString().slice(0,10))} · Dinheiro ${fmtBRL(fs.porForma.Dinheiro)} · Cartão ${fmtBRL(fs.porForma['Cartão'])} · PIX ${fmtBRL(fs.porForma.PIX)}`})}
@@ -1818,7 +2057,7 @@ function renderContratosPanel(lista){
 
   openOverlay(`
     <div class="panel-head">
-      <div><h2>Contratos</h2><p>Empréstimos, financiamentos e renegociações. As parcelas pagas são calculadas automaticamente a partir das baixas dadas em Contas a Pagar vinculadas a cada contrato. Use "✏️ Editar" para corrigir valor da parcela, quantidade de parcelas ou data da 1ª parcela — as mudanças refletem automaticamente em Contas a Pagar, Caixa e DRE.</p></div>
+      <div><h2>Contratos</h2><p>Empréstimos, financiamentos e renegociações. As parcelas pagas são calculadas automaticamente a partir das baixas dadas em A pagar vinculadas a cada contrato. Use "✏️ Editar" para corrigir valor da parcela, quantidade de parcelas ou data da 1ª parcela — as mudanças refletem automaticamente em A pagar, Caixa e DRE.</p></div>
       <button class="close-x" onclick="closeOverlay()">✕</button>
     </div>
     <div style="overflow-x:auto;">
@@ -1835,7 +2074,7 @@ function renderContratosPanel(lista){
       ${campoMenu('Valor da parcela (R$)', '<input type="number" step="0.01" name="valor_parcela" style="' + ESTILO_INPUT_MENU + '">')}
       ${campoMenu('Taxa de juros', '<input type="text" name="taxa_juros" placeholder="ex: 0,48% a.m. + 100% Selic" style="' + ESTILO_INPUT_MENU + '">')}
       ${campoMenu('Quantidade total de parcelas', '<input type="number" name="num_parcelas_total" style="' + ESTILO_INPUT_MENU + '">')}
-      ${campoMenu('Quantas parcelas já foram pagas antes de cadastrar aqui (não gera lançamento em Contas a Pagar)', '<input type="number" name="parcelas_pagas_anteriores" min="0" value="0" style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Quantas parcelas já foram pagas antes de cadastrar aqui (não gera lançamento em A pagar)', '<input type="number" name="parcelas_pagas_anteriores" min="0" value="0" style="' + ESTILO_INPUT_MENU + '">')}
       ${campoMenu('Data de emissão', '<input type="date" name="data_emissao" style="' + ESTILO_INPUT_MENU + '">')}
       ${campoMenu('Data da 1ª parcela', '<input type="date" name="data_primeira_parcela" style="' + ESTILO_INPUT_MENU + '">')}
       ${campoMenu('Data da última parcela', '<input type="date" name="data_ultima_parcela" style="' + ESTILO_INPUT_MENU + '">')}
@@ -1911,7 +2150,7 @@ function abrirEditarContrato(contrato){
   const dataISO = v => v ? String(v).slice(0,10) : '';
   openOverlay(`
     <div class="panel-head">
-      <div><h2>Editar contrato</h2><p>${escapeHtml(contrato.credor)}${contrato.numero_contrato ? ' — ' + escapeHtml(contrato.numero_contrato) : ''}. Mudar valor da parcela, quantidade de parcelas ou data da 1ª parcela atualiza automaticamente Contas a Pagar (e, por consequência, Caixa e DRE) — parcelas já pagas nunca são alteradas.</p></div>
+      <div><h2>Editar contrato</h2><p>${escapeHtml(contrato.credor)}${contrato.numero_contrato ? ' — ' + escapeHtml(contrato.numero_contrato) : ''}. Mudar valor da parcela, quantidade de parcelas ou data da 1ª parcela atualiza automaticamente A pagar (e, por consequência, Caixa e DRE) — parcelas já pagas nunca são alteradas.</p></div>
       <button class="close-x" onclick="closeOverlay()">✕</button>
     </div>
     <form id="formEditarContrato" class="notes-box" style="border-top:none; padding-top:0;">
@@ -1922,7 +2161,7 @@ function abrirEditarContrato(contrato){
       ${campoMenu('Valor da parcela (R$)', '<input type="number" step="0.01" name="valor_parcela" value="' + (contrato.valor_parcela!=null?Number(contrato.valor_parcela):'') + '" style="' + ESTILO_INPUT_MENU + '">')}
       ${campoMenu('Taxa de juros', '<input type="text" name="taxa_juros" value="' + escapeHtml(contrato.taxa_juros||'') + '" style="' + ESTILO_INPUT_MENU + '">')}
       ${campoMenu('Quantidade total de parcelas', '<input type="number" name="num_parcelas_total" value="' + (contrato.num_parcelas_total!=null?Number(contrato.num_parcelas_total):'') + '" style="' + ESTILO_INPUT_MENU + '">')}
-      ${campoMenu('Quantas parcelas já foram pagas antes de cadastrar aqui (não gera lançamento em Contas a Pagar)', '<input type="number" name="parcelas_pagas_anteriores" min="0" value="' + (contrato.parcelas_pagas_anteriores!=null?Number(contrato.parcelas_pagas_anteriores):0) + '" style="' + ESTILO_INPUT_MENU + '">')}
+      ${campoMenu('Quantas parcelas já foram pagas antes de cadastrar aqui (não gera lançamento em A pagar)', '<input type="number" name="parcelas_pagas_anteriores" min="0" value="' + (contrato.parcelas_pagas_anteriores!=null?Number(contrato.parcelas_pagas_anteriores):0) + '" style="' + ESTILO_INPUT_MENU + '">')}
       ${campoMenu('Data de emissão', '<input type="date" name="data_emissao" value="' + dataISO(contrato.data_emissao) + '" style="' + ESTILO_INPUT_MENU + '">')}
       ${campoMenu('Data da 1ª parcela', '<input type="date" name="data_primeira_parcela" value="' + dataISO(contrato.data_primeira_parcela) + '" style="' + ESTILO_INPUT_MENU + '">')}
       ${campoMenu('Data da última parcela', '<input type="date" name="data_ultima_parcela" value="' + dataISO(contrato.data_ultima_parcela) + '" style="' + ESTILO_INPUT_MENU + '">')}
@@ -1961,10 +2200,10 @@ function abrirEditarContrato(contrato){
       const resultado = await apiFetch(`/api/contratos/${contrato.id}`, {method:'PATCH', body: JSON.stringify(body)});
       const s = resultado.sincronizacao || {};
       const partes = [];
-      if (s.geradas) partes.push(`${s.geradas} parcela(s) nova(s) gerada(s) em Contas a Pagar`);
+      if (s.geradas) partes.push(`${s.geradas} parcela(s) nova(s) gerada(s) em A pagar`);
       if (s.atualizadas) partes.push(`${s.atualizadas} parcela(s) em aberto com valor atualizado`);
       if (s.canceladas) partes.push(`${s.canceladas} parcela(s) em aberto cancelada(s) (fora do novo total)`);
-      const resumo = partes.length ? partes.join('; ') + '.' : (s.aviso || 'Contrato salvo. Nenhuma parcela foi gerada/alterada em Contas a Pagar (defina valor da parcela, quantidade de parcelas e data da 1ª parcela para isso acontecer).');
+      const resumo = partes.length ? partes.join('; ') + '.' : (s.aviso || 'Contrato salvo. Nenhuma parcela foi gerada/alterada em A pagar (defina valor da parcela, quantidade de parcelas e data da 1ª parcela para isso acontecer).');
       msg.innerHTML = '✓ Contrato salvo.<br>' + escapeHtml(resumo) + '<br><br><button type="button" class="btn gold" onclick="openContratosPanel()">Voltar para Contratos</button>';
       msg.style.color = 'var(--olive)'; msg.style.display = 'block';
     }catch(err){
@@ -2078,7 +2317,7 @@ function renderContratosPrestadoresPanel(lista){
 
   openOverlay(`
     <div class="panel-head">
-      <div><h2>Contratos de Prestadores</h2><p>Contratos de serviços terceirizados (segurança, limpeza, TI etc.) — com o contrato anexado, as parcelas de pagamento já lançadas em Contas a Pagar, e alerta quando faltam 30 dias para o vencimento.</p></div>
+      <div><h2>Contratos de Prestadores</h2><p>Contratos de serviços terceirizados (segurança, limpeza, TI etc.) — com o contrato anexado, as parcelas de pagamento já lançadas em A pagar, e alerta quando faltam 30 dias para o vencimento.</p></div>
       <button class="close-x" onclick="closeOverlay()">✕</button>
     </div>
     <div style="overflow-x:auto;">
@@ -2151,7 +2390,7 @@ function renderEdicaoContratoPrestador(contrato){
         <div class="field full"><label>Descrição do serviço</label><input type="text" id="cprNovaDescricao" value="${escapeHtml(contrato.descricao_servico || '')}"></div>
         <div class="field full"><label>Observações (adiciona ao histórico)</label><input type="text" id="cprNovaObs" placeholder="opcional"></div>
       </div>
-      <p style="font-size:11.5px; color:var(--ink-soft); margin:4px 0 10px;">Encerrar ou renovar o contrato não apaga nem altera as parcelas já lançadas em Contas a Pagar — se ainda houver parcela em aberto, ela continua lá normalmente (edite/exclua pela tela de Contas a Pagar, se for o caso).</p>
+      <p style="font-size:11.5px; color:var(--ink-soft); margin:4px 0 10px;">Encerrar ou renovar o contrato não apaga nem altera as parcelas já lançadas em A pagar — se ainda houver parcela em aberto, ela continua lá normalmente (edite/exclua pela tela de A pagar, se for o caso).</p>
       <div class="panel-actions">
         <button type="button" class="btn olive" id="cprSalvarEdicao">Salvar</button>
         <button type="button" class="btn ghost" id="cprCancelarEdicao">Cancelar</button>
@@ -2641,7 +2880,7 @@ async function submeterNovoContratoPrestador(e){
     `).join('');
     openOverlay(`
     <div class="panel-head">
-    <div><h2>Contas Pagas</h2><p>Todos os pagamentos já efetuados em Contas a Pagar (qualquer categoria) no período selecionado.</p></div>
+    <div><h2>Contas Pagas</h2><p>Todos os pagamentos já efetuados em A pagar (qualquer categoria) no período selecionado.</p></div>
     <button class="close-x" onclick="closeOverlay()">✕</button>
     </div>
 
@@ -2871,7 +3110,7 @@ async function submeterNovoContratoPrestador(e){
     `).join('');
     openOverlay(`
       <div class="panel-head">
-        <div><h2>Cheques Recebidos</h2><p>Controle dos cheques recebidos em Contas a Receber — em carteira, repassados a fornecedor ou com título antecipado junto a uma financeira.</p></div>
+        <div><h2>Cheques Recebidos</h2><p>Controle dos cheques recebidos em A receber — em carteira, repassados a fornecedor ou com título antecipado junto a uma financeira.</p></div>
         <button class="close-x" onclick="closeOverlay()">✕</button>
       </div>
       <div class="form-grid" style="margin-bottom:16px;">
@@ -2916,7 +3155,7 @@ async function submeterNovoContratoPrestador(e){
           </div>
           <div class="field full"><label>Observações</label><input type="text" id="chObsEdicao" placeholder="opcional"></div>
         </div>
-        <p style="font-size:11.5px; color:var(--ink-soft); margin:4px 0 10px;">Ao marcar "Título antecipado" com o valor de juros/deságio preenchido, o sistema lança automaticamente essa despesa em Contas a Pagar (categoria "Deságio de Antecipação de Recebíveis"), já paga — alimenta o card de Despesas Financeiras.</p>
+        <p style="font-size:11.5px; color:var(--ink-soft); margin:4px 0 10px;">Ao marcar "Título antecipado" com o valor de juros/deságio preenchido, o sistema lança automaticamente essa despesa em A pagar (categoria "Deságio de Antecipação de Recebíveis"), já paga — alimenta o card de Despesas Financeiras.</p>
         <div class="panel-actions">
           <button type="button" class="btn olive" id="chSalvarStatus">Salvar status</button>
           <button type="button" class="btn ghost" id="chCancelarStatus">Cancelar</button>
@@ -3393,7 +3632,7 @@ function renderReceberPanel(){
   const optsVenc = Object.entries(LABELS_VENC_RECEBER).map(([v,l])=>`<option value="${v}" ${v===filtroReceberVencimento?'selected':''}>${l}</option>`).join('');
   openOverlay(`
     <div class="panel-head">
-      <div><h2>Contas a receber</h2><p>Títulos em aberto — clique em "Adicionar" para lançar um novo recebimento previsto.</p></div>
+      <div><h2>A receber</h2><p>Títulos em aberto — clique em "Adicionar" para lançar um novo recebimento previsto.</p></div>
       <button class="close-x" onclick="closeOverlay()">✕</button>
     </div>
     <div class="panel-actions">
@@ -3502,17 +3741,20 @@ function tabelasPagar(){
 function renderPagarPanel(){
   const meses = mesesDisponiveisPagar();
   const { mes, credor, busca } = filtroPagar;
-  const optsMes = meses.map(m=>`<option value="${m}" ${m===mes?'selected':''}>${labelMes(m)}</option>`).join('');
+  const _iniJ = inicioJanelaBase();
+  const optsMes = meses.map(m=>`<option value="${m}" ${m===mes?'selected':''}>${labelMes(m)}${(m+'-01') < _iniJ ? ' · base parcial' : ''}</option>`).join('');
+  const _avisoPagar = (mes==='todos' || (/^\d{4}-\d{2}$/.test(mes) && (mes+'-01') < _iniJ)) ? bannerBaseHtml(notaJanelaBase()) : '';
   const optsCredor = credoresPagar().map(c=>`<option value="${escapeHtml(c)}" ${credor.includes(c)?'selected':''}>${escapeHtml(c)}</option>`).join('');
   const estiloSelect = 'width:auto; margin-top:0; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:var(--paper-2); font-family:inherit; font-size:13px; color:var(--ink);';
 
   openOverlay(`
     <div class="panel-head">
-        <div><h2>Contas a pagar</h2><p>Filtre por período de vencimento (hoje, próximos 7 dias ou mês), por credor, ou localize um título digitando o nº da nota fiscal/documento ou do boleto. Clique em "Adicionar" para lançar uma nova conta.</p></div>
+        <div><h2>A pagar</h2><p>Filtre por período de vencimento (hoje, próximos 7 dias ou mês), por credor, ou localize um título digitando o nº da nota fiscal/documento ou do boleto. Clique em "Adicionar" para lançar uma nova conta.</p></div>
       <button class="close-x" onclick="closeOverlay()">✕</button>
     </div>
+    ${_avisoPagar}
     <div class="panel-actions" style="flex-wrap:wrap; gap:10px;">
-      <button class="btn gold" onclick="closeOverlay(); openForm('pagar')">+ Adicionar conta a pagar</button>
+      <button class="btn gold" onclick="closeOverlay(); openForm('pagar')">+ Adicionar título a pagar</button>
       <button class="btn" onclick="window.print()">Imprimir</button>
       <select id="filtroMesPagar" style="${estiloSelect}">
       <option value="hoje" ${mes==='hoje'?'selected':''}>Vencimentos de hoje</option>
@@ -3592,7 +3834,7 @@ function renderVencidosPanel(){
 
   openOverlay(`
     <div class="panel-head">
-      <div><h2>Vencidos</h2><p>Todos os títulos de contas a pagar em atraso, de qualquer mês — para priorizar cobranças e negociações com fornecedor. Filtre por fornecedor ou por tempo de atraso.</p></div>
+      <div><h2>Vencidos</h2><p>Todos os títulos a pagar em atraso, de qualquer mês — para priorizar cobranças e negociações com fornecedor. Filtre por fornecedor ou por tempo de atraso.</p></div>
       <button class="close-x" onclick="closeOverlay()">✕</button>
     </div>
     <div class="panel-actions" style="flex-wrap:wrap; gap:10px;">
@@ -3624,7 +3866,7 @@ function openPagarHojePanel(){
       <button class="close-x" onclick="closeOverlay()">✕</button>
     </div>
     <div class="panel-actions">
-      <button class="btn gold" onclick="closeOverlay(); openForm('pagar')">+ Adicionar conta a pagar</button>
+      <button class="btn gold" onclick="closeOverlay(); openForm('pagar')">+ Adicionar título a pagar</button>
       <button class="btn" onclick="window.print()">Imprimir</button>
     </div>
     ${reportTable(lista,'pagar')}
@@ -3784,7 +4026,7 @@ function openAgingPanel(){
   const rows = Object.entries(aging).map(([faixa,v])=>`<tr><td>${faixa} dias</td><td>${fmtBRL(v)}</td></tr>`).join('');
   openOverlay(`
     <div class="panel-head">
-      <div><h2>Vencidos por faixa</h2><p>Contas a pagar em atraso, agrupadas por tempo de vencimento.</p></div>
+      <div><h2>Vencidos por faixa</h2><p>Títulos a pagar em atraso, agrupados por tempo de vencimento.</p></div>
       <button class="close-x" onclick="closeOverlay()">✕</button>
     </div>
     <table class="report"><thead><tr><th>Faixa</th><th>Valor em aberto</th></tr></thead><tbody>${rows}</tbody></table>
@@ -3927,6 +4169,45 @@ function janelaMesesSaude(periodo){
   return chaves;
 }
 
+
+// ---- Janela de dados carregados (espelha /api/dashboard/resumo: saldo em aberto OU vencimento >= hoje-180d) ----
+const JANELA_BASE_DIAS = 180;
+function inicioJanelaBase(){
+  const d = new Date(); d.setHours(12,0,0,0); d.setDate(d.getDate() - JANELA_BASE_DIAS);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function menorVencimentoCarregado(lista){
+  let m = null;
+  (lista||[]).forEach(x=>{ const v = x && x.vencimento ? String(x.vencimento).slice(0,10) : null; if(v && (m===null || v<m)) m = v; });
+  return m;
+}
+// Texto curto da regra, reutilizado em painéis, impressão e Excel.
+function notaJanelaBase(){
+  return 'Base carregada: títulos em aberto (de qualquer data) + títulos pagos/recebidos com vencimento desde aprox. '
+    + fmtDate(inicioJanelaBase()) + ' (janela de ' + JANELA_BASE_DIAS + ' dias). Pagamentos/recebimentos anteriores NÃO estão somados; '
+    + 'para o histórico de pagamentos use "Contas Pagas" (consulta direta por data de pagamento).';
+}
+// Avisos para um período (lista de chaves AAAA-MM). Retorna [] quando a base cobre o período.
+function avisosBasePeriodo(chaves){
+  const out = [];
+  const iniPeriodo = chaves[0] + '-01';
+  const iniJanela = inicioJanelaBase();
+  if(iniPeriodo < iniJanela){
+    out.push('Base incompleta: este cálculo usa títulos já pagos/recebidos apenas com vencimento a partir de aprox. ' + fmtDate(iniJanela)
+      + ' (janela de ' + JANELA_BASE_DIAS + ' dias; títulos com saldo em aberto entram de qualquer data). O período começa em ' + fmtDate(iniPeriodo)
+      + ', então o que foi pago/recebido antes de ' + fmtDate(iniJanela) + ' não está somado. Receita, custos e resultado são PARCIAIS — não os trate como total do período.');
+  }
+  const mr = menorVencimentoCarregado(DATA.contasReceber), mp = menorVencimentoCarregado(DATA.contasPagar);
+  if(mr && mr > iniPeriodo) out.push('Primeiro vencimento de A receber carregado: ' + fmtDate(mr) + ' (posterior ao início do período, ' + fmtDate(iniPeriodo)
+      + '). Se houve vendas antes dessa data, elas não estão lançadas/importadas — a Receita Bruta pode estar subestimada. Conferir a origem.');
+  if(mp && mp > iniPeriodo) out.push('Primeiro vencimento de A pagar carregado: ' + fmtDate(mp) + ' (posterior ao início do período, ' + fmtDate(iniPeriodo)
+      + '). Custos anteriores a essa data não estão na base carregada.');
+  return out;
+}
+function bannerBaseHtml(texto){
+  return '<div class="aviso-base-incompleta" style="border-radius:12px; padding:10px 14px; margin:0 0 12px; background:var(--gold-wash); border:1px solid var(--gold-soft); font-size:12.5px; color:var(--ink);"><strong style="letter-spacing:.6px; text-transform:uppercase; font-size:11px; color:var(--gold);">⚠ Base não é histórico completo</strong><div style="margin-top:4px;">' + texto + '</div></div>';
+}
+
 async function calcularSaudeEmpresa(periodo){
   const chaves = janelaMesesSaude(periodo);
   const noPeriodo = iso => chaves.includes(String(iso).slice(0,7));
@@ -3993,8 +4274,12 @@ async function calcularSaudeEmpresa(periodo){
   if(!jurosDisponiveis) avisos.push('Não foi possível carregar os juros de financiamentos agora (falha na consulta) — Despesas Financeiras e Lucro Líquido abaixo podem estar subestimados.');
   if((divida + cartao) > 0) avisos.push(`${fmtBRL(divida+cartao)} em parcelas de dívida/cartão de crédito deste período não entram no resultado abaixo (mesmo critério do DRE automático — ver "Fora do resultado operacional").`);
 
+  const avisosBase = avisosBasePeriodo(chaves);
+  avisosBase.forEach(a=>avisos.push(a));
+  const baseIncompleta = avisosBase.length > 0;
+
   return {
-    periodo, chaves, receitaBruta, custosVar, custosFixos, margem, margemPct,
+    baseIncompleta, periodo, chaves, receitaBruta, custosVar, custosFixos, margem, margemPct,
     lucroOperacional, despFin, lucroLiquido, socios, naoClass, divida, cartao,
     pontoEquilibrio, margemSegurancaRS, margemSegurancaPct, chequeEspecialDisponivel,
     jurosDisponiveis, avisos,
@@ -4011,7 +4296,7 @@ function statusSaudeEmpresa(calc){
   // juros, ou valor relevante de dívida/cartão fora do resultado) -- nunca um "achismo" sobre a
   // receita estar incompleta, já que isso não tem um sinal de dado verificável disponível hoje.
   const parcial = (calc.avisos||[]).length > 0;
-  const sufixoLabel = parcial ? ' · dados parciais' : '';
+  const sufixoLabel = calc.baseIncompleta ? ' · base incompleta' : (parcial ? ' · dados parciais' : '');
   if(calc.pontoEquilibrio == null){
     return { cor:'vermelho', label:'Risco' + sufixoLabel, parcial, frase:'Margem de contribuição zerada ou negativa neste período — cada venda está custando mais do que gera de receita. Revisar preço ou custo variável antes de qualquer outra coisa.' };
   }
@@ -4079,12 +4364,12 @@ function abrirDetalheSaudeEmpresa(calc, status){
     <tr><td${destaque?' style="font-weight:600;"':''}>${label}</td><td style="text-align:right;${destaque?' font-weight:600;':''}">${valor}</td></tr>`;
   const avisosHtml = (calc.avisos||[]).length ? `
     <div style="border-radius:14px; padding:12px 16px; margin-bottom:14px; background:var(--gold-wash); border:1px solid var(--gold-soft);">
-      <div style="font-size:11px; letter-spacing:1px; text-transform:uppercase; color:var(--gold); font-weight:600; margin-bottom:4px;">⚠ Dados parciais neste cálculo</div>
+      <div style="font-size:11px; letter-spacing:1px; text-transform:uppercase; color:var(--gold); font-weight:600; margin-bottom:4px;">⚠ Dados parciais / base incompleta neste cálculo</div>
       ${calc.avisos.map(a => `<div style="font-size:12.5px; color:var(--ink); margin-top:4px;">${a}</div>`).join('')}
     </div>` : '';
   openOverlay(`
     <div class="panel-head">
-      <div><h2>Saúde da Empresa — ${LABELS_PERIODO_SAUDE[calc.periodo]}</h2><p>Calculado a partir dos mesmos lançamentos que alimentam o DRE automático (regime de competência, por vencimento). A Receita Bruta considera só os lançamentos de Contas a Receber — vendas à vista/PDV não lançadas nesse módulo não entram aqui.</p></div>
+      <div><h2>Saúde da Empresa — ${LABELS_PERIODO_SAUDE[calc.periodo]}</h2><p>Calculado a partir dos mesmos lançamentos que alimentam o DRE automático (regime de competência, por vencimento). A Receita Bruta considera só os lançamentos de A receber — vendas à vista/PDV não lançadas nesse módulo não entram aqui.</p></div>
       <button class="close-x" onclick="closeOverlay()">✕</button>
     </div>
     ${avisosHtml}
@@ -4150,13 +4435,13 @@ function baixarModeloImportacao(){
   const folhas = [
     {
       nome: 'Contas a Pagar',
-      instrucao: 'Preencha uma linha por conta a pagar (ou por boleto, quando uma mesma NF gerar vários boletos parcelados — repita a linha trocando só Vencimento/Valor/Nº do Boleto). Vencimento deve ser uma data real do Excel (não texto). Forma de Pagamento sugerida: PIX, Boleto, TED, Cartão ou Dinheiro. Fornecedor e Categoria são criados automaticamente se ainda não existirem. "Nº da NF/Pedido" é o número da Nota Fiscal — se o fornecedor não emitir NF, informe o número do Pedido no mesmo campo. "Nº do Boleto/Duplicata" é opcional e identifica cada boleto individualmente quando há mais de um por NF. "ID Fornecedor" é opcional: preencha só se já souber o ID exato do fornecedor cadastrado (evita duplicar cadastro por causa de grafia diferente) — deixe em branco para fornecedor novo. Uma observação começando com "NAO IMPORTAR" faz a linha ser pulada (sem erro).',
+      instrucao: 'Preencha uma linha por título a pagar (ou por boleto, quando uma mesma NF gerar vários boletos parcelados — repita a linha trocando só Vencimento/Valor/Nº do Boleto). Vencimento deve ser uma data real do Excel (não texto). Forma de Pagamento sugerida: PIX, Boleto, TED, Cartão ou Dinheiro. Fornecedor e Categoria são criados automaticamente se ainda não existirem. "Nº da NF/Pedido" é o número da Nota Fiscal — se o fornecedor não emitir NF, informe o número do Pedido no mesmo campo. "Nº do Boleto/Duplicata" é opcional e identifica cada boleto individualmente quando há mais de um por NF. "ID Fornecedor" é opcional: preencha só se já souber o ID exato do fornecedor cadastrado (evita duplicar cadastro por causa de grafia diferente) — deixe em branco para fornecedor novo. Uma observação começando com "NAO IMPORTAR" faz a linha ser pulada (sem erro).',
       cabecalho: ['Fornecedor', 'Categoria', 'Vencimento', 'Valor Original (R$)', 'Forma de Pagamento', 'Nº da NF/Pedido', 'Observações', 'ID Fornecedor (opcional)', 'Nº do Boleto/Duplicata (opcional)'],
       larguras: [28, 20, 14, 18, 14, 18, 40, 20, 22],
     },
     {
       nome: 'Contas a Receber',
-      instrucao: 'Preencha uma linha por conta a receber. Vencimento deve ser uma data real do Excel (não texto). Cliente e Categoria são criados automaticamente se ainda não existirem.',
+      instrucao: 'Preencha uma linha por título a receber. Vencimento deve ser uma data real do Excel (não texto). Cliente e Categoria são criados automaticamente se ainda não existirem.',
       cabecalho: ['Cliente', 'Categoria', 'Vencimento', 'Valor Original (R$)', 'Forma de Recebimento', 'Documento', 'Observações'],
       larguras: [28, 20, 14, 18, 20, 18, 40],
     },
@@ -4182,7 +4467,7 @@ function baixarModeloImportacao(){
 function openImportPanel(){
   openOverlay(`
     <div class="panel-head">
-      <div><h2>Importação em lote</h2><p>Envie o modelo preenchido — contas a pagar, a receber e/ou caixa e bancos, tudo de uma vez.</p></div>
+      <div><h2>Importação em lote</h2><p>Envie o modelo preenchido — A pagar, A receber e/ou caixa e bancos, tudo de uma vez.</p></div>
       <button class="close-x" onclick="closeOverlay()">✕</button>
     </div>
     <div class="panel-actions" style="margin-bottom:16px;">
@@ -4218,8 +4503,8 @@ async function handleImportUpload(file){
     fd.append('planilha', file);
     const resp = await apiFetch('/api/importar', {method:'POST', body: fd});
     const secoes = [
-      {label:'Contas a Pagar', r: resp.contas_pagar},
-      {label:'Contas a Receber', r: resp.contas_receber},
+      {label:'A pagar', r: resp.contas_pagar},
+      {label:'A receber', r: resp.contas_receber},
       {label:'Caixa e Bancos', r: resp.caixa_bancos},
     ];
     document.getElementById('importResultado').innerHTML = secoes.map(s => `
@@ -4246,8 +4531,8 @@ const PRINT_SECOES = [
   {key:'estoque', label:'Estoque'},
   {key:'produtos', label:'Produtos & Preços'},
   {key:'vencidos', label:'Inadimplência (vencidos)'},
-  {key:'pagar', label:'Contas a pagar'},
-  {key:'receber', label:'Contas a receber'},
+  {key:'pagar', label:'A pagar'},
+  {key:'receber', label:'A receber'},
   {key:'fluxo', label:'Fluxo de caixa'},
 ];
 
@@ -4303,8 +4588,8 @@ function renderPrintAll(){
     ${printSelecao.vencidos ? `<div class="print-secao"><p style="font-size:12px; color:var(--ink-soft); margin:20px 0 6px;">Inadimplência (vencidos) — ${vencidosList.length} título(s), ${fmtBRL(totalVencidos)}</p>
       ${vencidosList.length ? reportTable(vencidosList,'pagar','vencidos') : '<p style="font-size:13px; color:var(--ink-soft);">Nenhum título vencido no momento.</p>'}
     </div>` : ''}
-    ${printSelecao.pagar ? `<div class="print-secao"><p style="font-size:12px; color:var(--ink-soft); margin:20px 0 6px;">Contas a pagar</p>${reportTable(DATA.contasPagar,'pagar')}</div>` : ''}
-    ${printSelecao.receber ? `<div class="print-secao"><p style="font-size:12px; color:var(--ink-soft); margin:20px 0 6px;">Contas a receber</p>${reportTable(DATA.contasReceber,'receber')}</div>` : ''}
+    ${printSelecao.pagar ? `<div class="print-secao"><p style="font-size:12px; color:var(--ink-soft); margin:20px 0 6px;">A pagar <span style="font-weight:400;">(em aberto + vencimentos desde aprox. ${fmtDate(inicioJanelaBase())}; não é histórico completo)</span></p>${reportTable(DATA.contasPagar,'pagar')}</div>` : ''}
+    ${printSelecao.receber ? `<div class="print-secao"><p style="font-size:12px; color:var(--ink-soft); margin:20px 0 6px;">A receber <span style="font-weight:400;">(em aberto + vencimentos desde aprox. ${fmtDate(inicioJanelaBase())}; não é histórico completo)</span></p>${reportTable(DATA.contasReceber,'receber')}</div>` : ''}
     ${printSelecao.fluxo ? `<div class="print-secao"><p style="font-size:12px; color:var(--ink-soft); margin:20px 0 6px;">Fluxo de caixa projetado</p>
       <table class="report"><thead><tr><th>Mês</th><th>A receber</th><th>A pagar</th><th>Saldo do mês</th><th>Acumulado</th></tr></thead><tbody>${fluxoRows}</tbody></table>
     </div>` : ''}
@@ -4320,7 +4605,7 @@ function renderPrintAll(){
       <button class="btn gold" onclick="window.print()">Imprimir / salvar PDF</button>
       <button class="btn ghost" id="btnExportarExcelConsolidado">Exportar Excel (.xlsx)</button>
     </div>
-    <div id="printSecoesWrap">${secoesHtml}</div>
+    <div id="printSecoesWrap">${(printSelecao.pagar||printSelecao.receber) ? bannerBaseHtml(notaJanelaBase()) : ''}${secoesHtml}</div>
   `);
 
   document.querySelectorAll('.print-check').forEach(chk=>{
@@ -4359,11 +4644,13 @@ function exportarRelatorioConsolidadoExcel(){
   if(printSelecao.pagar){
     const linhas = [['Fornecedor','Categoria','Nº Boleto','Vencimento','Valor original (R$)','Saldo em aberto (R$)','Status']];
     DATA.contasPagar.forEach(x=>linhas.push([x.credor||'', x.categoria||'', x.numero_boleto||'', fmtDate(x.vencimento), Number(x.valor_original)||0, saldoAberto(x,'pagar'), x.status||'']));
+    linhas.push([]); linhas.push(['OBS: ' + notaJanelaBase()]);
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(linhas), 'Contas a Pagar');
   }
   if(printSelecao.receber){
     const linhas = [['Cliente','Categoria','Vencimento','Valor original (R$)','Saldo em aberto (R$)','Status']];
     DATA.contasReceber.forEach(x=>linhas.push([x.cliente||'', x.categoria||'', fmtDate(x.vencimento), Number(x.valor_original)||0, saldoAberto(x,'receber'), x.status||'']));
+    linhas.push([]); linhas.push(['OBS: ' + notaJanelaBase()]);
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(linhas), 'Contas a Receber');
   }
   if(printSelecao.fluxo){
@@ -4802,7 +5089,7 @@ function renderParcelasPagar(prefill){
    pré-datado. Em vez do único par Valor/Vencimento genérico do formulário (que fica escondido
    quando a forma é Cheque), abre uma lista de cheques — cada um com número, banco, agência,
    titular, valor, data de emissão e data pré-datada (data em que o cheque entra sozinho no
-   controle de Contas a Receber para compensação). Ao salvar, em vez de POST /api/contas-receber,
+   controle de A receber para compensação). Ao salvar, em vez de POST /api/contas-receber,
    envia para POST /api/cheques, que cria um título de Contas a Receber por cheque automaticamente. */
 function toggleChequesReceber(formaValor){
   const wrap = document.getElementById('parcelasWrap');
@@ -4839,7 +5126,7 @@ function renderChequesReceber(){
     </div>`).join('');
   document.getElementById('parcelasWrap').innerHTML = `
     <div class="section-title" style="margin-top:4px;">Cheques</div>
-    <p style="font-size:12px; color:var(--ink-soft); margin:0 0 8px;">Informe cada cheque separadamente (pode ser mais de um na mesma venda). A "Data pré-datada" é quando o cheque entra automaticamente no controle de Contas a Receber para compensação.</p>
+    <p style="font-size:12px; color:var(--ink-soft); margin:0 0 8px;">Informe cada cheque separadamente (pode ser mais de um na mesma venda). A "Data pré-datada" é quando o cheque entra automaticamente no controle de A receber para compensação.</p>
     ${linhas}
     <button type="button" class="btn ghost" id="chequeAdicionar" style="margin-top:4px;">+ Adicionar outro cheque</button>
   `;
@@ -5139,8 +5426,8 @@ function renderBaixaPicker(){
       <button class="close-x" onclick="closeBaixa()">✕</button>
     </div>
     <div class="type-toggle" id="baixaTypeToggle">
-      <button type="button" class="${baixaState.tipo==='pagar'?'active':''}" data-tipo="pagar">Conta a pagar</button>
-      <button type="button" class="${baixaState.tipo==='receber'?'active':''}" data-tipo="receber">Conta a receber</button>
+      <button type="button" class="${baixaState.tipo==='pagar'?'active':''}" data-tipo="pagar">A pagar</button>
+      <button type="button" class="${baixaState.tipo==='receber'?'active':''}" data-tipo="receber">A receber</button>
     </div>
     <div class="field full" style="margin-bottom:18px;">
       <label>Título</label>
@@ -6214,6 +6501,303 @@ async function init(){
   }, 5*60*1000);
 }
 init();
+</script>
+<script>
+/* ==========================================================================================
+   LAYOUT NOVO — menu lateral (fase 2). Só roda com body.layout-novo.
+
+   Princípio de segurança: o menu NÃO reimplementa nenhum módulo. Cada item aciona o cartão ou o
+   atalho que já existe na tela (mesmo clique, mesma função, mesma permissão). Se um dia um
+   cartão sumir ou mudar, o item avisa em vez de falhar em silêncio.
+
+   Mapa de acessos (a matriz completa está no relatório de auditoria, Parte IV):
+     alvo = seletor do elemento original que recebe o clique.
+   ========================================================================================== */
+(function(){
+  if(!document.body.classList.contains('layout-novo')) return;
+
+  var MENU = [
+    { grupo:'Início', itens:[
+      { id:'painel',      rotulo:'Painel',                 ic:'⌂', alvo:'painel' },
+      { id:'saude',       rotulo:'Saúde da empresa',       ic:'♥', alvo:'#saudeEmpresaBanner' }
+    ]},
+    { grupo:'Financeiro', itens:[
+      { id:'pagar',       rotulo:'A pagar',                ic:'↓', alvo:'#cardPagar' },
+      { id:'pagarhoje',   rotulo:'A pagar hoje',           ic:'⊙', alvo:'#cardPagarHoje' },
+      { id:'receber',     rotulo:'A receber',              ic:'↑', alvo:'#cardReceber' },
+      { id:'vencidos',    rotulo:'Vencidos',               ic:'!', alvo:'#cardVencidos' },
+      { id:'faixas',      rotulo:'Faixas de atraso',       ic:'≡', alvo:'#cardAging' },
+      { id:'fluxo',       rotulo:'Fluxo de caixa',         ic:'∿', alvo:'#cardFluxo' },
+      { id:'saldo',       rotulo:'Saldo em contas',        ic:'$', alvo:'#cardSaldo' },
+      { id:'fechamento',  rotulo:'Fechamento de caixa',    ic:'▦', alvo:'#cardFechamentoSemana' }
+    ]},
+    { grupo:'Dívidas e contratos', itens:[
+      { id:'contratos',   rotulo:'Contratos',              ic:'▤', alvo:'#btnContratos' },
+      { id:'despfin',     rotulo:'Despesas financeiras',   ic:'%', alvo:'#btnDespesasFinanceiras' },
+      { id:'prestadores', rotulo:'Contratos de prestadores', ic:'▤', alvo:'#btnContratosPrestadores', badge:'#badgeContratosPrestadores' }
+    ]},
+    { grupo:'Gestão', itens:[
+      { id:'func',        rotulo:'Funcionários',           ic:'♦', alvo:'#btnFuncionarios' },
+      { id:'custo',       rotulo:'Custo de produto',       ic:'▣', alvo:'#btnCustoProduto' },
+      { id:'carga',       rotulo:'Carga tributária',       ic:'◷', alvo:'#btnCargaTributaria' }
+    ]},
+    { grupo:'Relatórios', itens:[
+      { id:'dre',         rotulo:'DRE',                    ic:'▥', alvo:'#btnDRE' },
+      { id:'imprimir',    rotulo:'Relatório para impressão', ic:'▧', alvo:'#btnPrint' },
+      { id:'importar',    rotulo:'Importar planilha',      ic:'⇧', alvo:'#btnImportar' },
+      { id:'pagas',       rotulo:'Contas pagas',           ic:'✓', alvo:'#btnContasPagas' }
+    ]},
+    { grupo:'Ferramentas', itens:[
+      { id:'conciliacao', rotulo:'Conciliação bancária',   ic:'⇄', alvo:'#btnConciliacao' },
+      { id:'cheques',     rotulo:'Cheques recebidos',      ic:'▭', alvo:'#btnChequesRecebidos' },
+      { id:'maquininhas', rotulo:'Taxas de maquininha',    ic:'▮', alvo:'#btnMaquininhas' }
+    ]}
+  ];
+
+  var nav = document.createElement('nav');
+  nav.className = 'nav-lateral';
+  nav.id = 'navLateral';
+  nav.setAttribute('aria-label', 'Menu principal');
+
+  // --- marca: escritório mostra a assinatura; cliente mostra a logo cadastrada da empresa ---
+  var brand = document.createElement('div');
+  brand.className = 'nav-brand';
+  brand.innerHTML =
+    '<div class="nav-logo" id="navLogoBox"></div>' +
+    '<div class="nav-nome">Danielle Sacchettin</div>' +
+    '<div class="nav-papel">Soluções Jurídicas para Negócios</div>' +
+    '<div class="nav-empresa" id="navEmpresa"></div>';
+  nav.appendChild(brand);
+
+  var botoes = {};
+  MENU.forEach(function(g){
+    var t = document.createElement('div');
+    t.className = 'nav-grupo-titulo';
+    t.textContent = g.grupo;
+    nav.appendChild(t);
+    g.itens.forEach(function(it){
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'nav-item' + (it.id === 'painel' ? ' ativo' : '');
+      b.dataset.item = it.id;
+      b.innerHTML = '<span class="nav-ic" aria-hidden="true">' + it.ic + '</span><span>' + it.rotulo + '</span>' +
+                    (it.badge ? '<span class="nav-badge" data-badge-de="' + it.badge + '"></span>' : '');
+      b.addEventListener('click', function(){ acionar(it, b); });
+      nav.appendChild(b);
+      botoes[it.id] = b;
+    });
+  });
+
+  var rodape = document.createElement('div');
+  rodape.className = 'nav-rodape';
+  rodape.textContent = 'Portal do Cliente — dados em tempo real.';
+  nav.appendChild(rodape);
+  document.body.insertBefore(nav, document.body.firstChild);
+
+  // --- logo do cliente: move o espaço original (id clientLogoSlot) para dentro do menu ---
+  var slot = document.getElementById('clientLogoSlot');
+  if(slot) document.getElementById('navLogoBox').appendChild(slot);
+
+  // --- barra superior: botão de abrir o menu em tela estreita e espaçador antes dos botões da direita ---
+  var subbar = document.querySelector('.subbar');
+  if(subbar){
+    var tg = document.createElement('button');
+    tg.type = 'button'; tg.className = 'btn-mini nav-toggle'; tg.id = 'navToggle';
+    tg.setAttribute('aria-label', 'Abrir menu'); tg.setAttribute('aria-controls', 'navLateral');
+    tg.setAttribute('aria-expanded', 'false'); tg.textContent = '☰';
+    tg.addEventListener('click', function(){ definirMenu(!document.body.classList.contains('nav-aberto'), true); });
+    subbar.insertBefore(tg, subbar.firstChild);
+    var esp = document.createElement('div');
+    esp.className = 'nav-espaco';
+    subbar.insertBefore(esp, document.getElementById('btnClientes'));
+  }
+
+  // --- a faixa "Saúde da empresa" sobe para o topo do painel, como na prévia ---
+  var saude = document.getElementById('saudeEmpresaCard');
+  var kpi = document.getElementById('kpiGrid');
+  if(saude && kpi && kpi.previousElementSibling){
+    kpi.parentNode.insertBefore(saude, kpi.previousElementSibling);
+  }
+
+  // --- "Fechamento de caixa da semana": sai do bloco de indicadores e fica abaixo dos gráficos, como na referência ---
+  // O clique original é tratado pelo contêiner #kpiGrid; fora dele, o contêiner próprio abaixo repete o MESMO clique
+  // (openFechamentoSemanaPanel). Se o painel for redesenhado (renderKPIs), o cartão novo é movido de novo.
+  var flow = document.getElementById('flowGrid');
+  var slotFech = document.createElement('div');
+  slotFech.id = 'fechamentoSlot';
+  if(flow && flow.parentNode) flow.parentNode.insertBefore(slotFech, flow.nextSibling);
+  slotFech.addEventListener('click', function(e){
+    if(e.target.closest('#cardFechamentoSemana') && typeof openFechamentoSemanaPanel === 'function') openFechamentoSemanaPanel();
+  });
+  function posicionarFechamento(){
+    if(!kpi) return;
+    var novo = kpi.querySelector('#cardFechamentoSemana');
+    if(novo){ slotFech.innerHTML = ''; slotFech.appendChild(novo); }
+    else if(!kpi.querySelector('.card')){ slotFech.innerHTML = ''; } // painel em estado de erro: não deixa cartão velho
+  }
+  if(kpi){ posicionarFechamento(); new MutationObserver(posicionarFechamento).observe(kpi, {childList:true}); }
+
+  function aviso(txt){
+    var el = document.getElementById('navAviso');
+    if(!el){
+      el = document.createElement('div');
+      el.id = 'navAviso';
+      el.style.cssText = 'position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:var(--nav-bg);color:var(--nav-ink);' +
+        'padding:10px 18px;border-radius:7px;font-size:12.5px;z-index:70;box-shadow:0 10px 30px rgba(0,0,0,.25);';
+      document.body.appendChild(el);
+    }
+    el.textContent = txt;
+    el.style.display = 'block';
+    clearTimeout(aviso._t);
+    aviso._t = setTimeout(function(){ el.style.display = 'none'; }, 3500);
+  }
+
+  function marcar(id){
+    Object.keys(botoes).forEach(function(k){
+      botoes[k].classList.toggle('ativo', k === id);
+      if(k === id) botoes[k].setAttribute('aria-current', 'page'); else botoes[k].removeAttribute('aria-current');
+    });
+  }
+
+  var gatilho = null; // item do menu que abriu a tela interna (o foco volta para ele ao fechar)
+  function acionar(it, btn){
+    definirMenu(false, false);
+    if(it.alvo === 'painel'){
+      if(typeof closeOverlay === 'function'){ try{ closeOverlay(); }catch(e){} }
+      marcar('painel');
+      window.scrollTo({top:0, behavior:'smooth'});
+      return;
+    }
+    var el = document.querySelector(it.alvo);
+    if(!el){
+      aviso(it.id === 'saude'
+        ? 'A saúde da empresa ainda está sendo calculada. Tente de novo em instantes.'
+        : 'Este módulo ainda não carregou. Tente de novo em instantes.');
+      return;
+    }
+    marcar(it.id);
+    gatilho = btn;
+    el.click();
+  }
+
+  // --- telas internas (#overlay): menu continua visível; foco vai para o título e volta ao item de origem ---
+  var overlays = ['overlay','overlayBaixa','overlayForm'].map(function(i){ return document.getElementById(i); }).filter(Boolean);
+  function algumAberto(){ return overlays.some(function(o){ return o.classList.contains('open'); }); }
+  var estavaAberto = {};
+  function sincronizarOverlays(){
+    overlays.forEach(function(o){
+      var aberto = o.classList.contains('open');
+      try{ o.inert = !aberto; }catch(e){}            // fechado: nada dentro dele recebe foco por teclado
+      if(aberto && !estavaAberto[o.id]){
+        var h = o.querySelector('h2');
+        if(h){
+          h.setAttribute('tabindex', '-1');
+          if(o.id === 'overlay'){ o.setAttribute('role', 'region'); o.setAttribute('aria-label', h.textContent.trim()); }
+          try{ h.focus({preventScroll:true}); }catch(e){}
+        }
+      }
+      if(!aberto && estavaAberto[o.id] && o.id === 'overlay' && gatilho){
+        var alvoFoco = movel() ? document.getElementById('navToggle') : gatilho;
+        if(alvoFoco && document.contains(alvoFoco)){ try{ alvoFoco.focus(); }catch(e){} }
+        gatilho = null;
+      }
+      estavaAberto[o.id] = aberto;
+    });
+    if(!algumAberto()) marcar('painel');
+  }
+  var mo = new MutationObserver(sincronizarOverlays);
+  overlays.forEach(function(o){ mo.observe(o, {attributes:true, attributeFilter:['class']}); });
+  sincronizarOverlays();
+
+  // --- selo do cartão "Contratos de prestadores" espelhado no menu ---
+  document.querySelectorAll('[data-badge-de]').forEach(function(dst){
+    var src = document.querySelector(dst.dataset.badgeDe);
+    if(!src) return;
+    function copiar(){ dst.innerHTML = src.innerHTML; }
+    copiar();
+    new MutationObserver(copiar).observe(src, {childList:true, characterData:true, subtree:true});
+  });
+
+  // --- nome da empresa no menu (vem do seletor de cliente, que o login preenche) ---
+  var sel = document.getElementById('clientSelect');
+  function nomeEmpresa(){
+    var alvo = document.getElementById('navEmpresa');
+    if(alvo && sel) alvo.textContent = sel.options && sel.options[0] ? sel.options[0].text : '';
+  }
+  nomeEmpresa();
+  if(sel) new MutationObserver(nomeEmpresa).observe(sel, {childList:true, subtree:true, characterData:true});
+
+  // --- menu móvel: estado, foco, Escape ---
+  var mq = window.matchMedia('(max-width:900px)');
+  function movel(){ return mq.matches; }
+  var scrim = document.createElement('div');
+  scrim.className = 'nav-scrim';
+  scrim.addEventListener('click', function(){ definirMenu(false, true); });
+  document.body.appendChild(scrim);
+
+  function focaveisDoMenu(){
+    return Array.prototype.slice.call(nav.querySelectorAll('button')).filter(function(b){ return !b.disabled; });
+  }
+  function atualizarInert(){
+    // em tela estreita o menu fechado fica fora da tela: não pode receber foco por teclado
+    try{ nav.inert = movel() && !document.body.classList.contains('nav-aberto'); }catch(e){}
+  }
+  function definirMenu(aberto, moverFoco){
+    document.body.classList.toggle('nav-aberto', !!aberto);
+    var t = document.getElementById('navToggle');
+    if(t){ t.setAttribute('aria-expanded', aberto ? 'true' : 'false'); t.setAttribute('aria-label', aberto ? 'Fechar menu' : 'Abrir menu'); }
+    atualizarInert();
+    if(!moverFoco) return;
+    if(aberto){ var f = focaveisDoMenu(); if(f.length){ var at = nav.querySelector('.nav-item.ativo') || f[0]; try{ at.focus(); }catch(e){} } }
+    else if(t){ try{ t.focus(); }catch(e){} }
+  }
+  atualizarInert();
+  (mq.addEventListener ? mq.addEventListener('change', function(){ definirMenu(false, false); })
+                       : mq.addListener(function(){ definirMenu(false, false); }));
+
+  document.addEventListener('keydown', function(e){
+    var aberto = document.body.classList.contains('nav-aberto');
+    if(e.key === 'Escape'){
+      if(aberto){ e.preventDefault(); definirMenu(false, true); return; }
+      // Escape fecha a tela interna (não os diálogos de baixa/novo lançamento, para não perder dados digitados)
+      var ov = document.getElementById('overlay');
+      var campo = e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
+      var dlg = ['overlayBaixa','overlayForm'].some(function(i){ var o = document.getElementById(i); return o && o.classList.contains('open'); });
+      if(ov && ov.classList.contains('open') && !campo && !dlg && typeof closeOverlay === 'function'){ e.preventDefault(); closeOverlay(); }
+      return;
+    }
+    // Tab fica preso dentro do menu enquanto ele está aberto em tela estreita
+    if(e.key === 'Tab' && aberto && movel()){
+      var f = focaveisDoMenu(); if(!f.length) return;
+      var t = document.getElementById('navToggle');
+      var lista = f.concat(t ? [t] : []);
+      var i = lista.indexOf(document.activeElement);
+      if(e.shiftKey && (i <= 0)){ e.preventDefault(); lista[lista.length - 1].focus(); }
+      else if(!e.shiftKey && (i === lista.length - 1)){ e.preventDefault(); lista[0].focus(); }
+      else if(i === -1){ e.preventDefault(); lista[0].focus(); }
+    }
+  });
+
+  // altura da barra superior (as telas internas começam logo abaixo dela)
+  function medirBarra(){
+    var sb = document.querySelector('.subbar');
+    if(sb) document.body.style.setProperty('--subbar-h', sb.offsetHeight + 'px');
+  }
+  medirBarra(); window.addEventListener('resize', medirBarra);
+  if(window.ResizeObserver && subbar) new ResizeObserver(medirBarra).observe(subbar);
+
+  // atalho de diagnóstico: quais itens do menu ficaram sem alvo (usado nos testes de fase)
+  window.__navAlvos = function(){
+    var o = []; MENU.forEach(function(g){ g.itens.forEach(function(it){ if(it.alvo !== 'painel') o.push(it.alvo); }); }); return o;
+  };
+  window.__navDiagnostico = function(){
+    var out = [];
+    MENU.forEach(function(g){ g.itens.forEach(function(it){
+      if(it.alvo !== 'painel') out.push(it.id + ':' + (document.querySelector(it.alvo) ? 'ok' : 'SEM_ALVO'));
+    }); });
+    return out;
+  };
+})();
 </script>
 </body>
 </html>
