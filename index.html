@@ -412,8 +412,8 @@
      LAYOUT NOVO — menu lateral, indicadores compactos e telas internas organizadas.
      Referência aprovada: "Prévia — Novo layout Portal do Cliente" (04/10/2026).
 
-     Só vale com body.layout-novo (chave controlada em head: ?layout=novo liga, ?layout=antigo
-     desliga). Sem a classe, NADA deste bloco se aplica e o portal continua exatamente como era.
+     Só vale com body.layout-novo (padrão desde 05/10/2026; ?layout=antigo desliga neste navegador,
+     ?layout=novo volta ao padrão). Sem a classe, NADA deste bloco se aplica e o portal continua exatamente como era.
 
      FASE 1 — tokens: administrador = verde (petróleo); cliente = bege claro. Os dois reaproveitam
      as variáveis que o resto do CSS já usa (--paper, --surface, --gold…), então os painéis
@@ -432,46 +432,70 @@
     --shadow-soft:0 1px 3px rgba(20,40,36,.06);
   }
 
-  /* Administrador — verde (petróleo) */
+  /* Administrador — vinho da marca (Masterpiece Red #5A2132) sobre off-white (Dirty White #EFE9E9).
+     --olive/--olive-strong continuam VERDES de propósito: são a cor semântica de "pago/ok" (tags, avisos). */
   body.layout-novo.tema-escritorio{
-    --paper:#F3F6F5;
-    --paper-2:#F3F6F5;
-    --paper-3:#E7EEEC;
+    --paper:#F7F3F3;
+    --paper-2:#F7F3F3;
+    --paper-3:#EFE9E9;
     --surface:#FFFFFF;
     --surface-soft:rgba(255,255,255,.80);
-    --ink:#1B2B3A;
-    --ink-soft:rgba(27,43,58,.64);
-    --ink-faint:rgba(27,43,58,.44);
-    --gold:#1F6F63;
-    --gold-soft:#4FA093;
-    --gold-line:rgba(79,160,147,.38);
-    --gold-wash:rgba(79,160,147,.11);
-    --olive:#0E3B36;
-    --olive-strong:#1F6F63;
-    --olive-wash:rgba(31,111,99,.11);
-    --border:#DFE7E4;
-    --nav-bg:#0E3B36;
-    --nav-ink:#EAF3F1;
-    --nav-ink-soft:rgba(234,243,241,.56);
-    --nav-hover:rgba(255,255,255,.06);
-    --nav-active:rgba(255,255,255,.10);
-    --nav-accent:#6FBBAE;
-    --nav-line:rgba(255,255,255,.10);
+    --ink:#2B1B21;
+    --ink-soft:rgba(43,27,33,.66);
+    --ink-faint:rgba(43,27,33,.46);
+    --gold:#5A2132;
+    --gold-soft:#8C4358;
+    --gold-line:rgba(90,33,50,.32);
+    --gold-wash:rgba(90,33,50,.08);
+    --olive:#2F6B3F;
+    --olive-strong:#3C8450;
+    --olive-wash:rgba(47,107,63,.12);
+    --border:#E6DCDD;
+    --nav-bg:#5A2132;
+    --nav-ink:#F7F1F1;
+    --nav-ink-soft:rgba(247,241,241,.62);
+    --nav-hover:rgba(255,255,255,.07);
+    --nav-active:rgba(255,255,255,.13);
+    --nav-accent:#EFD3D9;
+    --nav-line:rgba(255,255,255,.14);
   }
   body.layout-novo.tema-escritorio .btn.gold{color:#fff;}
-  body.layout-novo.tema-escritorio .fab{box-shadow:0 12px 28px -10px rgba(14,59,54,.55);}
-  body.layout-novo.tema-escritorio .panel{box-shadow:0 30px 70px -26px rgba(14,59,54,.45);}
+  body.layout-novo.tema-escritorio .fab{background:linear-gradient(135deg,#7A2E45,#5A2132); box-shadow:0 12px 28px -10px rgba(90,33,50,.55);}
+  body.layout-novo.tema-escritorio .panel{box-shadow:0 30px 70px -26px rgba(90,33,50,.40);}
 
-  /* Cliente — bege claro (mantém a paleta marfim/dourado que o cliente já conhece) */
+  /* Cliente — verde (05/10/2026; antes: bege/dourado). Os tons de "pago/ok" (--olive) ficam num verde
+     um pouco diferente do verde de destaque, e as tags "em aberto"/"escritório" ganham tom neutro
+     (regras logo abaixo) para não ficarem idênticas às tags de "pago"/"cliente". */
   body.layout-novo:not(.tema-escritorio){
-    --nav-bg:#EDE5D1;
-    --nav-ink:#33291B;
-    --nav-ink-soft:rgba(51,41,27,.58);
-    --nav-hover:rgba(122,90,38,.07);
-    --nav-active:rgba(122,90,38,.12);
-    --nav-accent:#7A5A26;
-    --nav-line:rgba(122,90,38,.20);
+    --paper:#F3F7F4;
+    --paper-2:#F3F7F4;
+    --paper-3:#E5EEE8;
+    --surface:#FFFFFF;
+    --surface-soft:rgba(255,255,255,.80);
+    --ink:#1B2B22;
+    --ink-soft:rgba(27,43,34,.64);
+    --ink-faint:rgba(27,43,34,.44);
+    --gold:#1F6B47;
+    --gold-soft:#4E9F73;
+    --gold-line:rgba(31,107,71,.34);
+    --gold-wash:rgba(31,107,71,.09);
+    --olive:#2E7D4F;
+    --olive-strong:#3C8F5F;
+    --olive-wash:rgba(46,125,79,.12);
+    --border:#DAE6DE;
+    --nav-bg:#1F5A3F;
+    --nav-ink:#EDF6F0;
+    --nav-ink-soft:rgba(237,246,240,.60);
+    --nav-hover:rgba(255,255,255,.07);
+    --nav-active:rgba(255,255,255,.13);
+    --nav-accent:#A9DDBF;
+    --nav-line:rgba(255,255,255,.14);
+    --shadow:0 14px 34px -22px rgba(20,50,35,.28), 0 1px 6px rgba(20,50,35,.06);
+    --shadow-soft:0 1px 3px rgba(20,50,35,.07);
   }
+  body.layout-novo:not(.tema-escritorio) .btn.gold{color:#fff;}
+  body.layout-novo:not(.tema-escritorio) .panel{box-shadow:0 30px 70px -26px rgba(20,60,40,.35);}
+  body.layout-novo:not(.tema-escritorio) .tag-aberto, body.layout-novo:not(.tema-escritorio) .origem-tag.tag-escritorio{background:rgba(27,43,34,.07); color:var(--ink-soft);}
 
   body.layout-novo{background:var(--paper);}
   body.layout-novo .blob, body.layout-novo .frame{display:none;}
@@ -603,7 +627,7 @@
   body.layout-novo:not(.tema-escritorio) .nav-brand .nav-empresa{order:2; margin-top:0; font-size:14px;}
   body.layout-novo:not(.tema-escritorio) .nav-brand .nav-nome{order:3; margin-top:14px; font-size:13px; opacity:.85;}
   body.layout-novo:not(.tema-escritorio) .nav-brand .nav-papel{order:4; font-size:9px;}
-  body.layout-novo:not(.tema-escritorio) .fab{background:linear-gradient(135deg,#9A7633,#7A5A26); box-shadow:0 14px 30px -10px rgba(122,90,38,.55);}
+  body.layout-novo:not(.tema-escritorio) .fab{background:linear-gradient(135deg,#2E8A5C,#1F6B47); box-shadow:0 14px 30px -10px rgba(31,90,63,.55);}
 
 
   /* ---------- Fase 3 (parcial) · telas internas com o menu sempre visível ----------
@@ -638,16 +662,24 @@
 </head>
 <body>
 <script>
-/* Chave do layout novo (por navegador, em localStorage 'layoutNovo'):
-   ?layout=novo   -> GRAVA a preferência; continua valendo nas visitas seguintes mesmo sem o parâmetro.
-   ?layout=antigo -> APAGA a preferência e volta ao layout atual.
-   Sem parâmetro e sem preferência gravada -> layout atual (padrão enquanto não houver "sim" para a troca). */
-(function(){ try{
-  var p = new URLSearchParams(location.search).get('layout');
-  if(p === 'novo') localStorage.setItem('layoutNovo','1');
-  else if(p === 'antigo') localStorage.removeItem('layoutNovo');
-  if(localStorage.getItem('layoutNovo') === '1') document.body.classList.add('layout-novo');
-}catch(e){} })();
+/* Layout novo = PADRÃO PARA TODOS (decisão da Danielle, 05/10/2026).
+   Chave de reversão (por navegador, em localStorage 'layoutNovo'):
+   ?layout=antigo -> GRAVA '0' e volta ao layout anterior neste navegador (rota de escape / comparação).
+   ?layout=novo   -> APAGA a chave e volta ao padrão (layout novo).
+   Sem parâmetro: layout novo, salvo se este navegador tiver '0' gravado.
+   Se o localStorage estiver bloqueado, vale o parâmetro da URL e, sem ele, o layout novo. */
+(function(){
+  var desligado = false;
+  try{
+    var p = new URLSearchParams(location.search).get('layout');
+    if(p === 'antigo') localStorage.setItem('layoutNovo','0');
+    else if(p === 'novo') localStorage.removeItem('layoutNovo');
+    desligado = localStorage.getItem('layoutNovo') === '0';
+  }catch(e){
+    try{ desligado = new URLSearchParams(location.search).get('layout') === 'antigo'; }catch(e2){}
+  }
+  if(!desligado) document.body.classList.add('layout-novo');
+})();
 </script>
 
 <div class="blob blob-1"></div>
@@ -890,10 +922,18 @@ function setUsuario(u){
 
 function temaEscritorioAtivo(){ return document.body.classList.contains('tema-escritorio'); }
 function corEixoGrafico(){ return (temaEscritorioAtivo() && !document.body.classList.contains('layout-novo')) ? 'rgba(245,242,236,.5)' : 'rgba(27,43,58,.5)'; }
-function corAccentGrafico(){ return temaEscritorioAtivo() ? '#2A7A6E' : '#7A5A26'; }
-function corAccentGraficoWash(){ return temaEscritorioAtivo() ? 'rgba(42,122,110,.14)' : 'rgba(122,90,38,.10)'; }
-function coresAgingGrafico(){ return temaEscritorioAtivo() ? ['#2A7A6E','#1A4A44','#4FA093','#C1554B'] : ['#C9A961','#B08A3E','#8C6A2E','#C1554B']; }
-function coresContratosFinGrafico(){ return temaEscritorioAtivo() ? ['#2A7A6E','#1A4A44','#4FA093','#C1554B','#6FBBAE','#0F2E2A'] : ['#C9A961','#B08A3E','#8C6A2E','#C1554B','#556B2F','#6B8339']; }
+function layoutNovoAtivo(){ return document.body.classList.contains('layout-novo'); }
+// Layout novo: admin = vinho da marca (#5A2132), cliente = verde. Layout antigo (?layout=antigo): cores de antes.
+function corAccentGrafico(){ return layoutNovoAtivo() ? (temaEscritorioAtivo() ? '#5A2132' : '#1F6B47') : (temaEscritorioAtivo() ? '#2A7A6E' : '#7A5A26'); }
+function corAccentGraficoWash(){ return layoutNovoAtivo() ? (temaEscritorioAtivo() ? 'rgba(90,33,50,.10)' : 'rgba(31,107,71,.10)') : (temaEscritorioAtivo() ? 'rgba(42,122,110,.14)' : 'rgba(122,90,38,.10)'); }
+function coresAgingGrafico(){
+  if(layoutNovoAtivo()) return temaEscritorioAtivo() ? ['#D8B4BD','#B07A89','#7C3A4E','#C1554B'] : ['#A9DDBF','#6DB88C','#1F6B47','#C1554B'];
+  return temaEscritorioAtivo() ? ['#2A7A6E','#1A4A44','#4FA093','#C1554B'] : ['#C9A961','#B08A3E','#8C6A2E','#C1554B'];
+}
+function coresContratosFinGrafico(){
+  if(layoutNovoAtivo()) return temaEscritorioAtivo() ? ['#5A2132','#8C4358','#C48A99','#C1554B','#8A8D6B','#4B5A45'] : ['#1F6B47','#4E9F73','#9ACFB1','#C1554B','#2E4A3A','#6C8F7A'];
+  return temaEscritorioAtivo() ? ['#2A7A6E','#1A4A44','#4FA093','#C1554B','#6FBBAE','#0F2E2A'] : ['#C9A961','#B08A3E','#8C6A2E','#C1554B','#556B2F','#6B8339'];
+}
 
 async function apiFetch(path, options = {}){
   const headers = Object.assign({}, options.headers || {});
@@ -1373,11 +1413,13 @@ function reportTable(list, tipo, origin){
 }
 
 /* ---------- tela de detalhes de um lançamento (pago ou em aberto) ---------- */
-function openDetalhesForItem(tipo, id, origin){
+function openDetalhesForItem(tipo, id, origin, manterRetorno){
   const org = origin || tipo;
   const arr = tipo==='pagar' ? DATA.contasPagar : DATA.contasReceber;
   const item = arr.find(x=>String(x.id)===String(id));
   if(!item) return;
+  if(painelListaAtual) painelRetorno = { fn: painelListaAtual, scroll: document.getElementById('overlay').scrollTop };
+  else if(!manterRetorno) painelRetorno = null;
   const nome = tipo==='pagar' ? item.credor : item.cliente;
   const nomeLbl = tipo==='pagar' ? 'Fornecedor' : 'Cliente';
   const forma = tipo==='pagar' ? item.forma_pagamento : item.forma_recebimento;
@@ -1390,10 +1432,10 @@ function openDetalhesForItem(tipo, id, origin){
 
   const campo = (label, valor, full) => `<div class="field${full?' full':''}"><label>${escapeHtml(label)}</label><div style="font-size:14px; padding:6px 0;">${valor==null || valor==='' ? '—' : valor}</div></div>`;
 
-  openOverlay(`
+  openOverlayDetalhe(`
     <div class="panel-head">
       <div><h2>${escapeHtml(nome || (tipo==='pagar'?'Fornecedor não informado':'Cliente não informado'))}</h2><p>${escapeHtml(item.codigo || '')} — ${statusTag(item,tipo)} · ${origemTag(item)}</p></div>
-      <button class="close-x" onclick="closeOverlay()">✕</button>
+      <button class="close-x" onclick="voltarDoDetalhe()">✕</button>
     </div>
     <div class="form-grid">
       ${campo(nomeLbl, escapeHtml(nome))}
@@ -1413,9 +1455,9 @@ function openDetalhesForItem(tipo, id, origin){
       ${aberto ? `<button type="button" class="btn gold" onclick="openBaixaForItem('${tipo}','${item.id}','${org}')">${acaoLbl}</button>` : ''}
       ${tipo==='pagar' && Number(item.valor_pago) > 0 ? `<button type="button" class="btn ghost" onclick="openEditarBaixaForm('${item.id}')">✏️ Editar baixa</button>` : ''}
       ${tipo==='pagar' && forma==='Dinheiro' ? `<button type="button" class="btn gold" onclick="openReciboForm('${item.id}')">🧾 Recibo</button>` : ''}
-      <button type="button" class="btn ghost" onclick="closeOverlay(); openEditarLancamentoForm('${tipo}','${item.id}')">✏️ Editar lançamento</button>
-      ${Number(valorQuitado||0) === 0 ? `<button type="button" class="btn ghost" onclick="closeOverlay(); openExcluirLancamentoForm('${tipo}','${item.id}')">🗑 Excluir lançamento</button>` : ''}
-      <button type="button" class="btn ghost" onclick="closeOverlay()">Fechar</button>
+      <button type="button" class="btn ghost" onclick="openEditarLancamentoForm('${tipo}','${item.id}')">✏️ Editar lançamento</button>
+      ${Number(valorQuitado||0) === 0 ? `<button type="button" class="btn ghost" onclick="openExcluirLancamentoForm('${tipo}','${item.id}')">🗑 Excluir lançamento</button>` : ''}
+      <button type="button" class="btn ghost" onclick="voltarDoDetalhe()">Fechar</button>
     </div>
   `);
 }
@@ -1435,10 +1477,10 @@ async function openEditarLancamentoForm(tipo, id){
   const categoriaCampo = {name:'categoria', label:'Categoria', type:'cadastro', cadastro: tipo==='pagar'?'categoriasDespesa':'categoriasReceita', full:true};
   const prefill = { [nomeCampo.name]: item[nomeCampo.name], categoria: item.categoria };
   const valorPagoOuRecebido = Number(tipo==='pagar' ? item.valor_pago : item.valor_recebido || 0);
-  openOverlay(`
+  openOverlayDetalhe(`
     <div class="panel-head">
       <div><h2>Editar lançamento</h2><p>${escapeHtml(item.codigo || '')} — corrige os dados de cadastro deste título (não altera pagamentos/recebimentos já registrados).</p></div>
-      <button class="close-x" onclick="closeOverlay()">✕</button>
+      <button class="close-x" onclick="reabrirDetalhe('${tipo}','${item.id}')">✕</button>
     </div>
     ${valorPagoOuRecebido > 0 ? `<p style="font-size:12.5px; color:var(--red); margin:0 0 16px;">⚠ Este título já tem ${tipo==='pagar'?'pagamento':'recebimento'} parcial ou total registrado (R$ ${valorPagoOuRecebido.toFixed(2)}). Alterar o valor original abaixo muda o saldo em aberto calculado — confira antes de salvar.</p>` : ''}
     <div class="form-grid">
@@ -1451,7 +1493,7 @@ async function openEditarLancamentoForm(tipo, id){
     </div>
     <div class="panel-actions" style="margin-top:18px;">
       <button type="button" class="btn gold" id="editLancSalvarBtn">Salvar correção</button>
-      <button type="button" class="btn ghost" onclick="closeOverlay(); openDetalhesForItem('${tipo}','${item.id}')">Cancelar</button>
+      <button type="button" class="btn ghost" onclick="reabrirDetalhe('${tipo}','${item.id}')">Cancelar</button>
     </div>
   `);
   document.getElementById('editLancSalvarBtn').addEventListener('click', ()=>salvarEdicaoLancamento(tipo, item.id));
@@ -1482,8 +1524,8 @@ async function salvarEdicaoLancamento(tipo, id){
   }
   try{
     await apiFetch(`/api/contas-${tipo==='pagar'?'pagar':'receber'}/${id}`, {method:'PATCH', body: JSON.stringify(body)});
-    closeOverlay();
     await carregarDados();
+    voltarDoDetalhe();
   }catch(err){
     alert('Não foi possível salvar a correção: ' + err.message);
   }
@@ -1497,10 +1539,10 @@ function openExcluirLancamentoForm(tipo, id){
   const item = arr.find(x=>String(x.id)===String(id));
   if(!item) return;
   const nome = tipo==='pagar' ? item.credor : item.cliente;
-  openOverlay(`
+  openOverlayDetalhe(`
     <div class="panel-head">
       <div><h2>Excluir lançamento</h2><p>${escapeHtml(item.codigo || '')} — ${escapeHtml(nome||'')}</p></div>
-      <button class="close-x" onclick="closeOverlay()">✕</button>
+      <button class="close-x" onclick="reabrirDetalhe('${tipo}','${item.id}')">✕</button>
     </div>
     <p style="font-size:13px; color:var(--ink-soft); margin:0 0 16px;">Este lançamento vai sumir das listas e dos totais em aberto, mas o registro continua guardado no sistema para auditoria — nada é apagado de verdade. Essa ação não pode ser desfeita por aqui; se precisar reverter, me avise.</p>
     <div class="form-grid">
@@ -1508,7 +1550,7 @@ function openExcluirLancamentoForm(tipo, id){
     </div>
     <div class="panel-actions" style="margin-top:18px;">
       <button type="button" class="btn" style="background:var(--red); color:#fff;" id="excluirLancConfirmarBtn">Excluir definitivamente da lista</button>
-      <button type="button" class="btn ghost" onclick="closeOverlay(); openDetalhesForItem('${tipo}','${item.id}')">Cancelar</button>
+      <button type="button" class="btn ghost" onclick="reabrirDetalhe('${tipo}','${item.id}')">Cancelar</button>
     </div>
   `);
   document.getElementById('excluirLancConfirmarBtn').addEventListener('click', ()=>confirmarExclusaoLancamento(tipo, item.id));
@@ -1518,8 +1560,8 @@ async function confirmarExclusaoLancamento(tipo, id){
   const motivo = document.getElementById('excluirLancMotivo').value;
   try{
     await apiFetch(`/api/contas-${tipo==='pagar'?'pagar':'receber'}/${id}`, {method:'DELETE', body: JSON.stringify({motivo: motivo || undefined})});
-    closeOverlay();
     await carregarDados();
+    voltarDoDetalhe();
   }catch(err){
     alert('Não foi possível excluir: ' + err.message);
   }
@@ -1531,10 +1573,10 @@ async function openEditarBaixaForm(id){
   if(!item) return;
   await carregarCadastros();
   const statusOpcoes = ['Pago Total','Pago Parcial','Em Aberto','Adiantado','Cancelado'];
-  openOverlay(`
+  openOverlayDetalhe(`
     <div class="panel-head">
       <div><h2>Editar baixa</h2><p>${escapeHtml(item.credor || 'Fornecedor não informado')} — ${escapeHtml(item.documento || item.codigo || '')}</p></div>
-      <button class="close-x" onclick="closeOverlay()">✕</button>
+      <button class="close-x" onclick="reabrirDetalhe('pagar','${item.id}')">✕</button>
     </div>
     <p style="font-size:12.5px; color:var(--ink-soft); margin:0 0 16px;">Use isto para corrigir um título que já foi baixado (valor pago, data, forma ou conta bancária), sem mexer no valor original do documento. A correção fica registrada nas observações do lançamento.</p>
     <div class="form-grid">
@@ -1558,7 +1600,7 @@ async function openEditarBaixaForm(id){
     </div>
     <div class="panel-actions" style="margin-top:18px;">
       <button type="button" class="btn gold" id="editBaixaSalvarBtn">Salvar correção</button>
-      <button type="button" class="btn ghost" onclick="closeOverlay()">Cancelar</button>
+      <button type="button" class="btn ghost" onclick="reabrirDetalhe('pagar','${item.id}')">Cancelar</button>
     </div>
   `);
   document.getElementById('editBaixaSalvarBtn').addEventListener('click', ()=>salvarEdicaoBaixa(item.id));
@@ -1581,8 +1623,8 @@ async function salvarEdicaoBaixa(id){
       status,
       observacoes: obs || undefined,
     })});
-    closeOverlay();
     await carregarDados();
+    voltarDoDetalhe();
   }catch(err){
     alert('Não foi possível salvar a correção: ' + err.message);
   }
@@ -1709,11 +1751,36 @@ function gerarRecibo(id){
   `);
 }
 
-function openOverlay(html){
+/* Ponto de retorno (pedido da Danielle, 05/10/2026): ao abrir "Detalhes" de um título a partir de uma
+   lista (Vencidos, A pagar, A receber, A pagar hoje), guardamos QUAL lista era e a posição da rolagem;
+   Fechar/✕/Cancelar/Esc/salvar redesenham essa lista com os mesmos filtros (que já ficam em variáveis
+   de módulo: filtroVencidos, filtroPagar, filtroReceber*) em vez de fechar o painel inteiro.
+   - painelListaAtual: função que redesenha a lista que está na tela agora (null se não for uma lista)
+   - painelRetorno: {fn, scroll} da lista de onde o Detalhes foi aberto
+   - _fluxoDetalhe: marca que o painel que vai abrir faz parte do fluxo Detalhes/Editar/Excluir, para
+     o retorno não ser descartado no meio do caminho. */
+let painelListaAtual = null, painelRetorno = null, _fluxoDetalhe = false;
+function openOverlay(html, redesenhar){
+  painelListaAtual = (typeof redesenhar === 'function') ? redesenhar : null;
+  if(painelListaAtual || !_fluxoDetalhe) painelRetorno = null;
+  _fluxoDetalhe = false;
   document.getElementById('panelContent').innerHTML = html;
   document.getElementById('overlay').classList.add('open');
 }
-function closeOverlay(){ document.getElementById('overlay').classList.remove('open'); }
+function openOverlayDetalhe(html){ _fluxoDetalhe = true; openOverlay(html); }
+function closeOverlay(){
+  painelListaAtual = null; painelRetorno = null;
+  document.getElementById('overlay').classList.remove('open');
+}
+function voltarDoDetalhe(){
+  const r = painelRetorno; painelRetorno = null;
+  if(!r){ closeOverlay(); return; }
+  r.fn();
+  const ov = document.getElementById('overlay');
+  ov.scrollTop = r.scroll;
+  requestAnimationFrame(()=>{ ov.scrollTop = r.scroll; });
+}
+function reabrirDetalhe(tipo, id){ openDetalhesForItem(tipo, id, undefined, true); }
 
 function campoMenu(label, inputHtml){
   return '<label style="font-size:11px; letter-spacing:1px; text-transform:uppercase; color:var(--ink-faint); display:block; margin-top:12px;">' + label + '</label>' + inputHtml;
@@ -3657,7 +3724,7 @@ function renderReceberPanel(){
       <label style="font-size:11px; letter-spacing:1px; text-transform:uppercase; color:var(--ink-faint);">Notas do cliente</label>
       <textarea placeholder="Observações sobre estes recebimentos — sincroniza com a planilha ao salvar."></textarea>
     </div>
-  `);
+  `, renderReceberPanel);
   document.getElementById('filtroPeriodoRecebDistrib').addEventListener('change', e=>{ filtroRecebDistrib = e.target.value; renderReceberPanel(); });
   document.getElementById('filtroReceberVencimentoSelect').addEventListener('change', e=>{
     filtroReceberVencimento = e.target.value;
@@ -3775,7 +3842,7 @@ function renderPagarPanel(){
       <label style="font-size:11px; letter-spacing:1px; text-transform:uppercase; color:var(--ink-faint);">Notas do cliente</label>
       <textarea placeholder="Observações sobre estas contas — sincroniza com a planilha ao salvar."></textarea>
     </div>
-  `);
+  `, renderPagarPanel);
 
   document.getElementById('filtroMesPagar').addEventListener('change', e=>{ filtroPagar.mes = e.target.value; document.getElementById('pagarTabelasContainer').innerHTML = tabelasPagar(); });
   document.getElementById('filtroCredorPagar').addEventListener('change', e=>{ filtroPagar.credor = Array.from(e.target.selectedOptions).map(o=>o.value); document.getElementById('pagarTabelasContainer').innerHTML = tabelasPagar(); });
@@ -3851,7 +3918,7 @@ function renderVencidosPanel(){
     </div>
     <p style="font-size:12px; color:var(--ink-soft); margin:18px 0 6px;">${lista.length} título(s) — ${fmtBRL(total)}</p>
     ${lista.length ? reportTable(lista,'pagar','vencidos') : mensagemVazia}
-  `);
+  `, renderVencidosPanel);
 
   document.getElementById('filtroCredorVencidos').addEventListener('change', e=>{ filtroVencidos.credor = Array.from(e.target.selectedOptions).map(o=>o.value); renderVencidosPanel(); });
   document.getElementById('filtroFaixaVencidos').addEventListener('change', e=>{ filtroVencidos.faixa = e.target.value; renderVencidosPanel(); });
@@ -3870,7 +3937,7 @@ function openPagarHojePanel(){
       <button class="btn" onclick="window.print()">Imprimir</button>
     </div>
     ${reportTable(lista,'pagar')}
-  `);
+  `, openPagarHojePanel);
 }
 function openFluxoPanel(){
   const k = computeKPIs();
@@ -6318,9 +6385,15 @@ async function applyBaixa(tipo, id, payload){
     // no último fornecedor pesquisado, não voltar sozinho pra "todos"). renderVencidosPanel()
     // relê o filtroVencidos já salvo (não é resetado aqui), então a conta selecionada continua
     // selecionada — e se ela não tiver mais vencido nenhum, aparece a mensagem correspondente.
-    if(baixaState.origin==='vencidos') renderVencidosPanel();
-    else if(baixaState.origin==='pagar') openPagarPanel();
-    else if(baixaState.origin==='receber') openReceberPanel();
+    if(painelRetorno){
+      voltarDoDetalhe();                       // baixa iniciada dentro do Detalhes: volta à lista de origem
+    } else if(painelListaAtual){
+      const ov = document.getElementById('overlay'), sc = ov.scrollTop;
+      painelListaAtual();                      // baixa iniciada na própria lista: redesenha mantendo filtro/rolagem
+      ov.scrollTop = sc;
+    } else if(baixaState.origin==='vencidos') renderVencidosPanel();
+    else if(baixaState.origin==='pagar') renderPagarPanel();
+    else if(baixaState.origin==='receber') renderReceberPanel();
   }catch(err){
     alert('Não foi possível registrar: ' + err.message);
   }
@@ -6339,7 +6412,7 @@ document.addEventListener('mousemove', e=>{
 });
 
 /* ---------- wiring ---------- */
-document.getElementById('overlay').addEventListener('click', e=>{ if(e.target.id==='overlay') closeOverlay(); });
+document.getElementById('overlay').addEventListener('click', e=>{ if(e.target.id==='overlay') voltarDoDetalhe(); });
 document.getElementById('overlayForm').addEventListener('click', e=>{ if(e.target.id==='overlayForm') closeForm(); });
 document.querySelectorAll('[data-close-form]').forEach(b=>b.addEventListener('click', closeForm));
 document.getElementById('fabInsert').addEventListener('click', ()=>openForm('pagar'));
@@ -6763,7 +6836,7 @@ init();
       var ov = document.getElementById('overlay');
       var campo = e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
       var dlg = ['overlayBaixa','overlayForm'].some(function(i){ var o = document.getElementById(i); return o && o.classList.contains('open'); });
-      if(ov && ov.classList.contains('open') && !campo && !dlg && typeof closeOverlay === 'function'){ e.preventDefault(); closeOverlay(); }
+      if(ov && ov.classList.contains('open') && !campo && !dlg && typeof closeOverlay === 'function'){ e.preventDefault(); (typeof voltarDoDetalhe === 'function' ? voltarDoDetalhe : closeOverlay)(); }
       return;
     }
     // Tab fica preso dentro do menu enquanto ele está aberto em tela estreita
