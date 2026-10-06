@@ -328,7 +328,7 @@ function renderAnalisesPdv(){
   const vazio = !g.cupons;
 
   openOverlay(`
-    ${pdvCabecalho('Análise de vendas (PDV)', 'Leituras gerenciais sobre os itens vendidos no balcão. Base: vendas por itens (cupons), sem duplicar o que já foi importado pela retaguarda.')}
+    ${pdvCabecalho('Análise de vendas (PDV)', 'Leituras gerenciais sobre as mercadorias vendidas no balcão. Base: itens dos cupons, sem a taxa de entrega e sem duplicar o que já foi importado pela retaguarda.')}
     ${pdvFiltroHtml()}
     <div style="margin-bottom:12px;">${tabs}</div>
     <div id="pdvAbaConteudo">${vazio ? '<p style="font-size:13px; color:var(--ink-soft);">Nenhuma venda recebida neste período.</p>' : ''}</div>
@@ -370,6 +370,22 @@ function renderAbaPdvGeral(alvo){
       pdvTile('Dia mais forte', melhorDia ? PDV_DIAS[melhorDia.dia_semana] : '—', melhorDia ? pdvMoeda(melhorDia.vendas / melhorDia.dias) + ' em média' : ''),
       pdvTile('Hora mais forte', melhorHora ? String(melhorHora.hora).padStart(2,'0') + 'h' : '—', melhorHora ? pdvPct(melhorHora.vendas, g.vendas) + ' das vendas' : ''),
     ])}
+    ${(function(){
+      const e = a.entregas || {taxas:0, valor:0, por_valor:[]};
+      if(!e.taxas) return '';
+      return `<div class="section-title" style="margin-top:6px;">Entregas</div>
+        ${pdvGrade([
+          pdvTile('Taxas de entrega cobradas', pdvNum(e.taxas), pdvNum(e.dias) + ' dia(s) com entrega'),
+          pdvTile('Valor cobrado de taxa', pdvMoeda(e.valor), 'média de ' + pdvMoeda(e.valor / e.taxas) + ' por entrega'),
+          pdvTile('Entregas por dia', pdvNum(g.dias ? e.taxas / g.dias : 0, 1), 'sobre os dias com venda'),
+        ])}
+        <p style="font-size:11.5px; color:var(--ink-faint); margin:-8px 0 16px;">
+          Por valor de taxa: ${e.por_valor.map(x => pdvNum(x.taxas) + ' × ' + pdvMoeda(x.valor_taxa)).join(' · ')}.
+          A taxa de entrega é cobrada no cupom, mas não é mercadoria: fica fora das vendas, do ticket, dos produtos e dos grupos desta análise.
+        </p>`;
+    })()}
+    ${g.vendas_generico ? `<p style="font-size:12px; color:var(--ink-soft); margin:0 0 16px; padding:10px 12px; border:1px dashed var(--border); border-radius:10px;">
+      <strong>${pdvMoeda(g.vendas_generico)}</strong> (${pdvPct(g.vendas_generico, g.vendas)} das vendas, ${pdvNum(g.itens_generico)} itens) foram registrados no caixa como item genérico, com o valor digitado e sem dizer qual é o produto. Esse valor entra no faturamento, mas não pode ser atribuído a nenhum corte.</p>` : ''}
     <div class="section-title" style="margin-top:6px;">Cupons por faixa de valor</div>
     <div style="overflow-x:auto;"><table class="report">
       <thead><tr><th>Faixa</th><th style="text-align:right;">Cupons</th><th style="text-align:right;">% dos cupons</th><th style="text-align:right;">Vendas</th><th style="text-align:right;">% das vendas</th></tr></thead>
