@@ -246,14 +246,18 @@ function exportarVendasPdvExcel(){
   XLSX.writeFile(wb, `Vendas PDV ${pdvPeriodo.inicio} a ${pdvPeriodo.fim}.xlsx`);
 }
 
+// Abre um cartão interno de Vendas do PDV: ao fechar, volta para a lista de dias (precisa do index.html v3.4;
+// sem ele, cai no comportamento antigo).
+function pdvOverlayFilho(html){ if(typeof openOverlayFilho === 'function') openOverlayFilho(renderVendasPdv, html); else openOverlay(html); }
+
 async function openCuponsDoDia(dia){
   pdvLimparGraficos();
   const titulo = 'Cupons de ' + pdvDataBR(dia) + ' (' + PDV_DIAS[pdvData(dia).getDay()].toLowerCase() + ')';
-  openOverlay(pdvCabecalho(titulo, 'Carregando…'));
+  pdvOverlayFilho(pdvCabecalho(titulo, 'Carregando…'));
   try{
     const cupons = await apiFetch('/api/pdv-relatorios/cupons?data=' + dia);
     const total = cupons.reduce((s, c) => s + (c.valor || 0), 0);
-    openOverlay(`
+    pdvOverlayFilho(`
       ${pdvCabecalho(titulo, pdvNum(cupons.length) + ' cupom(ns) · ' + pdvMoeda(total) + ' · ticket médio ' + pdvMoeda(cupons.length ? total / cupons.length : null))}
       <div style="overflow-x:auto;"><table class="report">
         <thead><tr><th>Hora</th><th>Cupom</th><th>Caixa</th><th style="text-align:right;">Itens</th><th style="text-align:right;">Valor</th></tr></thead>
@@ -272,27 +276,98 @@ async function openCuponsDoDia(dia){
   }catch(err){ pdvErro(titulo, err, () => openCuponsDoDia(dia)); }
 }
 
+/* ---------- TICKET DO CUPOM (cartão sobre a mesma tela) ----------
+   Ao clicar na linha de um cupom, abre um cartão em formato de ticket por cima da lista, sem trocar
+   de tela. A lista de cupons continua por trás, com filtro e rolagem preservados. Fecha com ✕, Esc,
+   clicando fora ou no botão Fechar. É só uma apresentação visual de conferência: não é documento fiscal. */
+let pdvTicketSeq = 0; // cancela resposta que chega depois de o ticket ter sido fechado
+function pdvTicketFechar(){
+pdvTicketSeq++;
+const box = document.getElementById('pdvTicketBox');
+if(box) box.remove();
+document.removeEventListener('keydown', pdvTicketTecla, true);
+}
+function pdvTicketTecla(e){
+if(e.key === 'Escape'){ e.stopImmediatePropagation(); e.preventDefault(); pdvTicketFechar(); }
+}
+function pdvTicketEstilo(){
+if(document.getElementById('pdvTicketCss')) return;
+const st = document.createElement('style');
+st.id = 'pdvTicketCss';
+st.textContent = `
+#pdvTicketBox{position:fixed;inset:0;z-index:2000;display:flex;align-items:flex-start;justify-content:center;padding:6vh 16px 4vh;background:rgba(27,20,24,.45);overflow:auto;}
+#pdvTicketBox .pdv-tk{position:relative;width:min(380px,100%);margin:0 auto;filter:drop-shadow(0 12px 28px rgba(0,0,0,.35));}
+#pdvTicketBox .pdv-tk::before,#pdvTicketBox .pdv-tk::after{content:"";display:block;height:9px;
+background:linear-gradient(135deg,#fffdf6 50%,transparent 50%) 0 0/14px 14px repeat-x,linear-gradient(225deg,#fffdf6 50%,transparent 50%) 0 0/14px 14px repeat-x;}
+#pdvTicketBox .pdv-tk::before{transform:scaleY(-1);}
+#pdvTicketBox .pdv-tk-corpo{background:#fffdf6;color:#26211e;padding:6px 20px 14px;font-family:"Courier New",ui-monospace,Menlo,monospace;font-size:12.5px;line-height:1.5;}
+#pdvTicketBox .pdv-tk-centro{text-align:center;}
+#pdvTicketBox .pdv-tk-tit{font-weight:700;letter-spacing:.14em;font-size:13px;}
+#pdvTicketBox .pdv-tk-sub{font-size:11px;color:#6b625b;}
+#pdvTicketBox .pdv-tk-linha{border:0;border-top:1px dashed #9b918a;margin:10px 0;}
+#pdvTicketBox .pdv-tk-meta{display:flex;justify-content:space-between;gap:10px;font-size:11.5px;}
+#pdvTicketBox .pdv-tk-item{margin:7px 0;}
+#pdvTicketBox .pdv-tk-item .nome{font-weight:700;text-transform:uppercase;word-break:break-word;}
+#pdvTicketBox .pdv-tk-item .conta{display:flex;justify-content:space-between;gap:10px;color:#4b433d;}
+#pdvTicketBox .pdv-tk-total{display:flex;justify-content:space-between;font-weight:700;font-size:15px;margin-top:4px;}
+#pdvTicketBox .pdv-tk-aviso{font-size:10.5px;color:#6b625b;text-align:center;margin-top:10px;text-transform:uppercase;letter-spacing:.04em;}
+#pdvTicketBox .pdv-tk-botoes{display:flex;justify-content:center;margin-top:12px;}
+#pdvTicketBox .pdv-tk-x{position:absolute;top:14px;right:10px;border:0;background:transparent;font-size:16px;cursor:pointer;color:#6b625b;z-index:1;}
+`;
+document.head.appendChild(st);
+}
+function pdvTicketHtml(corpo){
+return `<div class="pdv-tk" role="dialog" aria-modal="true" aria-label="Ticket do cupom">
+<button type="button" class="pdv-tk-x" id="pdvTicketX" aria-label="Fechar">✕</button>
+<div class="pdv-tk-corpo">${corpo}</div></div>`;
+}
+function pdvTicketMostrar(corpo, aoTentar){
+pdvTicketEstilo();
+let box = document.getElementById('pdvTicketBox');
+if(!box){
+box = document.createElement('div');
+box.id = 'pdvTicketBox';
+box.addEventListener('click', e => { if(e.target === box) pdvTicketFechar(); });
+document.body.appendChild(box);
+document.addEventListener('keydown', pdvTicketTecla, true);
+}
+box.innerHTML = pdvTicketHtml(corpo);
+const x = document.getElementById('pdvTicketX'); if(x) x.addEventListener('click', pdvTicketFechar);
+const f = document.getElementById('pdvTicketFechar'); if(f) f.addEventListener('click', pdvTicketFechar);
+const t = document.getElementById('pdvTicketTentar'); if(t && aoTentar) t.addEventListener('click', aoTentar);
+}
+
 async function openItensDoCupom(dia, cupom){
-  const titulo = 'Cupom ' + cupom + ' · ' + pdvDataBR(dia);
-  openOverlay(pdvCabecalho(pdvEsc(titulo), 'Carregando…'));
-  try{
-    const itens = await apiFetch('/api/pdv-relatorios/cupom-itens?data=' + dia + '&cupom=' + encodeURIComponent(cupom));
-    const total = itens.reduce((s, i) => s + (i.valor_total || 0), 0);
-    openOverlay(`
-      ${pdvCabecalho(pdvEsc(titulo), pdvNum(itens.length) + ' item(ns) · ' + pdvMoeda(total))}
-      <div style="overflow-x:auto;"><table class="report">
-        <thead><tr><th>Produto</th><th>Grupo</th><th style="text-align:right;">Quantidade</th><th style="text-align:right;">Preço unitário</th><th style="text-align:right;">Valor</th></tr></thead>
-        <tbody>${itens.map(i => `<tr><td style="color:var(--ink);">${pdvEsc(i.descricao)}</td>
-          <td>${pdvEsc([i.grupo, i.subgrupo].filter(Boolean).join(' · ') || '—')}</td>
-          <td style="text-align:right;">${pdvNum(i.quantidade, i.unidade === 'KG' ? 3 : 0)} ${pdvEsc(i.unidade === 'KG' ? 'kg' : (i.unidade || '').toLowerCase())}</td>
-          <td style="text-align:right;">${pdvMoeda(i.valor_unitario)}</td><td style="text-align:right; font-weight:600; color:var(--ink);">${pdvMoeda(i.valor_total)}</td></tr>`).join('')}</tbody>
-      </table></div>
-      <div class="panel-actions" style="margin-top:20px;">
-        <button type="button" class="btn ghost" id="pdvVoltarCupons">← Voltar para os cupons</button>
-        <button type="button" class="btn ghost" onclick="closeOverlay()">Fechar</button>
-      </div>`);
-    document.getElementById('pdvVoltarCupons').addEventListener('click', () => openCuponsDoDia(dia));
-  }catch(err){ pdvErro(titulo, err, () => openItensDoCupom(dia, cupom)); }
+const meu = ++pdvTicketSeq;
+// Hora e caixa vêm da linha clicada na lista de cupons (a rota de itens não os devolve).
+let hora = '', caixa = '';
+const linha = Array.from(document.querySelectorAll('.pdv-cupom')).find(tr => tr.dataset.cupom === String(cupom));
+if(linha && linha.cells){ hora = (linha.cells[0] && linha.cells[0].textContent || '').trim(); caixa = (linha.cells[2] && linha.cells[2].textContent || '').trim(); }
+const cab = `<div class="pdv-tk-centro"><div class="pdv-tk-tit">CUPOM ${pdvEsc(cupom)}</div>
+<div class="pdv-tk-sub">conferência interna</div></div><hr class="pdv-tk-linha">
+<div class="pdv-tk-meta"><span>${pdvDataBR(dia)}${hora && hora !== '—' ? ' · ' + pdvEsc(hora) : ''}</span><span>${caixa && caixa !== '—' ? 'Caixa ' + pdvEsc(caixa) : ''}</span></div>`;
+pdvTicketMostrar(`${cab}<hr class="pdv-tk-linha"><div class="pdv-tk-centro">Carregando…</div>`);
+try{
+const itens = await apiFetch('/api/pdv-relatorios/cupom-itens?data=' + dia + '&cupom=' + encodeURIComponent(cupom));
+if(meu !== pdvTicketSeq || !document.getElementById('pdvTicketBox')) return;
+const total = itens.reduce((s, i) => s + (i.valor_total || 0), 0);
+const linhas = itens.map((i, n) => {
+const kg = i.unidade === 'KG';
+const qtd = pdvNum(i.quantidade, kg ? 3 : 0) + (kg ? ' kg' : ' ' + pdvEsc((i.unidade || 'un').toLowerCase()));
+return `<div class="pdv-tk-item"><div class="nome">${String(n + 1).padStart(2, '0')} ${pdvEsc(i.descricao)}</div>
+<div class="conta"><span>${qtd} × ${pdvMoeda(i.valor_unitario)}</span><span><strong>${pdvMoeda(i.valor_total)}</strong></span></div></div>`;
+}).join('') || '<div class="pdv-tk-centro">Nenhum item registrado neste cupom.</div>';
+pdvTicketMostrar(`${cab}<hr class="pdv-tk-linha">${linhas}<hr class="pdv-tk-linha">
+<div class="pdv-tk-meta"><span>${pdvNum(itens.length)} item(ns)</span><span></span></div>
+<div class="pdv-tk-total"><span>TOTAL</span><span>${pdvMoeda(total)}</span></div>
+<hr class="pdv-tk-linha">
+<div class="pdv-tk-aviso">Conferência interna — não é documento fiscal</div>
+<div class="pdv-tk-botoes"><button type="button" class="btn ghost" id="pdvTicketFechar">Fechar</button></div>`);
+}catch(err){
+if(meu !== pdvTicketSeq || !document.getElementById('pdvTicketBox')) return;
+pdvTicketMostrar(`${cab}<hr class="pdv-tk-linha"><div class="pdv-tk-centro" style="color:#a3281f;">Não foi possível carregar: ${pdvEsc(err && err.message)}</div>
+<div class="pdv-tk-botoes" style="gap:8px;"><button type="button" class="btn ghost" id="pdvTicketTentar">Tentar de novo</button><button type="button" class="btn ghost" id="pdvTicketFechar">Fechar</button></div>`, () => openItensDoCupom(dia, cupom));
+}
 }
 
 /* ==========================================================================================

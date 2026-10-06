@@ -464,6 +464,35 @@
   body.layout-novo.tema-escritorio .fab{background:linear-gradient(135deg,#7A2E45,#5A2132); box-shadow:0 12px 28px -10px rgba(90,33,50,.55);}
   body.layout-novo.tema-escritorio .panel{box-shadow:0 30px 70px -26px rgba(90,33,50,.40);}
 
+  /* Administrador Fernando — laranja Claude (#D97757) sobre off-white quente. O laranja de marca fica nos
+     destaques (botão do canto, gráficos, item ativo); o menu e os botões usam um tom mais fechado (#B5522F)
+     só para o texto branco passar de 4,5:1 de contraste (o #D97757 puro dá ~3,1:1).
+     --olive continua VERDE e --red continua vermelho: são a cor semântica de "pago/ok" e "atrasado". */
+  body.layout-novo.tema-escritorio.tema-laranja{
+    --paper:#FBF6F2;
+    --paper-2:#FBF6F2;
+    --paper-3:#F3EAE3;
+    --surface:#FFFFFF;
+    --surface-soft:rgba(255,255,255,.80);
+    --ink:#2A1F1A;
+    --ink-soft:rgba(42,31,26,.66);
+    --ink-faint:rgba(42,31,26,.46);
+    --gold:#B5522F;
+    --gold-soft:#D97757;
+    --gold-line:rgba(181,82,47,.32);
+    --gold-wash:rgba(217,119,87,.10);
+    --border:#EADDD4;
+    --nav-bg:#B5522F;
+    --nav-ink:#FFF6F1;
+    --nav-ink-soft:rgba(255,246,241,.70);
+    --nav-hover:rgba(255,255,255,.09);
+    --nav-active:rgba(255,255,255,.18);
+    --nav-accent:#FFD9C7;
+    --nav-line:rgba(255,255,255,.18);
+  }
+  body.layout-novo.tema-escritorio.tema-laranja .fab{background:linear-gradient(135deg,#E58B6B,#D97757); box-shadow:0 12px 28px -10px rgba(217,119,87,.60);}
+  body.layout-novo.tema-escritorio.tema-laranja .panel{box-shadow:0 30px 70px -26px rgba(181,82,47,.38);}
+
   /* Cliente — verde (05/10/2026; antes: bege/dourado). Os tons de "pago/ok" (--olive) ficam num verde
      um pouco diferente do verde de destaque, e as tags "em aberto"/"escritório" ganham tom neutro
      (regras logo abaixo) para não ficarem idênticas às tags de "pago"/"cliente". */
@@ -929,19 +958,34 @@ function setUsuario(u){
   // como cliente" (nesse caso o papel retornado por /api/auth/me já vem
   // 'cliente', então o tema muda sozinho ao entrar/sair da impersonação).
   document.body.classList.toggle('tema-escritorio', !!(u && u.papel === 'escritorio'));
+  document.body.classList.toggle('tema-laranja', !!(u && u.papel === 'escritorio' && temaLaranjaDoUsuario(u)));
 }
+
+// Tema laranja Claude (pedido da Danielle, 06/10/2026): o administrador Fernando usa laranja; a Danielle, vinho.
+// Vale só para papel 'escritorio'. Casa por e-mail (lista abaixo) ou, enquanto o e-mail não estiver na lista,
+// por nome que comece com "Fernando".
+const TEMA_LARANJA_EMAILS = ["ffraga@gmail.com"];
+function temaLaranjaDoUsuario(u){
+  if(!u) return false;
+  const em = String(u.email || '').trim().toLowerCase();
+  if(em && TEMA_LARANJA_EMAILS.indexOf(em) !== -1) return true;
+  return /^\s*fernando\b/i.test(String(u.nome || ''));
+}
+function temaLaranjaAtivo(){ return document.body.classList.contains('tema-laranja') && document.body.classList.contains('layout-novo'); }
 
 function temaEscritorioAtivo(){ return document.body.classList.contains('tema-escritorio'); }
 function corEixoGrafico(){ return (temaEscritorioAtivo() && !document.body.classList.contains('layout-novo')) ? 'rgba(245,242,236,.5)' : 'rgba(27,43,58,.5)'; }
 function layoutNovoAtivo(){ return document.body.classList.contains('layout-novo'); }
 // Layout novo: admin = vinho da marca (#5A2132), cliente = verde. Layout antigo (?layout=antigo): cores de antes.
-function corAccentGrafico(){ return layoutNovoAtivo() ? (temaEscritorioAtivo() ? '#5A2132' : '#1F6B47') : (temaEscritorioAtivo() ? '#2A7A6E' : '#7A5A26'); }
-function corAccentGraficoWash(){ return layoutNovoAtivo() ? (temaEscritorioAtivo() ? 'rgba(90,33,50,.10)' : 'rgba(31,107,71,.10)') : (temaEscritorioAtivo() ? 'rgba(42,122,110,.14)' : 'rgba(122,90,38,.10)'); }
+function corAccentGrafico(){ if(temaLaranjaAtivo()) return '#D97757'; return layoutNovoAtivo() ? (temaEscritorioAtivo() ? '#5A2132' : '#1F6B47') : (temaEscritorioAtivo() ? '#2A7A6E' : '#7A5A26'); }
+function corAccentGraficoWash(){ if(temaLaranjaAtivo()) return 'rgba(217,119,87,.12)'; return layoutNovoAtivo() ? (temaEscritorioAtivo() ? 'rgba(90,33,50,.10)' : 'rgba(31,107,71,.10)') : (temaEscritorioAtivo() ? 'rgba(42,122,110,.14)' : 'rgba(122,90,38,.10)'); }
 function coresAgingGrafico(){
+  if(temaLaranjaAtivo()) return ['#F5CDB9','#E9A486','#B5522F','#C1554B'];
   if(layoutNovoAtivo()) return temaEscritorioAtivo() ? ['#D8B4BD','#B07A89','#7C3A4E','#C1554B'] : ['#A9DDBF','#6DB88C','#1F6B47','#C1554B'];
   return temaEscritorioAtivo() ? ['#2A7A6E','#1A4A44','#4FA093','#C1554B'] : ['#C9A961','#B08A3E','#8C6A2E','#C1554B'];
 }
 function coresContratosFinGrafico(){
+  if(temaLaranjaAtivo()) return ['#B5522F','#D97757','#EDB59D','#C1554B','#8A8D6B','#4B5A45'];
   if(layoutNovoAtivo()) return temaEscritorioAtivo() ? ['#5A2132','#8C4358','#C48A99','#C1554B','#8A8D6B','#4B5A45'] : ['#1F6B47','#4E9F73','#9ACFB1','#C1554B','#2E4A3A','#6C8F7A'];
   return temaEscritorioAtivo() ? ['#2A7A6E','#1A4A44','#4FA093','#C1554B','#6FBBAE','#0F2E2A'] : ['#C9A961','#B08A3E','#8C6A2E','#C1554B','#556B2F','#6B8339'];
 }
@@ -958,7 +1002,7 @@ async function apiFetch(path, options = {}){
 }
 
 function showApp(){ document.body.classList.remove('not-authed'); document.getElementById('loginScreen').style.display = 'none'; }
-function showLogin(){ document.body.classList.add('not-authed'); document.body.classList.remove('tema-escritorio'); document.getElementById('loginScreen').style.display = 'flex'; }
+function showLogin(){ document.body.classList.add('not-authed'); document.body.classList.remove('tema-escritorio'); document.body.classList.remove('tema-laranja'); document.getElementById('loginScreen').style.display = 'flex'; }
 
 function setClientLogo(logoUrl, nomeEmpresa){
   const slot = document.getElementById('clientLogoSlot');
@@ -1708,10 +1752,11 @@ async function openReciboForm(id){
   const item = DATA.contasPagar.find(x=>String(x.id)===String(id));
   if(!item) return;
   await getEmpresaInfo();
-  openOverlay(`
+  if(painelListaAtual) painelRetorno = { fn: painelListaAtual, scroll: document.getElementById('overlay').scrollTop };
+  openOverlayDetalhe(`
     <div class="panel-head">
       <div><h2>Emitir recibo</h2><p>${escapeHtml(item.credor)} — pagamento em dinheiro, vencimento ${fmtDate(item.vencimento)}</p></div>
-      <button class="close-x" onclick="closeOverlay()">✕</button>
+      <button class="close-x" onclick="voltarDoDetalhe()">✕</button>
     </div>
     <div class="form-grid">
       <div class="field full">
@@ -1725,7 +1770,7 @@ async function openReciboForm(id){
     </div>
     <div class="panel-actions" style="margin-top:18px;">
       <button type="button" class="btn gold" onclick="gerarRecibo('${item.id}')">Gerar recibo</button>
-      <button type="button" class="btn ghost" onclick="closeOverlay()">Cancelar</button>
+      <button type="button" class="btn ghost" onclick="voltarDoDetalhe()">Cancelar</button>
     </div>
   `);
 }
@@ -1740,10 +1785,10 @@ function gerarRecibo(id){
   if(!referente){ alert('Informe a que se refere o pagamento.'); return; }
   const emp = EMPRESA_INFO || {};
   const cidadeUf = cidadeUfDeEndereco(emp.endereco);
-  openOverlay(`
+  openOverlayDetalhe(`
     <div class="panel-head">
       <div><h2>Recibo</h2><p>${escapeHtml(item.credor)}</p></div>
-      <button class="close-x" onclick="closeOverlay()">✕</button>
+      <button class="close-x" onclick="voltarDoDetalhe()">✕</button>
     </div>
     <div style="padding:14px 6px 4px; font-size:13.5px; line-height:1.8; color:var(--ink);">
       <p style="text-align:center; font-weight:700; letter-spacing:3px; font-size:17px; margin-bottom:26px;">RECIBO</p>
@@ -1771,16 +1816,36 @@ function gerarRecibo(id){
    - _fluxoDetalhe: marca que o painel que vai abrir faz parte do fluxo Detalhes/Editar/Excluir, para
      o retorno não ser descartado no meio do caminho. */
 let painelListaAtual = null, painelRetorno = null, _fluxoDetalhe = false;
+/* Cartão interno (pedido da Danielle, 06/10/2026): ao fechar um cartão aberto a partir de outro item do menu
+   (extrato do dia, editar contrato, editar cadastros...), o portal volta ao cartão de ORIGEM, não ao painel
+   inicial. openOverlayFilho(pai, html) abre o cartão interno e guarda a função que redesenha o pai e a
+   posição da rolagem; closeOverlay() (✕, Fechar, Esc, clique fora) volta a ele. closeOverlay(true) fecha tudo
+   (clique em "Painel" no menu lateral). Só um nível: o cartão de origem fecha para o painel inicial. */
+let painelPai = null, painelPaiScroll = 0, _filhoPai = null, _filhoScroll = 0;
 function openOverlay(html, redesenhar){
   painelListaAtual = (typeof redesenhar === 'function') ? redesenhar : null;
   if(painelListaAtual || !_fluxoDetalhe) painelRetorno = null;
   _fluxoDetalhe = false;
+  painelPai = _filhoPai; painelPaiScroll = _filhoScroll; _filhoPai = null; _filhoScroll = 0;
   document.getElementById('panelContent').innerHTML = html;
   document.getElementById('overlay').classList.add('open');
 }
 function openOverlayDetalhe(html){ _fluxoDetalhe = true; openOverlay(html); }
-function closeOverlay(){
-  painelListaAtual = null; painelRetorno = null;
+function openOverlayFilho(pai, html){
+  if(!painelPai){ _filhoPai = pai; _filhoScroll = document.getElementById('overlay').scrollTop; }
+  else { _filhoPai = painelPai; _filhoScroll = painelPaiScroll; }  // carregando… → conteúdo final: mantém o mesmo pai
+  openOverlay(html);
+}
+function closeOverlay(tudo){
+  if(tudo !== true && painelPai){
+    const pai = painelPai, rolagem = painelPaiScroll;
+    painelPai = null; painelListaAtual = null; painelRetorno = null;
+    pai();
+    const ov = document.getElementById('overlay');
+    ov.scrollTop = rolagem; requestAnimationFrame(()=>{ ov.scrollTop = rolagem; });
+    return;
+  }
+  painelPai = null; painelListaAtual = null; painelRetorno = null;
   document.getElementById('overlay').classList.remove('open');
 }
 function voltarDoDetalhe(){
@@ -1912,7 +1977,7 @@ function openMenuPanel(){
 const GRUPOS_DRE = ['Receita','CMV','Despesas Fixas','Despesas Variáveis','Despesas Financeiras','Retiradas de Sócios','Cartao de Credito','Divida'];
 
 async function openEditFornecedores(){
-  openOverlay(`<div class="panel-head"><div><h2>Editar fornecedores</h2><p>Carregando…</p></div><button class="close-x" onclick="closeOverlay()">✕</button></div>`);
+  openOverlayFilho(openMenuPanel, `<div class="panel-head"><div><h2>Editar fornecedores</h2><p>Carregando…</p></div><button class="close-x" onclick="closeOverlay()">✕</button></div>`);
   const lista = await apiFetch('/api/cadastros/fornecedores').catch(()=>[]);
   const optTipoPessoa = tp => `<option value="">— A confirmar —</option>
   <option value="PJ" ${tp==='PJ'?'selected':''}>PJ</option>
@@ -1929,7 +1994,7 @@ async function openEditFornecedores(){
   <td><input type="text" class="ec-banco" value="${escapeHtml(f.dados_bancarios||'')}" placeholder="Dados bancários" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
   <td><button type="button" class="btn-mini ec-salvar">Salvar</button><span class="ec-msg" style="font-size:10.5px; margin-left:6px;"></span></td>
   </tr>`).join('');
-  openOverlay(`
+  openOverlayFilho(openMenuPanel, `
   <div class="panel-head">
   <div><h2>Editar fornecedores</h2><p>Corrija nome, documento, contato ou dados de pagamento (PIX/conta) de um fornecedor já cadastrado. O campo PJ/PF define se os pagamentos a esse fornecedor entram como despesa normal ou como retirada de prólabore no DRE.</p></div>
   <button class="close-x" onclick="closeOverlay()">✕</button>
@@ -1963,7 +2028,7 @@ async function openEditFornecedores(){
 /* Editar clientes/sacados — mesmo padrão de openEditFornecedores(), usando o PATCH
    /api/cadastros/sacados/:id que já existia no backend (edição por id, sem duplicar). */
 async function openEditSacados(){
-  openOverlay(`<div class="panel-head"><div><h2>Editar clientes/sacados</h2><p>Carregando…</p></div><button class="close-x" onclick="closeOverlay()">✕</button></div>`);
+  openOverlayFilho(openMenuPanel, `<div class="panel-head"><div><h2>Editar clientes/sacados</h2><p>Carregando…</p></div><button class="close-x" onclick="closeOverlay()">✕</button></div>`);
   const lista = await apiFetch('/api/cadastros/sacados').catch(()=>[]);
   const linhas = (lista||[]).map(s => `
     <tr data-id="${s.id}">
@@ -1973,7 +2038,7 @@ async function openEditSacados(){
       <td><input type="text" class="ec-endereco" value="${escapeHtml(s.endereco||'')}" placeholder="Endereço" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
       <td><button type="button" class="btn-mini ec-salvar">Salvar</button><span class="ec-msg" style="font-size:10.5px; margin-left:6px;"></span></td>
     </tr>`).join('');
-  openOverlay(`
+  openOverlayFilho(openMenuPanel, `
     <div class="panel-head">
       <div><h2>Editar clientes/sacados</h2><p>Corrija nome, documento, contato ou endereço de um cliente/sacado já cadastrado.</p></div>
       <button class="close-x" onclick="closeOverlay()">✕</button>
@@ -2003,7 +2068,7 @@ async function openEditSacados(){
 }
 
 async function openEditCategorias(){
-  openOverlay(`<div class="panel-head"><div><h2>Editar categorias</h2><p>Carregando…</p></div><button class="close-x" onclick="closeOverlay()">✕</button></div>`);
+  openOverlayFilho(openMenuPanel, `<div class="panel-head"><div><h2>Editar categorias</h2><p>Carregando…</p></div><button class="close-x" onclick="closeOverlay()">✕</button></div>`);
   const lista = await apiFetch('/api/cadastros/categorias').catch(()=>[]);
   const gruposOpts = g => `<option value="">— Não classificado —</option>` + GRUPOS_DRE.map(x=>`<option value="${x}" ${g===x?'selected':''}>${x}</option>`).join('');
   const linhas = (lista||[]).map(c => `
@@ -2013,7 +2078,7 @@ async function openEditCategorias(){
       <td><select class="ec-grupo" style="width:100%; ${ESTILO_INPUT_MENU}">${gruposOpts(c.grupo_dre)}</select></td>
       <td><button type="button" class="btn-mini ec-salvar">Salvar</button><span class="ec-msg" style="font-size:10.5px; margin-left:6px;"></span></td>
     </tr>`).join('');
-  openOverlay(`
+  openOverlayFilho(openMenuPanel, `
     <div class="panel-head">
       <div><h2>Editar categorias</h2><p>Corrija o nome ou o grupo de DRE (fixo/variável/etc.) de uma categoria — o grupo de DRE é o que alimenta o relatório de DRE automático.</p></div>
       <button class="close-x" onclick="closeOverlay()">✕</button>
@@ -2041,7 +2106,7 @@ async function openEditCategorias(){
 }
 
 async function openEditContasBancarias(){
-  openOverlay(`<div class="panel-head"><div><h2>Editar contas bancárias</h2><p>Carregando…</p></div><button class="close-x" onclick="closeOverlay()">✕</button></div>`);
+  openOverlayFilho(openMenuPanel, `<div class="panel-head"><div><h2>Editar contas bancárias</h2><p>Carregando…</p></div><button class="close-x" onclick="closeOverlay()">✕</button></div>`);
   const lista = await apiFetch('/api/cadastros/contas-bancarias').catch(()=>[]);
   const linhas = (lista||[]).map(c => `
     <tr data-id="${c.id}">
@@ -2051,7 +2116,7 @@ async function openEditContasBancarias(){
       <td><input type="text" class="ec-numero" value="${escapeHtml(c.numero_conta||'')}" placeholder="Nº conta" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
       <td><button type="button" class="btn-mini ec-salvar">Salvar</button><span class="ec-msg" style="font-size:10.5px; margin-left:6px;"></span></td>
     </tr>`).join('');
-  openOverlay(`
+  openOverlayFilho(openMenuPanel, `
     <div class="panel-head">
       <div><h2>Editar contas bancárias</h2><p>Corrija nome, banco, agência ou número de uma conta já cadastrada.</p></div>
       <button class="close-x" onclick="closeOverlay()">✕</button>
@@ -2226,7 +2291,7 @@ function renderContratosPanel(lista){
    ========================================================================================== */
 function abrirEditarContrato(contrato){
   const dataISO = v => v ? String(v).slice(0,10) : '';
-  openOverlay(`
+  openOverlayFilho(openContratosPanel, `
     <div class="panel-head">
       <div><h2>Editar contrato</h2><p>${escapeHtml(contrato.credor)}${contrato.numero_contrato ? ' — ' + escapeHtml(contrato.numero_contrato) : ''}. Mudar valor da parcela, quantidade de parcelas ou data da 1ª parcela atualiza automaticamente A pagar (e, por consequência, Caixa e DRE) — parcelas já pagas nunca são alteradas.</p></div>
       <button class="close-x" onclick="closeOverlay()">✕</button>
@@ -3601,7 +3666,7 @@ async function entrarComoCliente(id){
     }
     authToken = resp.token;
     localStorage.setItem('portalToken', authToken);
-    closeOverlay();
+    closeOverlay(true);
     await tentarSessaoSalva();
     await carregarDados();
   }catch(err){
@@ -3615,7 +3680,7 @@ async function voltarParaMinhaConta(){
   authToken = adminToken;
   localStorage.setItem('portalToken', authToken);
   localStorage.removeItem('portalAdminToken');
-  closeOverlay();
+  closeOverlay(true);
   await tentarSessaoSalva();
   await carregarDados();
 }
@@ -3649,6 +3714,36 @@ function periodoAbrange(dataISO, periodo){
 function computeRecebDistribuidora(periodo){
   const lista = (DATA.recebimentosDistribuidora||[]).filter(r => periodoAbrange(r.data_recebimento, periodo));
   return { total: lista.reduce((s,r)=>s+Number(r.valor_recebido||0),0), count: lista.length };
+}
+
+// VALOR A RECEBER no período (pedido da Danielle, 06/10/2026): títulos de Contas a Receber com saldo em
+// aberto cujo VENCIMENTO cai no período escolhido no card — todas as categorias (não só "Cliente
+// Distribuidora"). Diferente de periodoAbrange (que só olha do início do período até HOJE e serve para
+// datas já ocorridas, como data de recebimento): aqui a janela é o período inteiro, inclusive os dias
+// que ainda vão chegar. dia = hoje; semana = segunda a domingo da semana corrente; mês/trimestre/
+// semestre/ano = calendário corrente. Vencidos de períodos anteriores NÃO entram (ficam em "Vencidas").
+function periodoVencimentoAbrange(dataISO, periodo){
+  if(!dataISO) return false;
+  const s = String(dataISO).slice(0,10);
+  const hoje = todayISO();
+  const [aD, mD] = s.split('-').map(Number);
+  const [aH, mH] = hoje.split('-').map(Number);
+  if(periodo==='dia') return s === hoje;
+  if(periodo==='semana'){
+    const ini = inicioSemanaAtual();
+    const f = x => `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`;
+    const fim = new Date(ini.getFullYear(), ini.getMonth(), ini.getDate()+6);
+    return s >= f(ini) && s <= f(fim);
+  }
+  if(periodo==='mes') return aD===aH && mD===mH;
+  if(periodo==='trimestre') return aD===aH && Math.ceil(mD/3)===Math.ceil(mH/3);
+  if(periodo==='semestre') return aD===aH && Math.ceil(mD/6)===Math.ceil(mH/6);
+  if(periodo==='ano') return aD===aH;
+  return false;
+}
+function computeAReceberPeriodo(periodo){
+  const lista = (DATA.contasReceber||[]).filter(x => saldoAberto(x,'receber')>0 && periodoVencimentoAbrange(x.vencimento, periodo));
+  return { total: lista.reduce((s,x)=>s+saldoAberto(x,'receber'),0), count: lista.length };
 }
 
 // Filtros da tabela de Contas a Receber (pedido da Danielle, 15/09/2026): por nome do cliente
@@ -3709,6 +3804,7 @@ function tabelasReceber(){
 function renderReceberPanel(){
   const estiloSelect = 'width:auto; margin-top:0; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:var(--paper-2); font-family:inherit; font-size:13px; color:var(--ink);';
   const rd = computeRecebDistribuidora(filtroRecebDistrib);
+  const ar = computeAReceberPeriodo(filtroRecebDistrib);
   const optsPeriodo = Object.entries(LABELS_PERIODO_RECEB_DISTRIB).map(([v,l])=>`<option value="${v}" ${v===filtroRecebDistrib?'selected':''}>${l}</option>`).join('');
   const optsVenc = Object.entries(LABELS_VENC_RECEBER).map(([v,l])=>`<option value="${v}" ${v===filtroReceberVencimento?'selected':''}>${l}</option>`).join('');
   openOverlay(`
@@ -3725,6 +3821,11 @@ function renderReceberPanel(){
       <select id="filtroPeriodoRecebDistrib" style="${estiloSelect}">${optsPeriodo}</select>
       <div style="font-family:'Playfair Display',serif; font-size:26px; font-weight:600; color:var(--ink); margin-top:12px;">${fmtBRL(rd.total)}</div>
       <div style="font-size:12px; color:var(--ink-faint); margin-top:6px;">${rd.count} recebimento(s) — categoria "Cliente Distribuidora", por data de recebimento</div>
+      <div id="aReceberPeriodoBox" style="margin-top:16px; padding-top:14px; border-top:1px solid var(--border);">
+        <div style="font-size:11.5px; letter-spacing:1.5px; text-transform:uppercase; color:var(--ink-soft);">A receber no período</div>
+        <div style="font-family:'Playfair Display',serif; font-size:26px; font-weight:600; color:var(--ink); margin-top:8px;">${fmtBRL(ar.total)}</div>
+        <div style="font-size:12px; color:var(--ink-faint); margin-top:6px;">${ar.count} título(s) em aberto com vencimento em "${LABELS_PERIODO_RECEB_DISTRIB[filtroRecebDistrib]}" — todas as categorias, saldo em aberto, por data de vencimento (vencidos de períodos anteriores ficam em "Vencidas", abaixo)</div>
+      </div>
     </div>
     <div class="panel-actions" style="flex-wrap:wrap; gap:10px; margin:0 0 6px;">
       <div class="field" style="max-width:280px; margin:0;">
@@ -4056,7 +4157,7 @@ function openFechamentoDiaPanel(diaISO){
   const fd = computeFechamentoDia(diaISO);
   const linhaMaquininha = Object.entries(fd.porMaquininha).map(([mq,v])=>`<tr><td>${escapeHtml(mq)}</td><td>${fmtBRL(v)}</td></tr>`).join('');
   const linhaContaPix = Object.entries(fd.porContaPix).map(([ct,v])=>`<tr><td>${escapeHtml(ct)}</td><td>${fmtBRL(v)}</td></tr>`).join('');
-  openOverlay(`
+  openOverlayFilho(openFechamentoSemanaPanel, `
     <div class="panel-head">
       <div><h2>Extrato de caixa do dia</h2><p>${fmtDate(diaISO)} (${DIAS_SEMANA_PT[new Date(diaISO+'T12:00:00').getDay()]}).</p></div>
       <button class="close-x" onclick="closeOverlay()">✕</button>
@@ -6754,7 +6855,7 @@ init();
   function acionar(it, btn){
     definirMenu(false, false);
     if(it.alvo === 'painel'){
-      if(typeof closeOverlay === 'function'){ try{ closeOverlay(); }catch(e){} }
+      if(typeof closeOverlay === 'function'){ try{ closeOverlay(true); }catch(e){} }
       marcar('painel');
       window.scrollTo({top:0, behavior:'smooth'});
       return;
