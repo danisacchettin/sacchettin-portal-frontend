@@ -12,6 +12,7 @@
   <script src="custo_produto.js" defer></script>
       <script src="carga_tributaria.js" defer></script>
     <script src="maquininhas.js" defer></script>
+    <script src="pdv_vendas.js" defer></script>
     <style>
   :root{
     /* paleta clara — ivory quente + cards brancos foscos */
@@ -776,6 +777,16 @@ Fica fora de .wrap para continuar visível quando .wrap é escondido em @media p
       <div class="lbl">Impressão</div>
       <div class="val" style="font-size:19px;">Relatório para impressão</div>
       <div class="sub">Estoque, produtos, A pagar, A receber e fluxo — em PDF ou planilha Excel</div>
+    </div>
+    <div class="card" id="btnVendasPDV">
+      <div class="lbl">Vendas do PDV</div>
+      <div class="val" style="font-size:19px;">Fechamento e cupons</div>
+      <div class="sub">Faturamento por dia e forma de pagamento, recebido automaticamente do AutoPlus</div>
+    </div>
+    <div class="card" id="btnAnalisesPDV">
+      <div class="lbl">Análise de vendas</div>
+      <div class="val" style="font-size:19px;">Cortes, horários e curva ABC</div>
+      <div class="sub">O que vende, quando vende e quanto pesa cada produto no faturamento do balcão</div>
     </div>
     <div class="card" id="btnImportar">
       <div class="lbl">Importação em lote</div>
@@ -6431,6 +6442,8 @@ document.getElementById('btnContratosPrestadores').addEventListener('click', ()=
 document.getElementById('btnCustoProduto').addEventListener('click', ()=>openCustoProdutoPanel());
   document.getElementById('btnCargaTributaria').addEventListener('click', ()=>openCargaTributariaPanel());
   document.getElementById('btnMaquininhas').addEventListener('click', ()=>openMaquininhasPanel());
+  document.getElementById('btnVendasPDV').addEventListener('click', ()=>openVendasPdvPanel());
+  document.getElementById('btnAnalisesPDV').addEventListener('click', ()=>openAnalisesPdvPanel());
 
 document.getElementById('loginForm').addEventListener('submit', async e=>{
   e.preventDefault();
@@ -6616,6 +6629,8 @@ init();
     ]},
     { grupo:'Relatórios', itens:[
       { id:'dre',         rotulo:'DRE',                    ic:'▥', alvo:'#btnDRE' },
+      { id:'vendaspdv',   rotulo:'Vendas do PDV',          ic:'▤', alvo:'#btnVendasPDV' },
+      { id:'analisespdv', rotulo:'Análise de vendas (PDV)', ic:'▨', alvo:'#btnAnalisesPDV' },
       { id:'imprimir',    rotulo:'Relatório para impressão', ic:'▧', alvo:'#btnPrint' },
       { id:'importar',    rotulo:'Importar planilha',      ic:'⇧', alvo:'#btnImportar' },
       { id:'pagas',       rotulo:'Contas pagas',           ic:'✓', alvo:'#btnContasPagas' }
