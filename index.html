@@ -3682,7 +3682,10 @@ function normalizarBusca(s){
 function tabelasReceber(){
   const hoje = todayISO();
   const termo = normalizarBusca(filtroReceberNome);
-  let lista = DATA.contasReceber;
+  // Vendas do balcão lançadas automaticamente pelo PDV (documento "PDV-AAAAMMDD-FORMA") já entram
+  // recebidas no dia e NÃO aparecem aqui: esta tela é só de títulos com prazo (distribuidora e
+  // demais). O balcão é conferido em Relatórios > Vendas do PDV e no Fluxo de caixa.
+  let lista = DATA.contasReceber.filter(x => !/^PDV-\d{8}-/.test(String(x.documento || '')));
   if(termo) lista = lista.filter(x => normalizarBusca(x.cliente || '').includes(termo));
   if(filtroReceberVencimento !== 'todos') lista = lista.filter(x => periodoAbrange(x.vencimento, filtroReceberVencimento));
   const vencidas = lista.filter(x => saldoAberto(x,'receber')>0 && String(x.vencimento).slice(0,10) < hoje);

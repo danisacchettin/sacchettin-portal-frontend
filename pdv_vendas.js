@@ -166,9 +166,11 @@ function renderVendasPdv(){
   const linhas = r.por_dia.map(d => {
     const f = d.fechamento;
     const diff = (f && d.vendas !== null) ? d.vendas - f.total : null;
+    // Fechamento gravado no meio do dia (foto parcial): vendas por itens acima do fechamento + descontos.
+    const incompleto = f && d.vendas !== null && (d.vendas - (f.total + (f.descontos || 0))) > Math.max(1, d.vendas * 0.002);
     return `<tr class="pdv-dia" data-dia="${d.data}" style="cursor:pointer;" title="Ver os cupons deste dia">
       <td>${pdvDataBR(d.data)}</td><td>${PDV_DIAS_CURTO[pdvData(d.data).getDay()]}</td>
-      <td style="text-align:right; font-weight:600; color:var(--ink);">${f ? pdvMoeda(f.total) : '<span style="color:var(--ink-faint);">sem fechamento</span>'}</td>
+      <td style="text-align:right; font-weight:600; color:var(--ink); white-space:nowrap;">${f ? pdvMoeda(f.total) + (incompleto ? ' <span class="tag-status tag-atraso" title="O fechamento foi gravado antes do fim do dia: está menor que as vendas. Este dia não é lançado no financeiro até o fechamento ser atualizado.">incompleto</span>' : '') : '<span style="color:var(--ink-faint);">sem fechamento</span>'}</td>
       <td style="text-align:right;">${f ? pdvMoeda(f.dinheiro) : '—'}</td>
       <td style="text-align:right;">${f ? pdvMoeda(f.cartao_credito) : '—'}</td>
       <td style="text-align:right;">${f ? pdvMoeda(f.cartao_debito) : '—'}</td>
@@ -195,6 +197,7 @@ function renderVendasPdv(){
       <p style="font-size:11.5px; color:var(--ink-faint); margin:0 0 18px;">
         "Fechamento" é o total fechado no caixa, por forma de pagamento. "Vendas por itens" é a soma dos cupons.
         Diferença = itens − fechamento; diferenças de R$ 1,00 ou mais aparecem em vermelho para conferência.
+        Dia marcado como "incompleto" teve o fechamento gravado antes do fim do expediente e não é lançado no financeiro enquanto não for atualizado.
         ${dif !== null ? 'No período, nos dias já fechados: <strong>' + pdvMoeda(dif) + '</strong>.' : ''}
       </p>
       <div style="overflow-x:auto;">
