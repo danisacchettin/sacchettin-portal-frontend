@@ -785,6 +785,7 @@ Fica fora de .wrap para continuar visível quando .wrap é escondido em @media p
       <option>Casa de Carnes Cristal</option>
     </select>
     <button type="button" class="btn-mini" id="btnClientes" style="display:none;">Clientes</button>
+    <button type="button" class="btn-mini" id="btnInconsistencias" style="display:none;">Inconsistências</button>
     <button type="button" class="btn-mini" id="btnMenu">Menu</button>
     <button type="button" class="btn-mini" id="btnLogout">Sair</button>
   </div>
@@ -1043,6 +1044,9 @@ async function tentarSessaoSalva(){
     // final não vê esse botão porque só tem acesso à própria empresa mesmo.
     const btnClientes = document.getElementById('btnClientes');
     if(btnClientes) btnClientes.style.display = (me.papel === 'escritorio') ? '' : 'none';
+    // "Inconsistências": só o administrador na própria conta (some ao entrar como cliente).
+    const btnIncons = document.getElementById('btnInconsistencias');
+    if(btnIncons) btnIncons.style.display = (me.papel === 'escritorio' && !localStorage.getItem('portalAdminToken')) ? '' : 'none';
     return true;
   }catch(e){
     authToken = null; localStorage.removeItem('portalToken');
@@ -2071,8 +2075,10 @@ async function openEditCategorias(){
   openOverlayFilho(openMenuPanel, `<div class="panel-head"><div><h2>Editar categorias</h2><p>Carregando…</p></div><button class="close-x" onclick="closeOverlay()">✕</button></div>`);
   const lista = await apiFetch('/api/cadastros/categorias').catch(()=>[]);
   const gruposOpts = g => `<option value="">— Não classificado —</option>` + GRUPOS_DRE.map(x=>`<option value="${x}" ${g===x?'selected':''}>${x}</option>`).join('');
+  const semGrupo = (lista||[]).filter(c => !c.grupo_dre);
+  const alertaSemGrupo = semGrupo.length ? `<div style="border-radius:12px; padding:10px 14px; margin:0 0 12px; background:var(--gold-wash); border:1px solid var(--gold-soft); font-size:12.5px; color:var(--ink);"><strong>${semGrupo.length} categoria${semGrupo.length>1?'s':''} sem grupo no DRE.</strong> Lançamentos nelas aparecem como "Não classificado" e deixam o resultado impreciso. Escolha o grupo nas linhas destacadas e salve.</div>` : '';
   const linhas = (lista||[]).map(c => `
-    <tr data-id="${c.id}">
+    <tr data-id="${c.id}"${c.grupo_dre ? '' : ' style="background:var(--gold-wash);"'}>
       <td><input type="text" class="ec-nome" value="${escapeHtml(c.nome_categoria)}" style="width:100%; min-width:220px; ${ESTILO_INPUT_MENU}"></td>
       <td>${c.tipo === 'receita' ? 'Receita' : 'Despesa'}</td>
       <td><select class="ec-grupo" style="width:100%; ${ESTILO_INPUT_MENU}">${gruposOpts(c.grupo_dre)}</select></td>
@@ -2083,6 +2089,7 @@ async function openEditCategorias(){
       <div><h2>Editar categorias</h2><p>Corrija o nome ou o grupo de DRE (fixo/variável/etc.) de uma categoria — o grupo de DRE é o que alimenta o relatório de DRE automático.</p></div>
       <button class="close-x" onclick="closeOverlay()">✕</button>
     </div>
+    ${alertaSemGrupo}
     <div style="overflow-x:auto;">
     <table class="report"><thead><tr><th>Nome</th><th>Tipo</th><th>Grupo de DRE</th><th></th></tr></thead>
     <tbody id="ecCategoriasBody">${linhas || '<tr><td colspan="4">Nenhuma categoria cadastrada ainda.</td></tr>'}</tbody></table>
@@ -4474,24 +4481,37 @@ const LIMIAR_SAUDE_VERDE_PCT = 10;    // margem de segurança >= 10% acima do po
 const LIMIAR_SAUDE_VERMELHO_PCT = -10; // margem de segurança <= -10% do ponto de equilíbrio
 
 function statusSaudeEmpresa(calc){
-  // parcial=true só quando há um motivo concreto registrado em calc.avisos (falha real ao buscar
-  // juros, ou valor relevante de dívida/cartão fora do resultado) -- nunca um "achismo" sobre a
-  // receita estar incompleta, já que isso não tem um sinal de dado verificável disponível hoje.
+  // v3.5 (pedido da Danielle, 06/10/2026): tom de plano, não de alarme. Vermelho SÓ quando o dado
+  // do período está completo (base completa, juros carregados e nada sem grupo no DRE). Com dado
+  // incompleto o card mostra "Em consolidação" (âmbar) e lista o que falta para fechar o retrato.
   const parcial = (calc.avisos||[]).length > 0;
-  const sufixoLabel = calc.baseIncompleta ? ' · base incompleta' : (parcial ? ' · dados parciais' : '');
+  const pendencias = [];
+  if(calc.baseIncompleta) pendencias.push('completar o histórico do período (a base carregada é parcial)');
+  if(!calc.jurosDisponiveis) pendencias.push('atualizar os juros de financiamentos (a consulta falhou agora)');
+  if(calc.naoClass > 0) pendencias.push('classificar ' + fmtBRL(calc.naoClass) + ' em lançamentos sem grupo no DRE');
+  const dadosCompletos = pendencias.length === 0;
+
+  if(!dadosCompletos){
+    return { cor:'amarelo', label:'Em consolidação', parcial, pendencias, dadosCompletos,
+      frase:'Estamos organizando os números deste período para entregar um retrato fiel. Assim que os pontos abaixo forem concluídos, esta leitura fica precisa.' };
+  }
+  const sufixoLabel = parcial ? ' · dados parciais' : '';
   if(calc.pontoEquilibrio == null){
-    return { cor:'vermelho', label:'Risco' + sufixoLabel, parcial, frase:'Margem de contribuição zerada ou negativa neste período — cada venda está custando mais do que gera de receita. Revisar preço ou custo variável antes de qualquer outra coisa.' };
+    return { cor:'vermelho', label:'Plano de ação' + sufixoLabel, parcial, pendencias, dadosCompletos,
+      frase:'A margem de contribuição do período está zerada ou negativa. Estes 3 pontos têm mais efeito: preço, custo de compra, despesas fixas.' };
   }
   const msp = calc.margemSegurancaPct;
   if(calc.lucroLiquido < 0 || msp <= LIMIAR_SAUDE_VERMELHO_PCT){
-    return { cor:'vermelho', label:'Risco' + sufixoLabel, parcial, frase: calc.margemSegurancaRS >= 0
-      ? 'A receita já está acima do ponto de equilíbrio, mas o resultado do período ainda é negativo — revisar despesas financeiras e lançamentos não classificados.'
-      : `Faltam ${fmtBRL(Math.abs(calc.margemSegurancaRS))} em vendas para cobrir todos os custos e juros do período.` };
+    return { cor:'vermelho', label:'Plano de ação' + sufixoLabel, parcial, pendencias, dadosCompletos, frase: calc.margemSegurancaRS >= 0
+      ? 'A receita já passou do ponto de equilíbrio e falta pouco para o resultado fechar no azul. Os pontos de maior efeito: despesas financeiras e lançamentos sem classificação.'
+      : `A margem do mês está abaixo do equilíbrio (faltam ${fmtBRL(Math.abs(calc.margemSegurancaRS))} em vendas). Estes 3 pontos têm mais efeito: preço, custo de compra, despesas fixas.` };
   }
   if(msp < LIMIAR_SAUDE_VERDE_PCT){
-    return { cor:'amarelo', label:'Atenção' + sufixoLabel, parcial, frase:`A empresa está no lucro, mas com pouca folga acima do ponto de equilíbrio (${msp.toFixed(1)}%) — qualquer queda de venda ou alta de custo pode virar prejuízo.` };
+    return { cor:'amarelo', label:'Quase lá' + sufixoLabel, parcial, pendencias, dadosCompletos,
+      frase:`A empresa está no lucro, com folga de ${msp.toFixed(1)}% acima do ponto de equilíbrio. Reforçar a margem aumenta essa segurança.` };
   }
-  return { cor:'verde', label:'Saudável' + sufixoLabel, parcial, frase:`A empresa está lucrativa e ${msp.toFixed(1)}% acima do ponto de equilíbrio neste período.` };
+  return { cor:'verde', label:'Saudável' + sufixoLabel, parcial, pendencias, dadosCompletos,
+    frase:`A empresa está lucrativa e ${msp.toFixed(1)}% acima do ponto de equilíbrio neste período.` };
 }
 
 function corSaudeEmpresa(cor){
@@ -4525,6 +4545,7 @@ async function renderSaudeEmpresaCard(){
         <div>
           <div style="font-size:11px; letter-spacing:1.5px; text-transform:uppercase; color:${c.texto}; font-weight:600;">Saúde da empresa — ${status.label}</div>
           <div style="font-family:'Playfair Display',serif; font-size:17px; color:var(--ink); margin-top:4px; max-width:620px;">${status.frase}</div>
+          ${(status.pendencias&&status.pendencias.length) ? `<div style="font-size:12.5px; color:var(--ink-soft,var(--ink)); margin-top:6px; max-width:620px;">Para fechar este retrato: ${status.pendencias.join(' · ')}.</div>` : ''}
         </div>
       </div>
       <div style="display:flex; align-items:center; gap:10px;" onclick="event.stopPropagation();">
@@ -4915,9 +4936,9 @@ const CADASTRO_META = {
   sacados:{ endpoint:'/api/cadastros/sacados', nomeKey:'nome', novoLabel:'cliente/sacado',
     extraFields:[{name:'cnpj_cpf', label:'CNPJ/CPF (opcional)', mask:'cnpjCpf'}, {name:'contato', label:'Contato (opcional)', mask:'telefone'}, {name:'endereco', label:'Endereço (opcional)'}] },
   categoriasDespesa:{ endpoint:'/api/cadastros/categorias', nomeKey:'nome_categoria', novoLabel:'categoria',
-    postExtra:{tipo:'despesa'}, extraFields:[] },
+    postExtra:{tipo:'despesa'}, extraFields:[{name:'grupo_dre', label:'Grupo no DRE (obrigatório)', type:'select', gruposTipo:'despesa', required:true}] },
   categoriasReceita:{ endpoint:'/api/cadastros/categorias', nomeKey:'nome_categoria', novoLabel:'categoria',
-    postExtra:{tipo:'receita'}, extraFields:[] },
+    postExtra:{tipo:'receita'}, extraFields:[{name:'grupo_dre', label:'Grupo no DRE (obrigatório)', type:'select', gruposTipo:'receita', required:true}] },
   contasBancarias:{ endpoint:'/api/cadastros/contas-bancarias', nomeKey:'nome_conta', novoLabel:'conta bancária',
     extraFields:[{name:'banco', label:'Banco (opcional)'}, {name:'agencia', label:'Agência (opcional)'}, {name:'numero_conta', label:'Número da conta (opcional)'}] },
     produtos:{ endpoint:'/api/produtos', nomeKey:'nome', novoLabel:'produto', extraFields:[] },
@@ -5054,6 +5075,11 @@ function renderCadastroField(f, prefill){
     `<option value="__novo__" ${selectedValue==='__novo__'?'selected':''}>+ Cadastrar novo ${meta.novoLabel}</option>`,
   ].join('');
   const extraFieldsHtml = (meta.extraFields||[]).map(extra => {
+    if(extra.type === 'select'){
+      const grupos = extra.gruposTipo === 'receita' ? ['Receita'] : GRUPOS_DRE.filter(g => g !== 'Receita');
+      return `<select name="novo_${f.name}_${extra.name}"><option value="">— ${escapeHtml(extra.label)} —</option>${grupos.map(g=>`<option value="${g}">${g}</option>`).join('')}</select>`
+        + `<span style="font-size:10.5px; display:block; color:var(--ink-faint);">O grupo coloca a categoria no lugar certo do DRE.</span>`;
+    }
     const maskAttr = extra.mask ? ` data-mask="${extra.mask}"` : '';
     const feedback = extra.mask==='cnpjCpf' ? `<span class="doc-feedback" style="font-size:10.5px; display:block;"></span>` : '';
     return `<input name="novo_${f.name}_${extra.name}" type="text" placeholder="${escapeHtml(extra.label)}"${maskAttr} />${feedback}`;
@@ -5447,9 +5473,15 @@ async function resolverCadastro(f, obj){
   const body = Object.assign({}, meta.postExtra||{}, { [meta.nomeKey]: nome });
   (meta.extraFields||[]).forEach(extra=>{
     const v = (obj['novo_'+f.name+'_'+extra.name] || '').trim();
+    if(extra.required && !v) throw new Error('Escolha o grupo no DRE da nova categoria — é ele que coloca o lançamento no lugar certo do DRE.');
     if(v) body[extra.name] = v;
   });
   const criado = await apiFetch(meta.endpoint, {method:'POST', body: JSON.stringify(body)});
+  // Garante o grupo no DRE mesmo que o servidor ignore o campo no POST.
+  if(body.grupo_dre && criado && criado.grupo_dre !== body.grupo_dre){
+    try{ await apiFetch(meta.endpoint + '/' + criado.id, {method:'PATCH', body: JSON.stringify({ nome_categoria: nome, grupo_dre: body.grupo_dre })}); }
+    catch(err){ console.error('Categoria criada, mas não foi possível gravar o grupo no DRE:', err); }
+  }
   return criado.id;
 }
 
@@ -6646,7 +6678,104 @@ document.getElementById('formRedefinirSenha').addEventListener('submit', async e
 });
 
 document.getElementById('btnMenu').addEventListener('click', openMenuPanel);
+/* ---------- INCONSISTÊNCIAS (somente administrador) ----------
+   Pedido da Danielle (06/10/2026): um lugar só, invisível ao cliente, que lista tudo o que o
+   escritório precisa corrigir no portal. Só LÊ dados já carregados (DATA) e o cadastro de
+   categorias; não grava nada. Futuro: plano de ação/estratégia por cliente neste mesmo painel. */
+async function openInconsistenciasPanel(){
+  if(!(USUARIO && USUARIO.papel === 'escritorio') || localStorage.getItem('portalAdminToken')) return;
+  openOverlay(`<div class="panel-head"><div><h2>Inconsistências</h2><p>Analisando os lançamentos…</p></div><button class="close-x" onclick="closeOverlay()">✕</button></div>`);
+  const hoje = (typeof todayISO === 'function') ? todayISO() : new Date().toISOString().slice(0,10);
+  const pagar = (DATA && DATA.contasPagar || []).filter(x => x.status !== 'Cancelado');
+  const receber = (DATA && DATA.contasReceber || []).filter(x => x.status !== 'Cancelado');
+  const itens = [];
+  const lista = (arr, f) => arr.slice(0, 8).map(f).join('');
+  const li = t => `<li style="margin:3px 0;">${t}</li>`;
+  const add = (sev, titulo, detalhe, fazer, lis) => itens.push({sev, titulo, detalhe, fazer, lis: lis || ''});
+
+  let cats = [];
+  try{ cats = await apiFetch('/api/cadastros/categorias') || []; }catch(e){ add('media','Não foi possível carregar as categorias agora','A consulta falhou; as verificações de categoria ficaram de fora.','Abrir de novo este painel em instantes.'); }
+  const catsSemGrupo = cats.filter(c => !c.grupo_dre);
+  if(catsSemGrupo.length) add('alta', catsSemGrupo.length + ' categoria(s) sem grupo no DRE',
+    'Lançamentos nessas categorias caem em "Não classificado" e distorcem o resultado.',
+    'Menu › Editar › Categorias: escolha o grupo de cada uma e salve.',
+    '<ul style="margin:6px 0 0 18px;">' + lista(catsSemGrupo, c => li(escapeHtml(c.nome_categoria))) + '</ul>');
+
+  const pagSemGrupo = pagar.filter(x => !x.grupo_dre);
+  if(pagSemGrupo.length) add('alta', pagSemGrupo.length + ' lançamento(s) de A pagar sem grupo no DRE',
+    'Total ' + fmtBRL(pagSemGrupo.reduce((s,x)=>s+x.valor_original,0)) + ' fora de qualquer grupo do DRE.',
+    'Corrigir a categoria do lançamento (ou o grupo da categoria).',
+    '<ul style="margin:6px 0 0 18px;">' + lista(pagSemGrupo, x => li(escapeHtml(x.codigo||'') + ' · ' + escapeHtml(x.credor||'sem credor') + ' · ' + fmtBRL(x.valor_original))) + '</ul>');
+  const recSemGrupo = receber.filter(x => !x.grupo_dre);
+  if(recSemGrupo.length) add('alta', recSemGrupo.length + ' lançamento(s) de A receber sem grupo no DRE',
+    'Total ' + fmtBRL(recSemGrupo.reduce((s,x)=>s+x.valor_original,0)) + ' sem grupo.',
+    'Corrigir a categoria do lançamento (ou o grupo da categoria).',
+    '<ul style="margin:6px 0 0 18px;">' + lista(recSemGrupo, x => li(escapeHtml(x.codigo||'') + ' · ' + escapeHtml(x.cliente||'sem cliente') + ' · ' + fmtBRL(x.valor_original))) + '</ul>');
+
+  const genericas = pagar.filter(x => /DIVERS/i.test(x.categoria||''));
+  if(genericas.length) add('media', genericas.length + ' lançamento(s) em categorias genéricas ("diversas")',
+    'Total ' + fmtBRL(genericas.reduce((s,x)=>s+x.valor_original,0)) + '. Categoria genérica esconde para onde o dinheiro vai (ex.: terceirizados).',
+    'Abrir cada lançamento e recategorizar (serviços terceirizados, mão de obra, manutenção etc.).',
+    '<ul style="margin:6px 0 0 18px;">' + lista(genericas, x => li(escapeHtml(x.codigo||'') + ' · ' + escapeHtml(x.credor||'') + ' · ' + escapeHtml(x.categoria||'') + ' · ' + fmtBRL(x.valor_original))) + '</ul>');
+
+  const abertos = x => x.status === 'Em Aberto' || x.status === 'Pago Parcial';
+  const pagVenc = pagar.filter(x => abertos(x) && x.vencimento && String(x.vencimento).slice(0,10) < hoje);
+  if(pagVenc.length) add('media', pagVenc.length + ' conta(s) a pagar vencida(s) e em aberto',
+    'Saldo aproximado ' + fmtBRL(pagVenc.reduce((s,x)=>s+(x.valor_original-(x.valor_pago||0)),0)) + '. Pode ser atraso real ou baixa não registrada.',
+    'Conferir com o cliente: se já foi pago, dar baixa; se não, tratar a renegociação.',
+    '<ul style="margin:6px 0 0 18px;">' + lista(pagVenc, x => li(escapeHtml(x.codigo||'') + ' · ' + escapeHtml(x.credor||'') + ' · venc. ' + fmtDate(x.vencimento) + ' · ' + fmtBRL(x.valor_original))) + '</ul>');
+  const recVenc = receber.filter(x => abertos(x) && x.vencimento && String(x.vencimento).slice(0,10) < hoje);
+  if(recVenc.length) add('media', recVenc.length + ' conta(s) a receber vencida(s) e em aberto',
+    'Saldo aproximado ' + fmtBRL(recVenc.reduce((s,x)=>s+(x.valor_original-(x.valor_recebido||0)),0)) + '. Pode ser inadimplência ou recebimento sem baixa.',
+    'Conferir o recebimento e dar baixa, ou iniciar a cobrança.',
+    '<ul style="margin:6px 0 0 18px;">' + lista(recVenc, x => li(escapeHtml(x.codigo||'') + ' · ' + escapeHtml(x.cliente||'') + ' · venc. ' + fmtDate(x.vencimento) + ' · ' + fmtBRL(x.valor_original))) + '</ul>');
+
+  const pagoSemData = pagar.concat(receber).filter(x => (x.status === 'Pago Total' || x.status === 'Recebido Total') && !(x.data_pagamento || x.data_recebimento));
+  if(pagoSemData.length) add('baixa', pagoSemData.length + ' lançamento(s) quitado(s) sem data de pagamento/recebimento',
+    'O fluxo de caixa realizado depende dessa data.', 'Preencher a data na edição do lançamento.');
+
+  const norm = s => String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/[^A-Z0-9]+/g,' ').trim();
+  const porNorm = {};
+  pagar.forEach(x => { const k = norm(x.credor); if(!k) return; (porNorm[k] = porNorm[k] || new Set()).add(x.credor); });
+  const dups = Object.values(porNorm).filter(set => set.size > 1);
+  if(dups.length) add('baixa', dups.length + ' fornecedor(es) com grafia repetida',
+    'O mesmo credor escrito de formas diferentes divide o histórico e atrapalha o relatório por fornecedor.',
+    'Unificar o cadastro em Menu › Editar › Fornecedores.',
+    '<ul style="margin:6px 0 0 18px;">' + dups.slice(0,8).map(set => li(Array.from(set).map(escapeHtml).join(' / '))).join('') + '</ul>');
+
+  const semCredor = pagar.filter(x => !String(x.credor||'').trim());
+  if(semCredor.length) add('baixa', semCredor.length + ' lançamento(s) de A pagar sem credor', 'Sem credor não há relatório por fornecedor.', 'Informar o credor na edição.');
+
+  try{
+    const chaves12 = janelaMesesSaude('ano');
+    const avisos = avisosBasePeriodo(chaves12);
+    if(avisos.length) add('media', 'Base de dados parcial nos últimos 12 meses', avisos[0].slice(0, 320) + (avisos[0].length > 320 ? '…' : ''), 'Importar/lançar o histórico que falta antes de apresentar resultados do período completo.');
+  }catch(e){}
+
+  const ordem = {alta:0, media:1, baixa:2};
+  itens.sort((a,b) => ordem[a.sev] - ordem[b.sev]);
+  const cor = {alta:'var(--red)', media:'var(--gold-soft)', baixa:'var(--ink-faint)'};
+  const rot = {alta:'Corrigir primeiro', media:'Conferir', baixa:'Quando der'};
+  const corpo = itens.length ? itens.map(it => `
+    <div style="border:1px solid var(--border); border-left:4px solid ${cor[it.sev]}; border-radius:12px; padding:12px 14px; margin:0 0 10px; background:var(--surface);">
+      <div style="font-size:10.5px; letter-spacing:1.2px; text-transform:uppercase; color:${cor[it.sev]}; font-weight:600;">${rot[it.sev]}</div>
+      <div style="font-size:14.5px; font-weight:600; color:var(--ink); margin-top:2px;">${it.titulo}</div>
+      <div style="font-size:12.5px; color:var(--ink); margin-top:4px;">${it.detalhe}</div>
+      <div style="font-size:12.5px; color:var(--olive-strong); margin-top:4px;"><strong>O que fazer:</strong> ${it.fazer}</div>
+      ${it.lis ? `<div style="font-size:12px; color:var(--ink-soft,var(--ink)); margin-top:4px;">${it.lis}</div>` : ''}
+    </div>`).join('') : `<div style="border-radius:12px; padding:14px; background:var(--olive-wash); border:1px solid var(--olive); font-size:13.5px;">Nenhuma inconsistência encontrada nas verificações atuais.</div>`;
+  openOverlay(`
+    <div class="panel-head">
+      <div><h2>Inconsistências</h2><p>${itens.length ? itens.length + ' ponto(s) para corrigir, do mais importante ao menos importante.' : 'Tudo em ordem nas verificações atuais.'} Visível somente para o administrador. Nada aqui altera dados.</p></div>
+      <button class="close-x" onclick="closeOverlay()">✕</button>
+    </div>
+    ${corpo}
+    <p style="font-size:11.5px; color:var(--ink-faint); margin-top:14px;">Em breve neste painel: plano de ações e estratégia por cliente.</p>
+  `);
+}
+
 document.getElementById('btnClientes').addEventListener('click', openClientesPanel);
+document.getElementById('btnInconsistencias').addEventListener('click', openInconsistenciasPanel);
 
 document.getElementById('btnLogout').addEventListener('click', ()=>{
   authToken = null; localStorage.removeItem('portalToken');
