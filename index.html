@@ -228,6 +228,21 @@
   .close-x:hover{background:var(--paper-3); color:var(--ink);}
 
   .panel-actions{display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap;}
+  /* Fechamento de caixa: filtro de período (botões + navegador) */
+  .fc-filtro{display:flex; align-items:center; gap:14px 22px; flex-wrap:wrap; margin-bottom:12px;}
+  .fc-seg{display:inline-flex; border:1px solid var(--gold-line); border-radius:10px; overflow:hidden; background:var(--surface-soft);}
+  .fc-seg button{border:0; background:transparent; color:var(--ink-soft); font:inherit; font-size:13px; padding:9px 14px; cursor:pointer; border-right:1px solid var(--gold-line);}
+  .fc-seg button:last-child{border-right:0;}
+  .fc-seg button:hover{background:var(--gold-wash); color:var(--ink);}
+  .fc-seg button.on{background:var(--gold); color:#fff; font-weight:600;}
+  .fc-nav{display:inline-flex; align-items:center; gap:8px;}
+  .fc-nav-b{width:34px; height:34px; border-radius:50%; border:1px solid var(--gold-line); background:var(--surface-soft); color:var(--ink); font-size:20px; line-height:1; cursor:pointer;}
+  .fc-nav-b:hover{background:var(--gold-wash); border-color:var(--gold-soft);}
+  .fc-nav-rot{min-width:210px; text-align:center; line-height:1.25;}
+  .fc-nav-rot strong{display:block; font-size:15px; color:var(--ink);}
+  .fc-nav-rot span{display:block; font-size:12px; color:var(--ink-soft);}
+  .fc-nav-rot .fc-chip{display:inline-block; font-size:11px; padding:2px 8px; border-radius:20px; background:var(--gold-wash); color:var(--gold); margin-top:3px;}
+  .fc-hoje{border:0; background:transparent; color:var(--gold); font:inherit; font-size:13px; text-decoration:underline; cursor:pointer; padding:6px 4px;}
   .btn{
     font-family:inherit; font-size:12.5px; letter-spacing:.4px; padding:10px 18px; border-radius:11px;
     border:1px solid var(--border); background:var(--paper-2); color:var(--ink); cursor:pointer;
@@ -395,7 +410,7 @@
         .overlay{position:static !important; background:none !important; backdrop-filter:none !important; padding:0 !important; opacity:1 !important; pointer-events:auto !important;}
         .overlay:not(.open){display:none !important;}
         .panel{box-shadow:none; border:1px solid #ddd; transform:none !important; opacity:1 !important;}
-        .panel-actions,.close-x{display:none !important;}
+        .panel-actions,.close-x,.fc-filtro{display:none !important;}
         /* pedido da Danielle (12/09/2026): a impressão dos extratos (fornecedor, categoria,
         vencimento, valor, saldo em aberto etc.) saía em cinza claro (--ink-soft/--ink-faint,
         pensados pra tela, com opacidade baixa) — no papel/PDF isso lê como cinza claro demais.
@@ -1283,8 +1298,8 @@ function computeFechamentoDia(diaISO){
    com navegação para períodos anteriores/seguintes. Nada aqui altera KPI, DRE ou saldo. */
 let fcPeriodo = { tipo:'semana', offset:0 };
 const FC_TIPOS = [
-  {v:'dia', r:'Diário'}, {v:'semana', r:'Semanal'}, {v:'mes', r:'Mensal'},
-  {v:'trimestre', r:'Trimestral'}, {v:'semestre', r:'Semestral'}, {v:'ano', r:'Anual'}
+  {v:'dia', r:'Dia'}, {v:'semana', r:'Semana'}, {v:'mes', r:'Mês'},
+  {v:'trimestre', r:'Trimestre'}, {v:'semestre', r:'Semestre'}, {v:'ano', r:'Ano'}
 ];
 const FC_MESES = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
 const FC_CAT_DAV = 'CLIENTE DISTRIBUIDORA';
@@ -4216,7 +4231,9 @@ function openFechamentoPanel(){
   const rl = fcRealizado(iv);
   const avisos = fcCobertura(iv);
   const n = v => fmtBRL(Math.round(Number(v||0)*100)/100 + 0);
-  const optsTipo = FC_TIPOS.map(t=>`<option value="${t.v}" ${t.v===tipo?'selected':''}>${t.r}</option>`).join('');
+  const segTipo = FC_TIPOS.map(t=>`<button type="button" class="${t.v===tipo?'on':''}" aria-pressed="${t.v===tipo}" onclick="fcMudarTipo('${t.v}')">${t.r}</button>`).join('');
+  const faixa = iv.ini === iv.fim ? '' : 'de ' + fmtDate(iv.ini) + ' até ' + fmtDate(iv.fim);
+  const sitPer = fcPeriodo.offset===0 ? 'Período atual' : (fcPeriodo.offset>0 ? 'Período futuro' : 'Período passado');
   const contagem = l => l.n ? ` <span style="color:var(--ink-faint); font-size:11px;">(${l.n} título${l.n>1?'s':''})</span>` : '';
   const linhaOrigem = (rotulo, l) => `<tr><td>${rotulo}${contagem(l)}</td><td>${n(l.valor)}</td><td>${n(l.realizado)}</td><td>${n(l.aberto)}</td></tr>`;
 
@@ -4245,14 +4262,19 @@ function openFechamentoPanel(){
 
   openOverlay(`
     <div class="panel-head">
-      <div><h2>Fechamento de caixa</h2><p>${fcRotulo(tipo, iv)} · de ${fmtDate(iv.ini)} até ${fmtDate(iv.fim)}.</p></div>
+      <div><h2>Fechamento de caixa</h2><p>Escolha o período para ver as entradas e saídas previstas e o caixa realizado.</p></div>
       <button class="close-x" onclick="closeOverlay()">✕</button>
     </div>
+    <div class="fc-filtro">
+      <div class="fc-seg" role="group" aria-label="Tipo de período">${segTipo}</div>
+      <div class="fc-nav">
+        <button type="button" class="fc-nav-b" onclick="fcNavegar(-1)" aria-label="Período anterior" title="Período anterior">‹</button>
+        <div class="fc-nav-rot"><strong>${fcRotulo(tipo, iv)}</strong>${faixa ? '<span>'+faixa+'</span>' : ''}<span class="fc-chip">${sitPer}</span></div>
+        <button type="button" class="fc-nav-b" onclick="fcNavegar(1)" aria-label="Próximo período" title="Próximo período">›</button>
+      </div>
+      ${fcPeriodo.offset!==0 ? '<button type="button" class="fc-hoje" onclick="fcNavegar(0)">Voltar para o período atual</button>' : ''}
+    </div>
     <div class="panel-actions" style="align-items:center;">
-      <select id="fcTipo" onchange="fcMudarTipo(this.value)" aria-label="Período">${optsTipo}</select>
-      <button class="btn" onclick="fcNavegar(-1)" aria-label="Período anterior">◀</button>
-      <button class="btn" onclick="fcNavegar(0)">Hoje</button>
-      <button class="btn" onclick="fcNavegar(1)" aria-label="Próximo período">▶</button>
       <button class="btn gold" onclick="closeOverlay(); openForm('caixa')">+ Adicionar movimento de caixa</button>
       <button class="btn" onclick="window.print()">Imprimir fechamento</button>
     </div>
