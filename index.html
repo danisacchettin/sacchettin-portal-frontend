@@ -228,6 +228,21 @@
   .close-x:hover{background:var(--paper-3); color:var(--ink);}
 
   .panel-actions{display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap;}
+  /* Fechamento de caixa: filtro de período (botões + navegador) */
+  .fc-filtro{display:flex; align-items:center; gap:14px 22px; flex-wrap:wrap; margin-bottom:12px;}
+  .fc-seg{display:inline-flex; border:1px solid var(--gold-line); border-radius:10px; overflow:hidden; background:var(--surface-soft);}
+  .fc-seg button{border:0; background:transparent; color:var(--ink-soft); font:inherit; font-size:13px; padding:9px 14px; cursor:pointer; border-right:1px solid var(--gold-line);}
+  .fc-seg button:last-child{border-right:0;}
+  .fc-seg button:hover{background:var(--gold-wash); color:var(--ink);}
+  .fc-seg button.on{background:var(--gold); color:#fff; font-weight:600;}
+  .fc-nav{display:inline-flex; align-items:center; gap:8px;}
+  .fc-nav-b{width:34px; height:34px; border-radius:50%; border:1px solid var(--gold-line); background:var(--surface-soft); color:var(--ink); font-size:20px; line-height:1; cursor:pointer;}
+  .fc-nav-b:hover{background:var(--gold-wash); border-color:var(--gold-soft);}
+  .fc-nav-rot{min-width:210px; text-align:center; line-height:1.25;}
+  .fc-nav-rot strong{display:block; font-size:15px; color:var(--ink);}
+  .fc-nav-rot span{display:block; font-size:12px; color:var(--ink-soft);}
+  .fc-nav-rot .fc-chip{display:inline-block; font-size:11px; padding:2px 8px; border-radius:20px; background:var(--gold-wash); color:var(--gold); margin-top:3px;}
+  .fc-hoje{border:0; background:transparent; color:var(--gold); font:inherit; font-size:13px; text-decoration:underline; cursor:pointer; padding:6px 4px;}
   .btn{
     font-family:inherit; font-size:12.5px; letter-spacing:.4px; padding:10px 18px; border-radius:11px;
     border:1px solid var(--border); background:var(--paper-2); color:var(--ink); cursor:pointer;
@@ -395,7 +410,7 @@
         .overlay{position:static !important; background:none !important; backdrop-filter:none !important; padding:0 !important; opacity:1 !important; pointer-events:auto !important;}
         .overlay:not(.open){display:none !important;}
         .panel{box-shadow:none; border:1px solid #ddd; transform:none !important; opacity:1 !important;}
-        .panel-actions,.close-x{display:none !important;}
+        .panel-actions,.close-x,.fc-filtro,.fc-abas{display:none !important;}
         /* pedido da Danielle (12/09/2026): a impressão dos extratos (fornecedor, categoria,
         vencimento, valor, saldo em aberto etc.) saía em cinza claro (--ink-soft/--ink-faint,
         pensados pra tela, com opacidade baixa) — no papel/PDF isso lê como cinza claro demais.
@@ -907,7 +922,7 @@ Fica fora de .wrap para continuar visível quando .wrap é escondido em @media p
     <div class="type-toggle" id="typeToggle">
       <button class="active" data-type="pagar">A pagar</button>
       <button data-type="receber">A receber</button>
-      <button data-type="caixa">Fluxo de Caixa</button>
+      <button data-type="caixa">Movimento de caixa</button>
     </div>
     <form id="entryForm">
       <div class="type-toggle" id="entryModeToggle">
@@ -1271,7 +1286,7 @@ function computeFechamentoSemana(){
 
 function computeFechamentoDia(diaISO){
   const movs = DATA.caixaMovimentos.filter(m=> String(m.data).slice(0,10) === diaISO);
-  return Object.assign({ dia: diaISO }, resumirMovimentos(movs));
+  return Object.assign({ dia: diaISO, din: fcDinheiro(movs), inconsist: fcInconsistentes(movs) }, resumirMovimentos(movs));
 }
 
 /* ---------- FECHAMENTO DE CAIXA (08/10/2026): período, entradas por origem e totalizador ----------
@@ -1283,8 +1298,8 @@ function computeFechamentoDia(diaISO){
    com navegação para períodos anteriores/seguintes. Nada aqui altera KPI, DRE ou saldo. */
 let fcPeriodo = { tipo:'semana', offset:0 };
 const FC_TIPOS = [
-  {v:'dia', r:'Diário'}, {v:'semana', r:'Semanal'}, {v:'mes', r:'Mensal'},
-  {v:'trimestre', r:'Trimestral'}, {v:'semestre', r:'Semestral'}, {v:'ano', r:'Anual'}
+  {v:'dia', r:'Dia'}, {v:'semana', r:'Semana'}, {v:'mes', r:'Mês'},
+  {v:'trimestre', r:'Trimestre'}, {v:'semestre', r:'Semestre'}, {v:'ano', r:'Ano'}
 ];
 const FC_MESES = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
 const FC_CAT_DAV = 'CLIENTE DISTRIBUIDORA';
@@ -1351,8 +1366,42 @@ function fcRealizado(iv){
   const resumo = resumirMovimentos(movs);
   const mapa = {};
   movs.forEach(m=>{ const d = String(m.data).slice(0,10); (mapa[d] = mapa[d] || []).push(m); });
-  const porDia = Object.keys(mapa).sort().map(dia => ({ dia, ...resumirMovimentos(mapa[dia]) }));
-  return Object.assign({ porDia }, resumo);
+  const porDia = Object.keys(mapa).sort().map(dia => ({ dia, ...resumirMovimentos(mapa[dia]), din: fcDinheiro(mapa[dia]) }));
+  return Object.assign({ porDia, dinheiro: fcDinheiro(movs), inconsist: fcInconsistentes(movs) }, resumo);
+}
+/* ---------- Dinheiro: separar o que é gaveta do que é banco (08/10/2026) ----------
+   "Dinheiro" = só o que entrou/saiu na conta de caixa físico (nome começa com "Caixa"). Um recebimento marcado como
+   Dinheiro mas lançado em conta bancária não está na gaveta — vai para uma linha própria, para conferência.
+   Do que está na gaveta, as vendas de balcão do PDV ficam separadas dos recebimentos de títulos. */
+let fcAba = 'resumo';
+function fcIsCaixaFisico(conta){ return /^caixa/i.test(String(conta||'').trim()); }
+function fcDinheiro(movs){
+  const r = { balcao:0, titulos:0, saidas:0, banco:0, nBanco:0, gaveta:0 };
+  (movs||[]).forEach(m=>{
+    if(m.forma_pagamento!=='Dinheiro') return;
+    const ent = Number(m.entrada||0), liq = ent - Number(m.saida||0);
+    if(!fcIsCaixaFisico(m.conta)){ r.banco += liq; r.nBanco++; return; }
+    if(ent>0 && /vendas?\s+balc[aã]o\s*\(PDV\)/i.test(m.descricao||'')) r.balcao += liq;
+    else if(liq >= 0) r.titulos += liq;
+    else r.saidas += liq;
+  });
+  r.gaveta = r.balcao + r.titulos + r.saidas;
+  return r;
+}
+// Lançamentos em que a forma de pagamento não combina com a conta: Dinheiro em banco, ou PIX/cartão/boleto na conta de caixa.
+function fcInconsistentes(movs){
+  return (movs||[]).filter(m=>{
+    const f = m.forma_pagamento; if(!f) return false;
+    const fis = fcIsCaixaFisico(m.conta);
+    return (f==='Dinheiro' && !fis) || (f!=='Dinheiro' && fis);
+  });
+}
+function fcLinhasDinheiro(d, fmt){
+  const sb = (t,v,cor) => `<tr><td style="padding-left:24px; font-size:12px; color:${cor||'var(--ink-soft)'};">↳ ${t}</td><td style="font-size:12px; color:${cor||'var(--ink-soft)'};">${fmt(v)}</td></tr>`;
+  return sb('Vendas de balcão (PDV)', d.balcao)
+    + sb('Recebimentos em dinheiro no Caixa (títulos e lançamentos manuais)', d.titulos)
+    + (d.saidas ? sb('Saídas em dinheiro no Caixa', d.saidas) : '')
+    + (d.nBanco ? sb('Marcado como Dinheiro, mas lançado em conta bancária (' + d.nBanco + ') — não está na gaveta; confira', d.banco, 'var(--red)') : '');
 }
 // Avisos de cobertura: o portal só carrega parte do histórico (ver JANELA-180-DIAS); em vez de
 // mostrar um número que parece completo, o painel diz de onde os dados começam.
@@ -4159,38 +4208,6 @@ function openPagarHojePanel(){
     ${reportTable(lista,'pagar')}
   `, openPagarHojePanel);
 }
-function openFluxoPanel(){
-  const k = computeKPIs();
-  let acumulado = k.saldoCaixa;
-  const rows = DATA.fluxoProjetado.map(m=>{
-    acumulado += (m.receber - m.pagar);
-    return `<tr><td>${m.mes}</td><td>${fmtBRL(m.receber)}</td><td>${fmtBRL(m.pagar)}</td>
-      <td>${fmtBRL(m.receber-m.pagar)}</td><td>${fmtBRL(acumulado)}</td></tr>`;
-  }).join('');
-  openOverlay(`
-    <div class="panel-head">
-      <div><h2>Fluxo de caixa projetado</h2><p>Projeção de 6 meses a partir do saldo atual em caixa/bancos.</p></div>
-      <button class="close-x" onclick="closeOverlay()">✕</button>
-    </div>
-    <div class="panel-actions">
-      <button class="btn gold" onclick="closeOverlay(); openForm('caixa')">+ Adicionar movimento de caixa</button>
-      <button class="btn" onclick="window.print()">Imprimir</button>
-    </div>
-    <table class="report"><thead><tr><th>Mês</th><th>A receber</th><th>A pagar</th><th>Saldo do mês</th><th>Acumulado</th></tr></thead>
-    <tbody>${rows}</tbody></table>
-    ${DATA.caixaMovimentos.length ? `
-      <p style="font-size:12px; color:var(--ink-soft); margin:22px 0 6px;">Movimentações lançadas pelo cliente</p>
-      <table class="report"><thead><tr><th>Data</th><th>Conta</th><th>Descrição</th><th>Entrada</th><th>Saída</th><th>Origem</th></tr></thead>
-      <tbody>${DATA.caixaMovimentos.slice().reverse().map(m=>`
-        <tr><td>${fmtDate(m.data)}</td><td>${m.conta}</td><td>${m.descricao||'—'}</td>
-        <td>${m.entrada?fmtBRL(m.entrada):'—'}</td><td>${m.saida?fmtBRL(m.saida):'—'}</td><td>${origemTag(m)}</td></tr>`).join('')}</tbody></table>
-    ` : ''}
-    <div class="notes-box">
-      <label style="font-size:11px; letter-spacing:1px; text-transform:uppercase; color:var(--ink-faint);">Notas do cliente</label>
-      <textarea placeholder="Observações sobre a projeção — sincroniza com a planilha ao salvar."></textarea>
-    </div>
-  `);
-}
 function openSaldoPanel(){
   openOverlay(`
     <div class="panel-head">
@@ -4213,7 +4230,10 @@ function openSaldoPanel(){
 function fcNavegar(delta){ fcPeriodo.offset = delta===0 ? 0 : fcPeriodo.offset + delta; openFechamentoPanel(); }
 function fcMudarTipo(tipo){ fcPeriodo = { tipo, offset:0 }; openFechamentoPanel(); }
 // Nome antigo mantido: o cartão, o menu e o extrato do dia ainda chamam openFechamentoSemanaPanel().
-function openFechamentoSemanaPanel(){ openFechamentoPanel(); }
+function openFechamentoSemanaPanel(){ fcAba = 'resumo'; openFechamentoPanel(); }
+// "Fluxo de caixa" deixou de ser um menu separado (08/10/2026): a projeção de 6 meses é uma visão do Fechamento de caixa.
+function openFluxoPanel(){ fcAba = 'projecao'; openFechamentoPanel(); }
+function fcMudarAba(a){ fcAba = a; openFechamentoPanel(); }
 
 function openFechamentoPanel(){
   const tipo = fcPeriodo.tipo;
@@ -4222,7 +4242,9 @@ function openFechamentoPanel(){
   const rl = fcRealizado(iv);
   const avisos = fcCobertura(iv);
   const n = v => fmtBRL(Math.round(Number(v||0)*100)/100 + 0);
-  const optsTipo = FC_TIPOS.map(t=>`<option value="${t.v}" ${t.v===tipo?'selected':''}>${t.r}</option>`).join('');
+  const segTipo = FC_TIPOS.map(t=>`<button type="button" class="${t.v===tipo?'on':''}" aria-pressed="${t.v===tipo}" onclick="fcMudarTipo('${t.v}')">${t.r}</button>`).join('');
+  const faixa = iv.ini === iv.fim ? '' : 'de ' + fmtDate(iv.ini) + ' até ' + fmtDate(iv.fim);
+  const sitPer = fcPeriodo.offset===0 ? 'Período atual' : (fcPeriodo.offset>0 ? 'Período futuro' : 'Período passado');
   const contagem = l => l.n ? ` <span style="color:var(--ink-faint); font-size:11px;">(${l.n} título${l.n>1?'s':''})</span>` : '';
   const linhaOrigem = (rotulo, l) => `<tr><td>${rotulo}${contagem(l)}</td><td>${n(l.valor)}</td><td>${n(l.realizado)}</td><td>${n(l.aberto)}</td></tr>`;
 
@@ -4244,24 +4266,71 @@ function openFechamentoPanel(){
     <tr>
       <td>${fmtDate(d.dia)} (${DIAS_SEMANA_PT[new Date(d.dia+'T12:00:00').getDay()]})</td>
       <td>${n(d.totalEntradas)}</td><td>${n(d.totalSaidas)}</td><td>${n(d.saldo)}</td>
-      <td>${n((DATA.caixaSaldoInicial||0) + d.porForma.Dinheiro)}</td>
+      <td>${n((DATA.caixaSaldoInicial||0) + d.din.gaveta)}</td>
       <td><button type="button" class="btn-mini" onclick="openFechamentoDiaPanel('${d.dia}')">Ver / imprimir extrato do dia</button></td>
     </tr>`).join('');
   const sub = t => `<p style="font-size:12px; color:var(--ink-soft); margin:22px 0 6px;">${t}</p>`;
 
+  const aba = fcAba;
+  const ABAS = [['resumo','Resumo do período'],['projecao','Projeção (6 meses)'],['movimentos','Movimentos']];
+  const segAba = ABAS.map(([v,r])=>`<button type="button" class="${v===aba?'on':''}" aria-pressed="${v===aba}" onclick="fcMudarAba('${v}')">${r}</button>`).join('');
+  const descAba = aba==='projecao' ? 'Projeção de 6 meses a partir do saldo atual em caixa e bancos. Não depende do período escolhido.'
+    : aba==='movimentos' ? 'Movimentos de caixa lançados no período escolhido.'
+    : 'Escolha o período para ver as entradas e saídas previstas e o caixa realizado.';
+
+  // Projeção (antigo "Fluxo de caixa")
+  const kp = computeKPIs();
+  let acum = kp.saldoCaixa;
+  const linhasProj = (DATA.fluxoProjetado||[]).map(m=>{
+    acum += (m.receber - m.pagar);
+    return `<tr><td>${escapeHtml(m.mes)}</td><td>${n(m.receber)}</td><td>${n(m.pagar)}</td><td>${n(m.receber-m.pagar)}</td><td>${n(acum)}</td></tr>`;
+  }).join('');
+  const htmlProjecao = `
+    <table class="report"><thead><tr><th>Mês</th><th>A receber</th><th>A pagar</th><th>Saldo do mês</th><th>Acumulado</th></tr></thead>
+    <tbody><tr><td><em>Saldo atual em caixa e bancos</em></td><td></td><td></td><td></td><td>${n(kp.saldoCaixa)}</td></tr>${linhasProj}</tbody></table>
+    <p style="font-size:11.5px; color:var(--ink-soft); margin:8px 0 0;">Títulos cancelados, pagos ou adiantados não entram nesta projeção.</p>
+    <div class="notes-box">
+      <label style="font-size:11px; letter-spacing:1px; text-transform:uppercase; color:var(--ink-faint);">Notas do cliente</label>
+      <textarea placeholder="Observações sobre a projeção — sincroniza com a planilha ao salvar."></textarea>
+    </div>`;
+
+  // Movimentos (antigo "Movimentações lançadas pelo cliente") + conferência forma x conta
+  const movsPer = rl.movs.slice().reverse();
+  const incons = rl.inconsist;
+  const linhaMov = m => `<tr><td>${fmtDate(m.data)}</td><td>${escapeHtml(m.conta)}</td><td>${escapeHtml(m.descricao)||'—'}</td><td>${escapeHtml(m.forma_pagamento)||'—'}${m.maquininha?' ('+escapeHtml(m.maquininha)+')':''}</td><td>${m.categoria ? escapeHtml(m.categoria) : '—'}</td><td>${m.entrada?n(m.entrada):'—'}</td><td>${m.saida?n(m.saida):'—'}</td><td>${origemTag(m)}</td></tr>`;
+  const htmlMovimentos = `
+    ${incons.length ? `<div class="notes-box" style="margin-bottom:14px;"><p style="font-size:12px; margin:0 0 4px;"><strong>Conferir forma de pagamento x conta (${incons.length})</strong></p>
+      <p style="font-size:12px; margin:2px 0 8px; color:var(--ink-soft);">Estes lançamentos têm forma de pagamento que não combina com a conta onde entraram: "Dinheiro" em conta bancária, ou PIX/cartão/boleto na conta de caixa. Confira onde o dinheiro realmente entrou.</p>
+      <table class="report"><thead><tr><th>Data</th><th>Conta</th><th>Descrição</th><th>Forma</th><th>Entrada</th><th>Saída</th></tr></thead><tbody>${incons.slice().reverse().map(m=>`<tr><td>${fmtDate(m.data)}</td><td>${escapeHtml(m.conta)}</td><td>${escapeHtml(m.descricao)||'—'}</td><td>${escapeHtml(m.forma_pagamento)}</td><td>${m.entrada?n(m.entrada):'—'}</td><td>${m.saida?n(m.saida):'—'}</td></tr>`).join('')}</tbody></table></div>` : ''}
+    ${movsPer.length ? `<div style="overflow-x:auto;"><table class="report"><thead><tr><th>Data</th><th>Conta</th><th>Descrição</th><th>Forma</th><th>Categoria</th><th>Entrada</th><th>Saída</th><th>Origem</th></tr></thead>
+      <tbody>${movsPer.map(linhaMov).join('')}</tbody></table></div>
+      <p style="font-size:11.5px; color:var(--ink-soft); margin:8px 0 0;">A coluna Categoria aparece preenchida quando o servidor devolve a categoria do movimento.</p>`
+      : '<p style="font-size:13px; color:var(--ink-soft); margin-top:12px;">Nenhum movimento de caixa neste período.</p>'}`;
+
   openOverlay(`
     <div class="panel-head">
-      <div><h2>Fechamento de caixa</h2><p>${fcRotulo(tipo, iv)} · de ${fmtDate(iv.ini)} até ${fmtDate(iv.fim)}.</p></div>
+      <div><h2>Fechamento de caixa</h2><p>${descAba}</p></div>
       <button class="close-x" onclick="closeOverlay()">✕</button>
     </div>
+    <div class="fc-filtro fc-abas">
+      <div class="fc-seg" role="group" aria-label="Visão">${segAba}</div>
+    </div>
+    ${aba==='projecao' ? '' : `<div class="fc-filtro">
+      <div class="fc-seg" role="group" aria-label="Tipo de período">${segTipo}</div>
+      <div class="fc-nav">
+        <button type="button" class="fc-nav-b" onclick="fcNavegar(-1)" aria-label="Período anterior" title="Período anterior">‹</button>
+        <div class="fc-nav-rot"><strong>${fcRotulo(tipo, iv)}</strong>${faixa ? '<span>'+faixa+'</span>' : ''}<span class="fc-chip">${sitPer}</span></div>
+        <button type="button" class="fc-nav-b" onclick="fcNavegar(1)" aria-label="Próximo período" title="Próximo período">›</button>
+      </div>
+      ${fcPeriodo.offset!==0 ? '<button type="button" class="fc-hoje" onclick="fcNavegar(0)">Voltar para o período atual</button>' : ''}
+    </div>`}
     <div class="panel-actions" style="align-items:center;">
-      <select id="fcTipo" onchange="fcMudarTipo(this.value)" aria-label="Período">${optsTipo}</select>
-      <button class="btn" onclick="fcNavegar(-1)" aria-label="Período anterior">◀</button>
-      <button class="btn" onclick="fcNavegar(0)">Hoje</button>
-      <button class="btn" onclick="fcNavegar(1)" aria-label="Próximo período">▶</button>
       <button class="btn gold" onclick="closeOverlay(); openForm('caixa')">+ Adicionar movimento de caixa</button>
       <button class="btn" onclick="window.print()">Imprimir fechamento</button>
     </div>
+    ${aba==='projecao' ? htmlProjecao : ''}
+    ${aba==='movimentos' ? htmlMovimentos : ''}
+    ${aba==='resumo' ? `
     ${avisos.length ? `<div class="notes-box" style="margin-bottom:14px;"><p style="font-size:12px; margin:0 0 4px;"><strong>Dados parciais neste período</strong></p>${avisos.map(a=>`<p style="font-size:12px; margin:2px 0; color:var(--ink-soft);">${escapeHtml(a)}</p>`).join('')}</div>` : ''}
 
     <table class="report"><thead><tr><th>Resumo do período</th><th>Por vencimento (previsto)</th><th>Caixa realizado</th></tr></thead><tbody>
@@ -4291,6 +4360,7 @@ function openFechamentoPanel(){
     ${sub('Caixa realizado — por forma de pagamento')}
     <table class="report"><thead><tr><th>Forma</th><th>Valor líquido</th></tr></thead><tbody>
       <tr><td>Dinheiro</td><td>${n(rl.porForma.Dinheiro)}</td></tr>
+      ${fcLinhasDinheiro(rl.dinheiro, n)}
       <tr><td>Cartão</td><td>${n(rl.porForma['Cartão'])}</td></tr>
       <tr><td>PIX</td><td>${n(rl.porForma.PIX)}</td></tr>
       ${rl.porForma.Outros ? `<tr><td>Outros / não classificado</td><td>${n(rl.porForma.Outros)}</td></tr>` : ''}
@@ -4303,9 +4373,10 @@ function openFechamentoPanel(){
     ` : ''}
     ${rl.porDia.length ? `
       ${sub('Caixa realizado — dia a dia')}
-      <div style="overflow-x:auto;"><table class="report"><thead><tr><th>Dia</th><th>Entradas</th><th>Saídas</th><th>Saldo</th><th>Fechamento em dinheiro<br><span style="font-weight:400; font-size:10.5px; color:var(--ink-faint);">(com troco de ${fmtBRL(DATA.caixaSaldoInicial||0)})</span></th><th></th></tr></thead>
+      <div style="overflow-x:auto;"><table class="report"><thead><tr><th>Dia</th><th>Entradas</th><th>Saídas</th><th>Saldo</th><th>Fechamento em dinheiro (gaveta)<br><span style="font-weight:400; font-size:10.5px; color:var(--ink-faint);">(com troco de ${fmtBRL(DATA.caixaSaldoInicial||0)}; só conta de caixa)</span></th><th></th></tr></thead>
       <tbody>${linhasPorDia}</tbody></table></div>
     ` : '<p style="font-size:13px; color:var(--ink-soft); margin-top:16px;">Nenhum lançamento de caixa neste período.</p>'}
+    ` : ''}
   `);
 }
 
@@ -4330,6 +4401,7 @@ function openFechamentoDiaPanel(diaISO){
     <p style="font-size:12px; color:var(--ink-soft); margin:22px 0 6px;">Por forma de pagamento</p>
     <table class="report"><thead><tr><th>Forma</th><th>Valor líquido</th></tr></thead><tbody>
       <tr><td>Dinheiro</td><td>${fmtBRL(fd.porForma.Dinheiro)}</td></tr>
+      ${fcLinhasDinheiro(fd.din, fmtBRL)}
       <tr><td>Cartão</td><td>${fmtBRL(fd.porForma['Cartão'])}</td></tr>
       <tr><td>PIX</td><td>${fmtBRL(fd.porForma.PIX)}</td></tr>
       ${fd.porForma.Outros ? `<tr><td>Outros / não classificado</td><td>${fmtBRL(fd.porForma.Outros)}</td></tr>` : ''}
@@ -4337,8 +4409,8 @@ function openFechamentoDiaPanel(diaISO){
     <p style="font-size:12px; color:var(--ink-soft); margin:22px 0 6px;">Conferência do caixa físico (dinheiro)</p>
     <table class="report"><thead><tr><th></th><th>Valor</th></tr></thead><tbody>
       <tr><td>Saldo inicial em caixa (troco — não é venda)</td><td>${fmtBRL(DATA.caixaSaldoInicial||0)}</td></tr>
-      <tr><td>Vendas em dinheiro do dia</td><td>${fmtBRL(fd.porForma.Dinheiro)}</td></tr>
-      <tr><td><strong>Saldo de fechamento em dinheiro</strong></td><td><strong>${fmtBRL((DATA.caixaSaldoInicial||0) + fd.porForma.Dinheiro)}</strong></td></tr>
+      <tr><td>Entradas e saídas em dinheiro no Caixa do dia</td><td>${fmtBRL(fd.din.gaveta)}</td></tr>
+      <tr><td><strong>Saldo de fechamento em dinheiro (gaveta)</strong></td><td><strong>${fmtBRL((DATA.caixaSaldoInicial||0) + fd.din.gaveta)}</strong></td></tr>
     </tbody></table>
     ${linhaMaquininha ? `
       <p style="font-size:12px; color:var(--ink-soft); margin:22px 0 6px;">Cartão — por maquininha</p>
@@ -4885,7 +4957,7 @@ const PRINT_SECOES = [
   {key:'vencidos', label:'Inadimplência (vencidos)'},
   {key:'pagar', label:'A pagar'},
   {key:'receber', label:'A receber'},
-  {key:'fluxo', label:'Fluxo de caixa'},
+  {key:'fluxo', label:'Projeção de caixa (6 meses)'},
 ];
 
 async function openPrintAll(){
@@ -7014,7 +7086,6 @@ init();
       { id:'receber',     rotulo:'A receber',              ic:'↑', alvo:'#cardReceber' },
       { id:'vencidos',    rotulo:'Vencidos',               ic:'!', alvo:'#cardVencidos' },
       { id:'faixas',      rotulo:'Faixas de atraso',       ic:'≡', alvo:'#cardAging' },
-      { id:'fluxo',       rotulo:'Fluxo de caixa',         ic:'∿', alvo:'#cardFluxo' },
       { id:'saldo',       rotulo:'Saldo em contas',        ic:'$', alvo:'#cardSaldo' },
       { id:'fechamento',  rotulo:'Fechamento de caixa',    ic:'▦', alvo:'#cardFechamentoSemana' }
     ]},
