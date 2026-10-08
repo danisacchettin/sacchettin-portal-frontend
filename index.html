@@ -1409,6 +1409,13 @@ function fcLinhasDinheiro(d, fmt){
    A forma escolhida decide em que linha do fechamento de caixa o valor aparece e alimenta o DRE; por isso não há mais
    valor pré-selecionado nos formulários — é preciso escolher. Se a forma não combina com a conta (Dinheiro em conta
    bancária, ou PIX/cartão/boleto/TED na conta de caixa), o sistema pergunta antes de gravar. */
+// Nº do boleto (08/10/2026): só é exigido quando a forma de pagamento é Boleto. O servidor ainda recusa título sem
+// esse número; para PIX, TED, cartão e dinheiro, grava a marca "SEM BOLETO (forma)" em vez de travar o lançamento.
+function numeroBoletoParaEnvio(forma, informado){
+  const n = String(informado||'').trim();
+  if(n) return n;
+  return (forma && forma!=='Boleto') ? 'SEM BOLETO (' + forma + ')' : '';
+}
 function nomeContaPorId(id){
   const c = ((typeof CADASTROS!=='undefined' && CADASTROS.contasBancarias) || []).find(x=>String(x.id)===String(id));
   return c ? c.nome_conta : '';
@@ -5831,7 +5838,7 @@ document.getElementById('entryForm').addEventListener('submit', async e=>{
       const linhasParcelas = Array.from(document.querySelectorAll('#parcelasWrap .parcela-row')).map(row=>({
         valor: parseFloat(row.querySelector('.parcela-valor').value) || 0,
         vencimento: row.querySelector('.parcela-vencimento').value,
-        numero_boleto: row.querySelector('.parcela-boleto').value.trim() || null,
+        numero_boleto: numeroBoletoParaEnvio(obj.forma, row.querySelector('.parcela-boleto').value) || null,
       })).filter(p => p.valor > 0 && p.vencimento);
       if(!linhasParcelas.length){
         throw new Error('Informe ao menos uma parcela com valor e vencimento.');
@@ -5840,7 +5847,7 @@ document.getElementById('entryForm').addEventListener('submit', async e=>{
       // antigos sem esse dado continuam existindo normalmente, mas daqui pra frente o
       // salvamento é bloqueado sem ele.
       if(linhasParcelas.some(p => !p.numero_boleto)){
-        throw new Error('Informe o número do boleto em todas as parcelas antes de salvar.');
+        throw new Error('Informe o número do boleto em todas as parcelas antes de salvar (obrigatório quando a forma de pagamento é Boleto).');
       }
       // "Data de pagamento" + "Conta bancária" (quando preenchidas) marcam TODAS as parcelas
       // deste lançamento como já pagas na hora, alimentando o Fluxo de Caixa automaticamente —
@@ -6138,6 +6145,10 @@ function renderRenegociacaoCredorDetail(){
         <label>${i===0?'Valor (R$)':`Valor parcela ${i+1} (R$)`}</label>
         <input type="number" step="0.01" class="reneg-parcela-valor" value="${escapeHtml(String(p.valor))}">
       </div>
+      ${renegCredorState.forma==='Boleto' ? `<div class="field" style="flex:1; min-width:140px; margin:0;">
+        <label>${i===0?'Nº do boleto':`Nº do boleto ${i+1}`}</label>
+        <input type="text" class="reneg-parcela-boleto" value="${escapeHtml(p.boleto||'')}">
+      </div>` : ''}
       ${renegCredorState.parcelas.length>1 ? `<button type="button" class="btn-mini reneg-parcela-remover" data-idx="${i}" style="height:34px;">✕</button>` : ''}
     </div>`).join('');
 
@@ -6185,6 +6196,14 @@ function renderRenegociacaoCredorDetail(){
     </p>
 
     <div class="field full" style="margin-bottom:10px;">
+      <label>Forma de pagamento dos novos títulos (obrigatória)</label>
+      <select id="renegFormaSelect">
+        <option value="" ${!renegCredorState.forma?'selected':''}>Selecione…</option>
+        ${['PIX','Boleto','TED','Cartão','Dinheiro'].map(f=>`<option ${renegCredorState.forma===f?'selected':''}>${f}</option>`).join('')}
+      </select>
+      <p style="font-size:11.5px; color:var(--ink-soft); margin:6px 0 0;">${renegCredorState.forma==='Boleto' ? 'Informe o número do boleto de cada parcela.' : 'Sem boleto: o título é gravado como "SEM BOLETO (' + escapeHtml(renegCredorState.forma||'forma escolhida') + ')".'}</p>
+    </div>
+    <div class="field full" style="margin-bottom:10px;">
       <label>Categoria dos novos títulos</label>
       <select id="renegCategoriaSelect">${opcoesCategoria}</select>
     </div>
@@ -6207,6 +6226,10 @@ function renderRenegociacaoCredorDetail(){
     });
   });
   document.getElementById('renegCategoriaSelect').addEventListener('change', e=>{ renegCredorState.categoriaId = e.target.value; });
+  document.getElementById('renegFormaSelect').addEventListener('change', e=>{ renegCredorState.forma = e.target.value; renderRenegociacaoCredorDetail(); });
+  document.querySelectorAll('#renegParcelasWrap .reneg-parcela-boleto').forEach((el,i)=>{
+    el.addEventListener('input', e=>{ renegCredorState.parcelas[i].boleto = e.target.value; });
+  });
   document.getElementById('renegObservacoes').addEventListener('input', e=>{ renegCredorState.observacoes = e.target.value; });
   document.querySelectorAll('#renegParcelasWrap .reneg-parcela-data').forEach((el,i)=>{
     el.addEventListener('input', e=>{ renegCredorState.parcelas[i].data = e.target.value; });
@@ -6288,6 +6311,8 @@ async function confirmarRenegociacaoCredor(){
   const parcelasValidas = renegCredorState.parcelas.filter(p=>p.data && parseFloat(p.valor)>0);
   if(!titulosSelecionados.length){ alert('Selecione ao menos um título para renegociar.'); return; }
   if(!parcelasValidas.length){ alert('Informe ao menos uma parcela com data e valor.'); return; }
+  if(!renegCredorState.forma){ alert('Escolha a forma de pagamento dos novos títulos — ela decide onde o valor aparece no fechamento de caixa e no DRE.'); return; }
+  if(renegCredorState.forma==='Boleto' && parcelasValidas.some(p=>!String(p.boleto||'').trim())){ alert('Informe o número do boleto de todas as parcelas (a forma escolhida é Boleto).'); return; }
   if(!renegCredorState.categoriaId){ alert('Selecione a categoria dos novos títulos.'); return; }
   if(!renegCredorState.observacoes || !renegCredorState.observacoes.trim()){ alert('Descreva a negociação no campo de observações — fica registrado no histórico de ambos os grupos de título.'); return; }
 
@@ -6306,6 +6331,8 @@ async function confirmarRenegociacaoCredor(){
           categoria_id: renegCredorState.categoriaId,
           vencimento: p.data,
           valor_original: parseFloat(p.valor),
+          forma_pagamento: renegCredorState.forma,
+          numero_boleto: numeroBoletoParaEnvio(renegCredorState.forma, p.boleto),
           origem: 'Renegociação',
           observacoes: `Renegociação de ${titulosSelecionados.length} título(s) em aberto (${codigosAntigos}) — ${renegCredorState.observacoes.trim()}`,
         }),
