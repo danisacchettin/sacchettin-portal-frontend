@@ -1388,12 +1388,18 @@ function computeKPIs(){
 
   // Correção (19/08/2026): comparava só getMonth(), sem o ano — um título de agosto/2025 caía
   // junto com agosto/2026 no card "no mês". Agora exige mês E ano batendo com hoje.
-  const receberMes = DATA.contasReceber.filter(x=>{ const d=new Date(x.vencimento); return d.getMonth()===mesAtual && d.getFullYear()===anoAtual; })
+  // Correção (08/10/2026): o vencimento chega como "AAAA-MM-DDT00:00:00.000Z"; new Date() desse texto, no fuso
+  // de São Paulo (UTC-3), vira o dia anterior às 21h e jogava os títulos que vencem no dia 1º para o mês
+  // anterior (R$ 930,45 a menos em "A receber" e R$ 11.808,09 a menos em "A pagar" em out/2026). Agora o mês é
+  // comparado pelo texto da data (AAAA-MM), sem conversão de fuso.
+  const mesRef = anoAtual + '-' + String(mesAtual+1).padStart(2,'0');
+  const noMesAtual = x => String(x.vencimento).slice(0,7) === mesRef;
+  const receberMes = DATA.contasReceber.filter(noMesAtual)
     .reduce((s,x)=>s+saldoAberto(x,'receber'),0);
   // "A pagar no mês" é só o que vence no mês corrente — de propósito não inclui vencidos de
   // meses anteriores (isso agora vive no card "Vencidos", separado, pensado para negociação
   // com fornecedor — ver computeVencidos()).
-  const pagarMes = DATA.contasPagar.filter(x=>{ const d=new Date(x.vencimento); return d.getMonth()===mesAtual && d.getFullYear()===anoAtual; })
+  const pagarMes = DATA.contasPagar.filter(noMesAtual)
     .reduce((s,x)=>s+saldoAberto(x,'pagar'),0);
   const pagarSemana = DATA.contasPagar.filter(x=>{
     const d=new Date(x.vencimento); return d>=inicioSemana && d<=fimSemana;
