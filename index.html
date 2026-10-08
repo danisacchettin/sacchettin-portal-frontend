@@ -242,6 +242,8 @@
   .fc-nav-rot strong{display:block; font-size:15px; color:var(--ink);}
   .fc-nav-rot span{display:block; font-size:12px; color:var(--ink-soft);}
   .fc-nav-rot .fc-chip{display:inline-block; font-size:11px; padding:2px 8px; border-radius:20px; background:var(--gold-wash); color:var(--gold); margin-top:3px;}
+  .mv-click{cursor:pointer;}
+  .mv-click:hover td{background:var(--gold-wash);}
   .fc-hoje{border:0; background:transparent; color:var(--gold); font:inherit; font-size:13px; text-decoration:underline; cursor:pointer; padding:6px 4px;}
   .btn{
     font-family:inherit; font-size:12.5px; letter-spacing:.4px; padding:10px 18px; border-radius:11px;
@@ -1402,6 +1404,90 @@ function fcLinhasDinheiro(d, fmt){
     + sb('Recebimentos em dinheiro no Caixa (títulos e lançamentos manuais)', d.titulos)
     + (d.saidas ? sb('Saídas em dinheiro no Caixa', d.saidas) : '')
     + (d.nBanco ? sb('Marcado como Dinheiro, mas lançado em conta bancária (' + d.nBanco + ') — não está na gaveta; confira', d.banco, 'var(--red)') : '');
+}
+/* ---------- Forma de pagamento/recebimento obrigatória (08/10/2026) ----------
+   A forma escolhida decide em que linha do fechamento de caixa o valor aparece e alimenta o DRE; por isso não há mais
+   valor pré-selecionado nos formulários — é preciso escolher. Se a forma não combina com a conta (Dinheiro em conta
+   bancária, ou PIX/cartão/boleto/TED na conta de caixa), o sistema pergunta antes de gravar. */
+function nomeContaPorId(id){
+  const c = ((typeof CADASTROS!=='undefined' && CADASTROS.contasBancarias) || []).find(x=>String(x.id)===String(id));
+  return c ? c.nome_conta : '';
+}
+function formaContaIncompativel(forma, nomeConta){
+  if(!forma || !nomeConta || forma==='Cheque') return false;
+  const fis = fcIsCaixaFisico(nomeConta);
+  return (forma==='Dinheiro' && !fis) || (forma!=='Dinheiro' && fis);
+}
+function confirmaFormaConta(forma, contaId){
+  const nome = nomeContaPorId(contaId);
+  if(!formaContaIncompativel(forma, nome)) return true;
+  const msg = forma==='Dinheiro'
+    ? 'A forma "Dinheiro" está sendo lançada na conta "' + nome + '", que é conta bancária. Dinheiro físico deve entrar na conta Caixa. Se o valor foi depositado no banco, a forma correta costuma ser PIX ou TED.\n\nConfirmar assim mesmo?'
+    : 'A forma "' + forma + '" está sendo lançada na conta "' + nome + '", que é a conta de caixa (dinheiro físico). Pagamento por ' + forma + ' normalmente entra em conta bancária.\n\nConfirmar assim mesmo?';
+  return confirm(msg);
+}
+
+/* ---------- Detalhe de um movimento de caixa (clique na linha) ---------- */
+function fcTituloRelacionado(m){
+  const d = String(m.descricao||'');
+  const mt = d.match(/^(.*?)\s+-\s+NF\s+([^\s,]+)\s*$/i);
+  if(!mt) return null;
+  const nome = fcNorm(mt[1]), doc = mt[2].trim();
+  const ent = Number(m.entrada||0) > 0;
+  const lista = ent ? (DATA.contasReceber||[]) : (DATA.contasPagar||[]);
+  const ach = lista.filter(x => String(x.documento||'').trim()===doc && fcNorm(ent ? x.cliente : x.credor)===nome);
+  return ach.length===1 ? { t: ach[0], tipo: ent ? 'receber' : 'pagar' } : null;
+}
+function openMovimentoDetalhe(id){
+  const m = (DATA.caixaMovimentos||[]).find(x=>String(x.id)===String(id));
+  if(!m) return;
+  const adm = typeof pdvModoAdmin==='function' && pdvModoAdmin();
+  const ent = Number(m.entrada||0) > 0;
+  const lin = (r,v) => (v===undefined || v===null || v==='') ? '' : `<tr><td style="width:36%; color:var(--ink-soft);">${r}</td><td>${v}</td></tr>`;
+  const quem = m.criado_por_papel==='cliente' ? 'Cliente' : (m.criado_por_papel==='escritorio' ? 'Escritório' : '');
+  const forma = m.forma_pagamento ? escapeHtml(m.forma_pagamento) + (m.maquininha ? ' (' + escapeHtml(m.maquininha) + ')' : '') : '';
+  const pdv = /vendas?\s+balc[aã]o\s*\(PDV\)/i.test(m.descricao||'');
+  const rel = fcTituloRelacionado(m);
+  let blocoTitulo = '';
+  if(rel){
+    const t = rel.t, rec = rel.tipo==='receber';
+    blocoTitulo = `
+      <p style="font-size:12px; color:var(--ink-soft); margin:22px 0 6px;">${rec ? 'Título a receber relacionado' : 'Título a pagar relacionado'} <span style="color:var(--ink-faint);">(identificado pelo nome e pelo número do documento)</span></p>
+      <table class="report"><tbody>
+        ${lin('Código', escapeHtml(t.codigo))}
+        ${lin(rec ? 'Cliente' : 'Fornecedor', escapeHtml(rec ? t.cliente : t.credor))}
+        ${lin('Documento', escapeHtml(t.documento))}
+        ${lin('Categoria', escapeHtml(t.categoria))}
+        ${lin('Vencimento', fmtDate(t.vencimento))}
+        ${lin('Valor original', fmtBRL(t.valor_original))}
+        ${lin(rec ? 'Valor recebido' : 'Valor pago', fmtBRL(rec ? t.valor_recebido : t.valor_pago))}
+        ${lin('Situação', escapeHtml(t.status))}
+        ${lin(rec ? 'Data do recebimento' : 'Data do pagamento', (rec ? t.data_recebimento : t.data_pagamento) ? fmtDate(rec ? t.data_recebimento : t.data_pagamento) : '')}
+        ${lin(rec ? 'Forma de recebimento' : 'Forma de pagamento', escapeHtml(rec ? t.forma_recebimento : t.forma_pagamento))}
+        ${adm ? lin('Observações (visível só ao escritório)', escapeHtml(t.observacoes)) : ''}
+      </tbody></table>`;
+  }
+  openOverlayFilho(openFechamentoPanel, `
+    <div class="panel-head">
+      <div><h2>${ent ? 'Recebimento' : 'Pagamento'} em ${fmtDate(m.data)}</h2><p>${escapeHtml(m.descricao)||'—'}</p></div>
+      <button class="close-x" onclick="closeOverlay()">✕</button>
+    </div>
+    <div class="panel-actions"><button class="btn" onclick="closeOverlay()">← Voltar</button><button class="btn" onclick="window.print()">Imprimir</button></div>
+    <table class="report"><tbody>
+      ${lin('Data', fmtDate(m.data))}
+      ${lin('Conta onde entrou/saiu', escapeHtml(m.conta))}
+      ${lin('Forma de ' + (ent ? 'recebimento' : 'pagamento'), forma)}
+      ${lin('Categoria', m.categoria ? escapeHtml(m.categoria) : '')}
+      ${adm ? lin('Grupo do DRE', m.grupo_dre ? escapeHtml(m.grupo_dre) : '') : ''}
+      ${ent ? lin('Valor recebido', fmtBRL(m.entrada)) : lin('Valor pago', fmtBRL(m.saida))}
+      ${lin('Origem', origemTag(m))}
+      ${lin('Lançado por', quem)}
+      ${lin('Código do movimento', escapeHtml(m.codigo))}
+    </tbody></table>
+    ${pdv ? '<p style="font-size:12px; color:var(--ink-soft); margin-top:12px;">Lançamento automático do fechamento de vendas do balcão (PDV) neste dia, nesta forma de pagamento. O detalhe por produto está em PDV, no menu.</p>' : ''}
+    ${blocoTitulo}
+    ${!rel && !pdv ? '<p style="font-size:12px; color:var(--ink-soft); margin-top:12px;">Não foi possível ligar este movimento a um título específico; os dados acima são os do próprio lançamento de caixa.</p>' : ''}
+  `);
 }
 // Avisos de cobertura: o portal só carrega parte do histórico (ver JANELA-180-DIAS); em vez de
 // mostrar um número que parece completo, o painel diz de onde os dados começam.
@@ -4297,11 +4383,11 @@ function openFechamentoPanel(){
   // Movimentos (antigo "Movimentações lançadas pelo cliente") + conferência forma x conta
   const movsPer = rl.movs.slice().reverse();
   const incons = rl.inconsist;
-  const linhaMov = m => `<tr><td>${fmtDate(m.data)}</td><td>${escapeHtml(m.conta)}</td><td>${escapeHtml(m.descricao)||'—'}</td><td>${escapeHtml(m.forma_pagamento)||'—'}${m.maquininha?' ('+escapeHtml(m.maquininha)+')':''}</td><td>${m.categoria ? escapeHtml(m.categoria) : '—'}</td><td>${m.entrada?n(m.entrada):'—'}</td><td>${m.saida?n(m.saida):'—'}</td><td>${origemTag(m)}</td></tr>`;
+  const linhaMov = m => `<tr class="mv-click" onclick="openMovimentoDetalhe('${escapeHtml(String(m.id))}')" title="Ver detalhes"><td>${fmtDate(m.data)}</td><td>${escapeHtml(m.conta)}</td><td>${escapeHtml(m.descricao)||'—'}</td><td>${escapeHtml(m.forma_pagamento)||'—'}${m.maquininha?' ('+escapeHtml(m.maquininha)+')':''}</td><td>${m.categoria ? escapeHtml(m.categoria) : '—'}</td><td>${m.entrada?n(m.entrada):'—'}</td><td>${m.saida?n(m.saida):'—'}</td><td>${origemTag(m)}</td></tr>`;
   const htmlMovimentos = `
     ${incons.length ? `<div class="notes-box" style="margin-bottom:14px;"><p style="font-size:12px; margin:0 0 4px;"><strong>Conferir forma de pagamento x conta (${incons.length})</strong></p>
       <p style="font-size:12px; margin:2px 0 8px; color:var(--ink-soft);">Estes lançamentos têm forma de pagamento que não combina com a conta onde entraram: "Dinheiro" em conta bancária, ou PIX/cartão/boleto na conta de caixa. Confira onde o dinheiro realmente entrou.</p>
-      <table class="report"><thead><tr><th>Data</th><th>Conta</th><th>Descrição</th><th>Forma</th><th>Entrada</th><th>Saída</th></tr></thead><tbody>${incons.slice().reverse().map(m=>`<tr><td>${fmtDate(m.data)}</td><td>${escapeHtml(m.conta)}</td><td>${escapeHtml(m.descricao)||'—'}</td><td>${escapeHtml(m.forma_pagamento)}</td><td>${m.entrada?n(m.entrada):'—'}</td><td>${m.saida?n(m.saida):'—'}</td></tr>`).join('')}</tbody></table></div>` : ''}
+      <table class="report"><thead><tr><th>Data</th><th>Conta</th><th>Descrição</th><th>Forma</th><th>Entrada</th><th>Saída</th></tr></thead><tbody>${incons.slice().reverse().map(m=>`<tr class="mv-click" onclick="openMovimentoDetalhe('${escapeHtml(String(m.id))}')" title="Ver detalhes"><td>${fmtDate(m.data)}</td><td>${escapeHtml(m.conta)}</td><td>${escapeHtml(m.descricao)||'—'}</td><td>${escapeHtml(m.forma_pagamento)}</td><td>${m.entrada?n(m.entrada):'—'}</td><td>${m.saida?n(m.saida):'—'}</td></tr>`).join('')}</tbody></table></div>` : ''}
     ${movsPer.length ? `<div style="overflow-x:auto;"><table class="report"><thead><tr><th>Data</th><th>Conta</th><th>Descrição</th><th>Forma</th><th>Categoria</th><th>Entrada</th><th>Saída</th><th>Origem</th></tr></thead>
       <tbody>${movsPer.map(linhaMov).join('')}</tbody></table></div>
       <p style="font-size:11.5px; color:var(--ink-soft); margin:8px 0 0;">A coluna Categoria aparece preenchida quando o servidor devolve a categoria do movimento.</p>`
@@ -4424,7 +4510,7 @@ function openFechamentoDiaPanel(diaISO){
       <p style="font-size:12px; color:var(--ink-soft); margin:22px 0 6px;">Lançamentos do dia</p>
       <table class="report"><thead><tr><th>Conta</th><th>Descrição</th><th>Forma</th><th>Entrada</th><th>Saída</th></tr></thead>
       <tbody>${fd.movs.slice().reverse().map(m=>`
-        <tr><td>${escapeHtml(m.conta)}</td><td>${escapeHtml(m.descricao)||'—'}</td>
+        <tr class="mv-click" onclick="openMovimentoDetalhe('${escapeHtml(String(m.id))}')" title="Ver detalhes"><td>${escapeHtml(m.conta)}</td><td>${escapeHtml(m.descricao)||'—'}</td>
         <td>${escapeHtml(m.forma_pagamento)||'—'}${m.maquininha?' ('+escapeHtml(m.maquininha)+')':''}</td>
         <td>${m.entrada?fmtBRL(m.entrada):'—'}</td><td>${m.saida?fmtBRL(m.saida):'—'}</td></tr>`).join('')}</tbody></table>
     ` : '<p style="font-size:13px; color:var(--ink-soft); margin-top:16px;">Nenhum lançamento de caixa neste dia.</p>'}
@@ -5108,7 +5194,7 @@ const FIELD_SETS = {
     {name:'credor', label:'Fornecedor/Credor', type:'cadastro', cadastro:'fornecedores', full:true},
     {name:'categoria', label:'Categoria', type:'cadastro', cadastro:'categoriasDespesa', full:true, required:true},
     {name:'documento', label:'Número da NF (ou do Pedido, se não houver NF)', type:'text', full:true},
-    {name:'forma', label:'Forma de pagamento', type:'select', options:['PIX','Boleto','TED','Cartão','Dinheiro']},
+    {name:'forma', label:'Forma de pagamento (obrigatória)', type:'select', required:true, options:['PIX','Boleto','TED','Cartão','Dinheiro']},
     {name:'data_pagamento', label:'Data de pagamento (opcional, se já foi pago agora)', type:'date', optionalDate:true},
     {name:'conta_bancaria', label:'Conta bancária / PIX / Caixa (se já foi pago)', type:'cadastro', cadastro:'contasBancarias', full:true},
     {name:'observacoes', label:'Observações', type:'text', full:true},
@@ -5120,7 +5206,7 @@ const FIELD_SETS = {
     {name:'data_compra', label:'Data da compra', type:'date'},
     {name:'valor_original', label:'Valor (R$)', type:'number'},
     {name:'vencimento', label:'Vencimento', type:'date'},
-    {name:'forma', label:'Forma de recebimento', type:'select', options:['PIX','Boleto','TED','Cartão','Dinheiro','Cheque']},
+    {name:'forma', label:'Forma de recebimento (obrigatória)', type:'select', required:true, options:['PIX','Boleto','TED','Cartão','Dinheiro','Cheque']},
     {name:'data_recebimento', label:'Data de recebimento (opcional)', type:'date', optionalDate:true},
     {name:'conta_bancaria', label:'Conta bancária / PIX / Caixa (se já recebido)', type:'cadastro', cadastro:'contasBancarias', full:true},
     {name:'observacoes', label:'Observações', type:'text', full:true},
@@ -5133,7 +5219,7 @@ const FIELD_SETS = {
     {name:'categoria_entrada', label:'Categoria da entrada (obrigatória se houver entrada)', type:'cadastro', cadastro:'categoriasReceita', full:true},
     {name:'categoria_saida', label:'Categoria da saída (obrigatória se houver saída)', type:'cadastro', cadastro:'categoriasDespesa', full:true},
     {name:'data', label:'Data', type:'date'},
-    {name:'forma_pagamento', label:'Forma de pagamento', type:'select', options:['Dinheiro','Cartão','PIX']},
+    {name:'forma_pagamento', label:'Forma de pagamento/recebimento (obrigatória)', type:'select', required:true, options:['Dinheiro','Cartão','PIX','Boleto','TED']},
     {name:'maquininha', label:'Maquininha (se Cartão)', type:'select', options:['','Mercado Pago','Getnet']},
     {name:'observacoes', label:'Observações', type:'text', full:true},
   ],
@@ -5397,7 +5483,7 @@ function renderFormFields(prefill){
     const selectExtraAttr = (f.type==='select' && f.name==='forma' && currentType==='receber')
       ? ` onchange="toggleChequesReceber(this.value)"` : '';
     const inputHTML = f.type==='select'
-      ? `<select name="${f.name}"${selectExtraAttr}>${f.options.map(o=>`<option ${val===o?'selected':''}>${o}</option>`).join('')}</select>`
+      ? `<select name="${f.name}"${selectExtraAttr}>${f.required ? `<option value="" ${val===''?'selected':''}>Selecione…</option>` : ''}${f.options.map(o=>`<option ${val===o?'selected':''}>${o}</option>`).join('')}</select>`
       : `<input name="${f.name}" type="${f.type}" value="${val}"${stepAttr} />`;
     return `<div class="field ${f.full?'full':''}"><label>${f.label}</label>${inputHTML}</div>`;
   }).join('');
@@ -5729,6 +5815,14 @@ document.getElementById('entryForm').addEventListener('submit', async e=>{
     const resolved = {};
     for(const f of FIELD_SETS[currentType].filter(f=>f.type==='cadastro')){
       resolved[f.name] = await resolverCadastro(f, obj);
+    }
+    // Forma de pagamento/recebimento obrigatória (08/10/2026): alimenta o fechamento de caixa e o DRE.
+    {
+      const formaEsc = currentType==='caixa' ? obj.forma_pagamento : obj.forma;
+      const contaEsc = currentType==='caixa' ? resolved.conta : resolved.conta_bancaria;
+      const temValorCaixa = currentType!=='caixa' || (parseFloat(obj.entrada)||0) > 0 || (parseFloat(obj.saida)||0) > 0;
+      if(temValorCaixa && !formaEsc) throw new Error('Escolha a forma de ' + (currentType==='receber' ? 'recebimento' : (currentType==='pagar' ? 'pagamento' : 'pagamento/recebimento')) + ' — ela decide onde o valor aparece no fechamento de caixa e no DRE.');
+      if(contaEsc && formaEsc && !confirmaFormaConta(formaEsc, contaEsc)) throw new Error('Lançamento não gravado: confira a forma e a conta.');
     }
     if(currentType==='pagar'){
       // Lança uma parcela por linha preenchida em "Parcelas / boletos" — todas compartilham
@@ -6315,7 +6409,7 @@ function renderBaixaLoteCredorDetail(){
       <div class="field"><label>Valor total pago (R$)</label><input type="number" step="0.01" id="lotePagarValorPago" value="${escapeHtml(String(baixaLotePagarState.valorPago))}"></div>
       <div class="field"><label>Data</label><input type="date" id="lotePagarData" value="${baixaLotePagarState.data||todayISO()}"></div>
       <div class="field"><label>Forma de pagamento</label>
-        <select id="lotePagarForma">${['PIX','Boleto','TED','Cartão','Dinheiro'].map(f=>`<option ${((baixaLotePagarState.forma||'PIX')===f)?'selected':''}>${f}</option>`).join('')}</select>
+        <select id="lotePagarForma"><option value="">Selecione…</option>${['PIX','Boleto','TED','Cartão','Dinheiro'].map(f=>`<option ${((baixaLotePagarState.forma||'')===f)?'selected':''}>${f}</option>`).join('')}</select>
       </div>
       <div class="field"><label>Conta bancária (de onde saiu)</label><select id="lotePagarConta">${optionsContaBancaria(baixaLotePagarState.contaBancariaId)}</select></div>
       <div class="field full"><label>Observações</label><input type="text" id="lotePagarObservacoes" placeholder="opcional" value="${escapeHtml(baixaLotePagarState.observacoes||'')}"></div>
@@ -6354,14 +6448,16 @@ async function confirmarBaixaLoteCredor(){
   const titulos = titulosAbertosDoCredor(baixaLotePagarState.credorNome).filter(t=>baixaLotePagarState.selecionados[t.id]);
   const valorTotal = parseFloat(baixaLotePagarState.valorPago) || 0;
   const data = baixaLotePagarState.data || todayISO();
-  const forma = baixaLotePagarState.forma || 'PIX';
+  const forma = baixaLotePagarState.forma || '';
   const contaBancariaId = baixaLotePagarState.contaBancariaId || null;
   const observacoesBase = baixaLotePagarState.observacoes || '';
   if(!titulos.length){ alert('Selecione ao menos um título.'); return; }
   if(valorTotal<=0){ alert('Informe o valor pago.'); return; }
+  if(!forma){ alert('Escolha a forma de pagamento — ela decide onde o valor aparece no fechamento de caixa e no DRE.'); return; }
+  if(!confirmaFormaConta(forma, contaBancariaId)) return;
   // Mesmo motivo da baixa individual (ver renderBaixaDetail): sem conta/Caixa, o pagamento em
   // lote também não gera vínculo com o Fluxo de Caixa e fica fora do Fechamento de Caixa.
-  if((forma==='Dinheiro' || forma==='PIX') && !contaBancariaId){
+  if(!contaBancariaId){
     alert('Selecione a conta bancária, PIX ou "Caixa" usada neste pagamento — sem isso, ele não entra na conciliação do Fechamento de Caixa.');
     return;
   }
@@ -6489,7 +6585,7 @@ function renderBaixaLoteClienteDetail(){
       <div class="field"><label>Valor total recebido (R$)</label><input type="number" step="0.01" id="loteValorPago" value="${escapeHtml(String(baixaLoteState.valorPago))}"></div>
       <div class="field"><label>Data</label><input type="date" id="loteData" value="${baixaLoteState.data||todayISO()}"></div>
       <div class="field"><label>Forma de pagamento</label>
-        <select id="loteForma">${['PIX','Boleto','TED','Cartão','Dinheiro'].map(f=>`<option ${((baixaLoteState.forma||'PIX')===f)?'selected':''}>${f}</option>`).join('')}</select>
+        <select id="loteForma"><option value="">Selecione…</option>${['PIX','Boleto','TED','Cartão','Dinheiro'].map(f=>`<option ${((baixaLoteState.forma||'')===f)?'selected':''}>${f}</option>`).join('')}</select>
       </div>
       <div class="field"><label>Conta bancária (para onde foi)</label><select id="loteConta">${optionsContaBancaria(baixaLoteState.contaBancariaId)}</select></div>
       <div class="field full"><label>Observações</label><input type="text" id="loteObservacoes" placeholder="opcional" value="${escapeHtml(baixaLoteState.observacoes||'')}"></div>
@@ -6528,11 +6624,14 @@ async function confirmarBaixaLoteCliente(){
   const titulos = titulosAbertosDoCliente(baixaLoteState.clienteNome).filter(t=>baixaLoteState.selecionados[t.id]);
   const valorTotal = parseFloat(baixaLoteState.valorPago) || 0;
   const data = baixaLoteState.data || todayISO();
-  const forma = baixaLoteState.forma || 'PIX';
+  const forma = baixaLoteState.forma || '';
   const contaBancariaId = baixaLoteState.contaBancariaId || null;
   const observacoesBase = baixaLoteState.observacoes || '';
   if(!titulos.length){ alert('Selecione ao menos uma compra.'); return; }
   if(valorTotal<=0){ alert('Informe o valor recebido.'); return; }
+  if(!forma){ alert('Escolha a forma de recebimento — ela decide onde o valor aparece no fechamento de caixa e no DRE.'); return; }
+  if(!contaBancariaId){ alert('Selecione a conta bancária, PIX ou "Caixa" onde o valor entrou — sem isso, ele não entra no caixa.'); return; }
+  if(!confirmaFormaConta(forma, contaBancariaId)) return;
 
   const btn = document.getElementById('loteConfirmarBtn');
   btn.disabled = true; btn.textContent = 'Salvando...';
@@ -6643,7 +6742,7 @@ function renderBaixaForm(fase, saldo, item){
         <div class="field"><label>Valor a confirmar</label><input type="text" value="${fmtBRL(saldo)}" disabled></div>
         <div class="field"><label>Data do pagamento</label><input type="date" name="data" value="${todayISO()}"></div>
         <div class="field"><label>Forma de pagamento</label>
-          <select name="forma"><option>PIX</option><option>Boleto</option><option>TED</option><option>Cartão</option><option>Dinheiro</option></select>
+          <select name="forma"><option value="">Selecione…</option><option>PIX</option><option>Boleto</option><option>TED</option><option>Cartão</option><option>Dinheiro</option></select>
         </div>
         ${campoCodigo}
         ${campoJurosMora}
@@ -6657,7 +6756,7 @@ function renderBaixaForm(fase, saldo, item){
         <div class="field"><label>Valor pago agora (R$)</label><input type="number" step="0.01" name="valor" value="${saldo.toFixed(2)}"></div>
         <div class="field"><label>Data</label><input type="date" name="data" value="${todayISO()}"></div>
         <div class="field"><label>Forma de pagamento</label>
-          <select name="forma"><option>PIX</option><option>Boleto</option><option>TED</option><option>Cartão</option><option>Dinheiro</option></select>
+          <select name="forma"><option value="">Selecione…</option><option>PIX</option><option>Boleto</option><option>TED</option><option>Cartão</option><option>Dinheiro</option></select>
         </div>
         ${campoCodigo}
         ${campoJurosMora}
@@ -6726,6 +6825,11 @@ function renderBaixaDetail(){
     const codigoEl = f.querySelector('[name=codigo_barras_boleto]');
     const jurosMoraEl = f.querySelector('[name=juros_mora]');
     const valor = fase==='total' ? saldo : (parseFloat(f.querySelector('[name=valor]').value)||0);
+
+    // Forma e conta obrigatórias (08/10/2026): sem elas o pagamento/recebimento não entra no caixa nem no DRE.
+    if(!forma){ alert('Escolha a forma de ' + (baixaState.tipo==='pagar' ? 'pagamento' : 'recebimento') + ' — ela decide onde o valor aparece no fechamento de caixa e no DRE.'); return; }
+    if(!contaEl || !contaEl.value){ alert('Selecione a conta bancária, PIX ou "Caixa" onde o valor ' + (baixaState.tipo==='pagar' ? 'saiu' : 'entrou') + ' — sem isso, ele não entra no caixa.'); return; }
+    if(!confirmaFormaConta(forma, contaEl.value)) return;
 
     // Pedido da Danielle (21/09/2026): pagamento em Dinheiro ou PIX sem conta bancária/Caixa
     // selecionada nunca gera o movimento em Fluxo de Caixa (o "vínculo automático" com o
