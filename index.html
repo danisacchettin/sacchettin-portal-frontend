@@ -1274,6 +1274,103 @@ function computeFechamentoDia(diaISO){
   return Object.assign({ dia: diaISO }, resumirMovimentos(movs));
 }
 
+/* ---------- FECHAMENTO DE CAIXA (08/10/2026): período, entradas por origem e totalizador ----------
+   Duas leituras, sempre rotuladas, que NÃO se somam entre si:
+   (1) "Por vencimento": A receber (distribuidora/DAV, PDV balcão, demais) e A pagar com VENCIMENTO
+       dentro do período — mostra o previsto, o já recebido/pago e o que está em aberto;
+   (2) "Caixa realizado": movimentos de caixa/banco já lançados com DATA dentro do período.
+   O período é sempre o calendário inteiro (dia, semana seg–dom, mês, trimestre, semestre, ano),
+   com navegação para períodos anteriores/seguintes. Nada aqui altera KPI, DRE ou saldo. */
+let fcPeriodo = { tipo:'semana', offset:0 };
+const FC_TIPOS = [
+  {v:'dia', r:'Diário'}, {v:'semana', r:'Semanal'}, {v:'mes', r:'Mensal'},
+  {v:'trimestre', r:'Trimestral'}, {v:'semestre', r:'Semestral'}, {v:'ano', r:'Anual'}
+];
+const FC_MESES = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+const FC_CAT_DAV = 'CLIENTE DISTRIBUIDORA';
+const FC_CAT_PDV = 'VENDAS DE MERCADORIAS (BALCÃO)';
+function fcNorm(s){ return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').trim().toUpperCase(); }
+function fcISO(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function fcIntervalo(tipo, offset){
+  const h = new Date(); h.setHours(12,0,0,0);
+  let ini, fim;
+  if(tipo==='dia'){
+    ini = new Date(h.getFullYear(), h.getMonth(), h.getDate()+offset); fim = new Date(ini);
+  } else if(tipo==='semana'){
+    const dow = h.getDay(); const diff = dow===0 ? -6 : 1-dow;
+    ini = new Date(h.getFullYear(), h.getMonth(), h.getDate()+diff+7*offset);
+    fim = new Date(ini.getFullYear(), ini.getMonth(), ini.getDate()+6);
+  } else {
+    const n = tipo==='mes' ? 1 : tipo==='trimestre' ? 3 : tipo==='semestre' ? 6 : 12;
+    const baseMes = tipo==='ano' ? 0 : Math.floor(h.getMonth()/n)*n;
+    ini = new Date(h.getFullYear(), baseMes + n*offset, 1);
+    fim = new Date(ini.getFullYear(), ini.getMonth()+n, 0);
+  }
+  return { ini: fcISO(ini), fim: fcISO(fim), iniDate: ini, fimDate: fim };
+}
+function fcRotulo(tipo, iv){
+  const a = iv.iniDate;
+  if(tipo==='dia') return DIAS_SEMANA_PT[a.getDay()] + ', ' + fmtDate(iv.ini);
+  if(tipo==='semana') return 'Semana de ' + fmtDate(iv.ini) + ' a ' + fmtDate(iv.fim);
+  if(tipo==='mes') return FC_MESES[a.getMonth()] + ' de ' + a.getFullYear();
+  if(tipo==='trimestre') return (Math.floor(a.getMonth()/3)+1) + 'º trimestre de ' + a.getFullYear();
+  if(tipo==='semestre') return (Math.floor(a.getMonth()/6)+1) + 'º semestre de ' + a.getFullYear();
+  return 'Ano de ' + a.getFullYear();
+}
+function fcOrigemReceber(x){
+  const c = fcNorm(x.categoria);
+  if(c === fcNorm(FC_CAT_DAV)) return 'dav';
+  if(c === fcNorm(FC_CAT_PDV)) return 'pdv';
+  return 'outras';
+}
+function fcPrevisto(iv, tipo){
+  const porMes = ['trimestre','semestre','ano'].includes(tipo);
+  const noPeriodo = x => { const d = String(x.vencimento).slice(0,10); return d >= iv.ini && d <= iv.fim; };
+  const nova = () => ({valor:0, realizado:0, aberto:0, n:0});
+  const ent = {dav:nova(), pdv:nova(), outras:nova()};
+  const sai = nova();
+  const buckets = {};
+  const bk = x => { const d = String(x.vencimento).slice(0,10); const k = porMes ? d.slice(0,7) : d;
+    return buckets[k] || (buckets[k] = {dav:0, pdv:0, outras:0, saidas:0}); };
+  (DATA.contasReceber||[]).filter(x=>x.status!=='Cancelado' && noPeriodo(x)).forEach(x=>{
+    const o = fcOrigemReceber(x), v = Number(x.valor_original||0), ab = saldoAberto(x,'receber');
+    const l = ent[o]; l.valor += v; l.aberto += ab; l.realizado += v-ab; l.n++;
+    bk(x)[o] += v;
+  });
+  (DATA.contasPagar||[]).filter(x=>x.status!=='Cancelado' && noPeriodo(x)).forEach(x=>{
+    const v = Number(x.valor_original||0), ab = saldoAberto(x,'pagar');
+    sai.valor += v; sai.aberto += ab; sai.realizado += v-ab; sai.n++;
+    bk(x).saidas += v;
+  });
+  const soma = k => ent.dav[k] + ent.pdv[k] + ent.outras[k];
+  const entradas = { valor:soma('valor'), realizado:soma('realizado'), aberto:soma('aberto'), n:ent.dav.n+ent.pdv.n+ent.outras.n };
+  return { ent, sai, entradas, buckets, porMes };
+}
+function fcRealizado(iv){
+  const movs = (DATA.caixaMovimentos||[]).filter(m=>{ const d = String(m.data).slice(0,10); return d >= iv.ini && d <= iv.fim; });
+  const resumo = resumirMovimentos(movs);
+  const mapa = {};
+  movs.forEach(m=>{ const d = String(m.data).slice(0,10); (mapa[d] = mapa[d] || []).push(m); });
+  const porDia = Object.keys(mapa).sort().map(dia => ({ dia, ...resumirMovimentos(mapa[dia]) }));
+  return Object.assign({ porDia }, resumo);
+}
+// Avisos de cobertura: o portal só carrega parte do histórico (ver JANELA-180-DIAS); em vez de
+// mostrar um número que parece completo, o painel diz de onde os dados começam.
+function fcCobertura(iv){
+  const av = [];
+  const menor = arr => arr.length ? arr.map(x=>String(x.vencimento||x.data).slice(0,10)).sort()[0] : null;
+  const rc = menor(DATA.contasReceber||[]);
+  if(rc && iv.ini < rc) av.push('A receber: o portal só tem títulos a partir de ' + fmtDate(rc) + '; o que veio antes disso não aparece.');
+  const pg = menor(DATA.contasPagar||[]);
+  if(pg && iv.ini < pg) av.push('A pagar: o portal carrega títulos já pagos só a partir de ' + fmtDate(pg) + ' (janela de 180 dias); pagamentos anteriores ficam fora.');
+  const cx = DATA.caixaMovimentos||[];
+  if(cx.length >= 300){
+    const m = menor(cx);
+    if(m && iv.ini < m) av.push('Caixa realizado: o portal carrega só os últimos 300 movimentos, a partir de ' + fmtDate(m) + '; períodos que começam antes disso ficam incompletos.');
+  }
+  return av;
+}
+
 function computeKPIs(){
   const hoje = todayISO();
   const inicioSemana = new Date(); const fimSemana = new Date(); fimSemana.setDate(fimSemana.getDate()+6);
@@ -1353,8 +1450,8 @@ function renderKPIs(){
                                         sub:`Referente a ${nomeMesAtual()} · ${DATA.contasReceber.length} título(s) em aberto — venda da Cristal é majoritariamente à vista`})}
                                         ${cardHTML({label:'Saldo atual em contas bancárias', value:fmtBRL(k.saldoCaixa), tone:'gold', valueClass:(k.saldoCaixa<0?'neg':(k.saldoCaixa>0?'pos':'')), expandable:true, id:'cardSaldo',
                                                     sub: DATA.saldoContas.map(c=>c.conta.split('—')[0].trim()).join(' · ')})}
-                                                    ${cardHTML({label:'Fechamento de caixa da semana', value:fmtBRL(fs.saldo), tone:'gold', expandable:true, id:'cardFechamentoSemana',
-                                                                sub:`Desde ${fmtDate(fs.inicio.toISOString().slice(0,10))} · Dinheiro ${fmtBRL(fs.porForma.Dinheiro)} · Cartão ${fmtBRL(fs.porForma['Cartão'])} · PIX ${fmtBRL(fs.porForma.PIX)}`})}
+                                                    ${cardHTML({label:'Fechamento de caixa', value:fmtBRL(fs.saldo), tone:'gold', expandable:true, id:'cardFechamentoSemana',
+                                                                sub:`Semana desde ${fmtDate(fs.inicio.toISOString().slice(0,10))} · Dinheiro ${fmtBRL(fs.porForma.Dinheiro)} · Cartão ${fmtBRL(fs.porForma['Cartão'])} · PIX ${fmtBRL(fs.porForma.PIX)}`})}
                                                                 ${cardHTML({label:'Vencidos', value:fmtBRL(k.vencidosTotal), tone: k.vencidosTotal>0?'red':'', valueClass:k.vencidosTotal>0?'neg':'', expandable:true, id:'cardVencidos',
                                                                             sub:`${k.vencidosCount} título(s) em atraso, de qualquer mês · para negociação com fornecedor`})}
                                                                             `;
@@ -4107,51 +4204,102 @@ function openSaldoPanel(){
   `);
 }
 
-function openFechamentoSemanaPanel(){
-  const fs = computeFechamentoSemana();
-  const linhaMaquininha = Object.entries(fs.porMaquininha).map(([mq,v])=>`<tr><td>${escapeHtml(mq)}</td><td>${fmtBRL(v)}</td></tr>`).join('');
-  const linhaContaPix = Object.entries(fs.porContaPix).map(([ct,v])=>`<tr><td>${escapeHtml(ct)}</td><td>${fmtBRL(v)}</td></tr>`).join('');
-  const linhasPorDia = fs.porDia.map(d=>`
+function fcNavegar(delta){ fcPeriodo.offset = delta===0 ? 0 : fcPeriodo.offset + delta; openFechamentoPanel(); }
+function fcMudarTipo(tipo){ fcPeriodo = { tipo, offset:0 }; openFechamentoPanel(); }
+// Nome antigo mantido: o cartão, o menu e o extrato do dia ainda chamam openFechamentoSemanaPanel().
+function openFechamentoSemanaPanel(){ openFechamentoPanel(); }
+
+function openFechamentoPanel(){
+  const tipo = fcPeriodo.tipo;
+  const iv = fcIntervalo(tipo, fcPeriodo.offset);
+  const pv = fcPrevisto(iv, tipo);
+  const rl = fcRealizado(iv);
+  const avisos = fcCobertura(iv);
+  const n = v => fmtBRL(Math.round(Number(v||0)*100)/100 + 0);
+  const optsTipo = FC_TIPOS.map(t=>`<option value="${t.v}" ${t.v===tipo?'selected':''}>${t.r}</option>`).join('');
+  const contagem = l => l.n ? ` <span style="color:var(--ink-faint); font-size:11px;">(${l.n} título${l.n>1?'s':''})</span>` : '';
+  const linhaOrigem = (rotulo, l) => `<tr><td>${rotulo}${contagem(l)}</td><td>${n(l.valor)}</td><td>${n(l.realizado)}</td><td>${n(l.aberto)}</td></tr>`;
+
+  const prevEnt = pv.entradas.valor, prevSai = pv.sai.valor, prevSaldo = prevEnt - prevSai;
+
+  const chaves = Object.keys(pv.buckets).sort();
+  const rotBucket = k => pv.porMes
+    ? FC_MESES[Number(k.slice(5,7))-1] + '/' + k.slice(0,4)
+    : fmtDate(k) + ' (' + DIAS_SEMANA_PT[new Date(k+'T12:00:00').getDay()] + ')';
+  const linhasBucket = chaves.map(k=>{
+    const b = pv.buckets[k], e = b.dav + b.pdv + b.outras;
+    return `<tr><td>${rotBucket(k)}</td><td>${n(b.dav)}</td><td>${n(b.pdv)}</td><td>${n(b.outras)}</td><td>${n(e)}</td><td>${n(b.saidas)}</td><td>${n(e-b.saidas)}</td></tr>`;
+  }).join('');
+
+  const mqs = Object.assign({'Getnet':0, 'Mercado Pago':0}, rl.porMaquininha);
+  const linhaMaquininha = Object.entries(mqs).map(([mq,v])=>`<tr><td>${escapeHtml(mq)}${mq==='Mercado Pago' ? ' <span style="color:var(--ink-faint); font-size:11px;">(lançamento manual)</span>' : ''}</td><td>${n(v)}</td></tr>`).join('');
+  const linhaContaPix = Object.entries(rl.porContaPix).map(([ct,v])=>`<tr><td>${escapeHtml(ct)}</td><td>${n(v)}</td></tr>`).join('');
+  const linhasPorDia = rl.porDia.map(d=>`
     <tr>
       <td>${fmtDate(d.dia)} (${DIAS_SEMANA_PT[new Date(d.dia+'T12:00:00').getDay()]})</td>
-      <td>${fmtBRL(d.totalEntradas)}</td><td>${fmtBRL(d.totalSaidas)}</td><td>${fmtBRL(d.saldo)}</td>
-      <td>${fmtBRL((DATA.caixaSaldoInicial||0) + d.porForma.Dinheiro)}</td>
+      <td>${n(d.totalEntradas)}</td><td>${n(d.totalSaidas)}</td><td>${n(d.saldo)}</td>
+      <td>${n((DATA.caixaSaldoInicial||0) + d.porForma.Dinheiro)}</td>
       <td><button type="button" class="btn-mini" onclick="openFechamentoDiaPanel('${d.dia}')">Ver / imprimir extrato do dia</button></td>
     </tr>`).join('');
+  const sub = t => `<p style="font-size:12px; color:var(--ink-soft); margin:22px 0 6px;">${t}</p>`;
+
   openOverlay(`
     <div class="panel-head">
-      <div><h2>Fechamento de caixa da semana</h2><p>De ${fmtDate(fs.inicio.toISOString().slice(0,10))} até hoje, ${fmtDate(todayISO())}.</p></div>
+      <div><h2>Fechamento de caixa</h2><p>${fcRotulo(tipo, iv)} · de ${fmtDate(iv.ini)} até ${fmtDate(iv.fim)}.</p></div>
       <button class="close-x" onclick="closeOverlay()">✕</button>
     </div>
-    <div class="panel-actions">
+    <div class="panel-actions" style="align-items:center;">
+      <select id="fcTipo" onchange="fcMudarTipo(this.value)" aria-label="Período">${optsTipo}</select>
+      <button class="btn" onclick="fcNavegar(-1)" aria-label="Período anterior">◀</button>
+      <button class="btn" onclick="fcNavegar(0)">Hoje</button>
+      <button class="btn" onclick="fcNavegar(1)" aria-label="Próximo período">▶</button>
       <button class="btn gold" onclick="closeOverlay(); openForm('caixa')">+ Adicionar movimento de caixa</button>
-      <button class="btn" onclick="window.print()">Imprimir semana inteira</button>
+      <button class="btn" onclick="window.print()">Imprimir fechamento</button>
     </div>
-    <table class="report"><thead><tr><th>Resumo da semana</th><th>Valor</th></tr></thead><tbody>
-      <tr><td>Total de entradas</td><td>${fmtBRL(fs.totalEntradas)}</td></tr>
-      <tr><td>Total de saídas</td><td>${fmtBRL(fs.totalSaidas)}</td></tr>
-      <tr><td><strong>Saldo da semana</strong></td><td><strong>${fmtBRL(fs.saldo)}</strong></td></tr>
+    ${avisos.length ? `<div class="notes-box" style="margin-bottom:14px;"><p style="font-size:12px; margin:0 0 4px;"><strong>Dados parciais neste período</strong></p>${avisos.map(a=>`<p style="font-size:12px; margin:2px 0; color:var(--ink-soft);">${escapeHtml(a)}</p>`).join('')}</div>` : ''}
+
+    <table class="report"><thead><tr><th>Resumo do período</th><th>Por vencimento (previsto)</th><th>Caixa realizado</th></tr></thead><tbody>
+      <tr><td>Total de entradas</td><td>${n(prevEnt)}</td><td>${n(rl.totalEntradas)}</td></tr>
+      <tr><td>Total de saídas</td><td>${n(prevSai)}</td><td>${n(rl.totalSaidas)}</td></tr>
+      <tr><td><strong>Saldo do período</strong></td><td><strong>${n(prevSaldo)}</strong></td><td><strong>${n(rl.saldo)}</strong></td></tr>
     </tbody></table>
-    <p style="font-size:12px; color:var(--ink-soft); margin:22px 0 6px;">Por forma de pagamento</p>
+    <p style="font-size:11.5px; color:var(--ink-soft); margin:8px 0 0;">São duas leituras diferentes: "por vencimento" vem de A receber e A pagar; "caixa realizado" vem dos movimentos de caixa já lançados. Não some uma com a outra.</p>
+
+    ${sub('Entradas e saídas por origem — por vencimento')}
+    <div style="overflow-x:auto;"><table class="report"><thead><tr><th>Origem</th><th>Valor</th><th>Já recebido/pago</th><th>Em aberto</th></tr></thead><tbody>
+      ${linhaOrigem('Entrada — Distribuidora (DAV)', pv.ent.dav)}
+      ${linhaOrigem('Entrada — PDV (balcão)', pv.ent.pdv)}
+      ${linhaOrigem('Entrada — Demais categorias de A receber', pv.ent.outras)}
+      <tr><td><strong>Total de entradas</strong></td><td><strong>${n(pv.entradas.valor)}</strong></td><td><strong>${n(pv.entradas.realizado)}</strong></td><td><strong>${n(pv.entradas.aberto)}</strong></td></tr>
+      ${linhaOrigem('Saídas — A pagar', pv.sai)}
+      <tr><td><strong>Saldo (entradas − saídas)</strong></td><td><strong>${n(prevSaldo)}</strong></td><td><strong>${n(pv.entradas.realizado - pv.sai.realizado)}</strong></td><td><strong>${n(pv.entradas.aberto - pv.sai.aberto)}</strong></td></tr>
+    </tbody></table></div>
+    ${chaves.length ? `
+      ${sub(pv.porMes ? 'Mês a mês — por vencimento' : 'Dia a dia — por vencimento')}
+      <div style="overflow-x:auto;"><table class="report"><thead><tr><th>${pv.porMes?'Mês':'Dia'}</th><th>DAV</th><th>PDV</th><th>Demais entradas</th><th>Total de entradas</th><th>Saídas</th><th>Saldo</th></tr></thead>
+      <tbody>${linhasBucket}
+        <tr><td><strong>Total do período</strong></td><td><strong>${n(pv.ent.dav.valor)}</strong></td><td><strong>${n(pv.ent.pdv.valor)}</strong></td><td><strong>${n(pv.ent.outras.valor)}</strong></td><td><strong>${n(prevEnt)}</strong></td><td><strong>${n(prevSai)}</strong></td><td><strong>${n(prevSaldo)}</strong></td></tr>
+      </tbody></table></div>
+    ` : '<p style="font-size:13px; color:var(--ink-soft); margin-top:12px;">Nenhum título a receber ou a pagar vence neste período.</p>'}
+
+    ${sub('Caixa realizado — por forma de pagamento')}
     <table class="report"><thead><tr><th>Forma</th><th>Valor líquido</th></tr></thead><tbody>
-      <tr><td>Dinheiro</td><td>${fmtBRL(fs.porForma.Dinheiro)}</td></tr>
-      <tr><td>Cartão</td><td>${fmtBRL(fs.porForma['Cartão'])}</td></tr>
-      <tr><td>PIX</td><td>${fmtBRL(fs.porForma.PIX)}</td></tr>
-      ${fs.porForma.Outros ? `<tr><td>Outros / não classificado</td><td>${fmtBRL(fs.porForma.Outros)}</td></tr>` : ''}
+      <tr><td>Dinheiro</td><td>${n(rl.porForma.Dinheiro)}</td></tr>
+      <tr><td>Cartão</td><td>${n(rl.porForma['Cartão'])}</td></tr>
+      <tr><td>PIX</td><td>${n(rl.porForma.PIX)}</td></tr>
+      ${rl.porForma.Outros ? `<tr><td>Outros / não classificado</td><td>${n(rl.porForma.Outros)}</td></tr>` : ''}
     </tbody></table>
-    ${linhaMaquininha ? `
-      <p style="font-size:12px; color:var(--ink-soft); margin:22px 0 6px;">Cartão — por maquininha</p>
-      <table class="report"><thead><tr><th>Maquininha</th><th>Valor</th></tr></thead><tbody>${linhaMaquininha}</tbody></table>
-    ` : ''}
+    ${sub('Cartão — por maquininha')}
+    <table class="report"><thead><tr><th>Maquininha</th><th>Valor</th></tr></thead><tbody>${linhaMaquininha}</tbody></table>
     ${linhaContaPix ? `
-      <p style="font-size:12px; color:var(--ink-soft); margin:22px 0 6px;">PIX — por conta</p>
+      ${sub('PIX — por conta')}
       <table class="report"><thead><tr><th>Conta</th><th>Valor</th></tr></thead><tbody>${linhaContaPix}</tbody></table>
     ` : ''}
-    ${fs.porDia.length ? `
-      <p style="font-size:12px; color:var(--ink-soft); margin:22px 0 6px;">Fechamento dia a dia</p>
-      <table class="report"><thead><tr><th>Dia</th><th>Entradas</th><th>Saídas</th><th>Saldo</th><th>Fechamento em dinheiro<br><span style="font-weight:400; font-size:10.5px; color:var(--ink-faint);">(com troco de ${fmtBRL(DATA.caixaSaldoInicial||0)})</span></th><th></th></tr></thead>
-      <tbody>${linhasPorDia}</tbody></table>
-    ` : '<p style="font-size:13px; color:var(--ink-soft); margin-top:16px;">Nenhum lançamento de caixa nesta semana ainda.</p>'}
+    ${rl.porDia.length ? `
+      ${sub('Caixa realizado — dia a dia')}
+      <div style="overflow-x:auto;"><table class="report"><thead><tr><th>Dia</th><th>Entradas</th><th>Saídas</th><th>Saldo</th><th>Fechamento em dinheiro<br><span style="font-weight:400; font-size:10.5px; color:var(--ink-faint);">(com troco de ${fmtBRL(DATA.caixaSaldoInicial||0)})</span></th><th></th></tr></thead>
+      <tbody>${linhasPorDia}</tbody></table></div>
+    ` : '<p style="font-size:13px; color:var(--ink-soft); margin-top:16px;">Nenhum lançamento de caixa neste período.</p>'}
   `);
 }
 
@@ -4159,13 +4307,13 @@ function openFechamentoDiaPanel(diaISO){
   const fd = computeFechamentoDia(diaISO);
   const linhaMaquininha = Object.entries(fd.porMaquininha).map(([mq,v])=>`<tr><td>${escapeHtml(mq)}</td><td>${fmtBRL(v)}</td></tr>`).join('');
   const linhaContaPix = Object.entries(fd.porContaPix).map(([ct,v])=>`<tr><td>${escapeHtml(ct)}</td><td>${fmtBRL(v)}</td></tr>`).join('');
-  openOverlayFilho(openFechamentoSemanaPanel, `
+  openOverlayFilho(openFechamentoPanel, `
     <div class="panel-head">
       <div><h2>Extrato de caixa do dia</h2><p>${fmtDate(diaISO)} (${DIAS_SEMANA_PT[new Date(diaISO+'T12:00:00').getDay()]}).</p></div>
       <button class="close-x" onclick="closeOverlay()">✕</button>
     </div>
     <div class="panel-actions">
-      <button class="btn" onclick="openFechamentoSemanaPanel()">← Voltar para a semana</button>
+      <button class="btn" onclick="openFechamentoPanel()">← Voltar ao fechamento</button>
       <button class="btn gold" onclick="window.print()">Imprimir extrato do dia</button>
     </div>
     <table class="report"><thead><tr><th>Resumo do dia</th><th>Valor</th></tr></thead><tbody>
@@ -4904,6 +5052,8 @@ const FIELD_SETS = {
     {name:'descricao', label:'Descrição', type:'text'},
     {name:'entrada', label:'Entrada (R$)', type:'number'},
     {name:'saida', label:'Saída (R$)', type:'number'},
+    {name:'categoria_entrada', label:'Categoria da entrada (obrigatória se houver entrada)', type:'cadastro', cadastro:'categoriasReceita', full:true},
+    {name:'categoria_saida', label:'Categoria da saída (obrigatória se houver saída)', type:'cadastro', cadastro:'categoriasDespesa', full:true},
     {name:'data', label:'Data', type:'date'},
     {name:'forma_pagamento', label:'Forma de pagamento', type:'select', options:['Dinheiro','Cartão','PIX']},
     {name:'maquininha', label:'Maquininha (se Cartão)', type:'select', options:['','Mercado Pago','Getnet']},
@@ -5560,9 +5710,27 @@ document.getElementById('entryForm').addEventListener('submit', async e=>{
         conta_bancaria_id: resolved.conta_bancaria || null,
       })});
     } else {
+      // Categoria obrigatória a partir de 08/10/2026 (pedido da Danielle): movimentos antigos sem
+      // categoria continuam existindo; daqui pra frente o salvamento é bloqueado sem ela. Entrada usa
+      // categoria de receita, saída usa categoria de despesa.
+      const entradaV = parseFloat(obj.entrada)||0, saidaV = parseFloat(obj.saida)||0;
+      if(entradaV > 0 && !resolved.categoria_entrada) throw new Error('Escolha a categoria da entrada — ela alimenta o fechamento de caixa e o DRE.');
+      if(saidaV > 0 && !resolved.categoria_saida) throw new Error('Escolha a categoria da saída — ela alimenta o fechamento de caixa e o DRE.');
+      const nomeCatCaixa = (lista, campo) => {
+        if(obj[campo] === '__novo__') return (obj['novo_'+campo]||'').trim();
+        const it = (CADASTROS[lista]||[]).find(c => String(c.id) === String(resolved[campo]));
+        return it ? it.nome_categoria : '';
+      };
+      const tagsCat = [];
+      if(entradaV > 0) tagsCat.push('[Categoria entrada: ' + nomeCatCaixa('categoriasReceita','categoria_entrada') + ']');
+      if(saidaV > 0) tagsCat.push('[Categoria saída: ' + nomeCatCaixa('categoriasDespesa','categoria_saida') + ']');
+      const obsCaixa = (tagsCat.join(' ') + ' ' + (obj.observacoes||'')).trim();
       await apiFetch('/api/caixa', {method:'POST', body: JSON.stringify({
         conta_bancaria_id: resolved.conta, descricao: obj.descricao, data_mov: obj.data,
-        entrada: parseFloat(obj.entrada)||0, saida: parseFloat(obj.saida)||0, observacoes: obj.observacoes,
+        entrada: entradaV, saida: saidaV, observacoes: obsCaixa,
+        categoria_id: (entradaV > 0 ? resolved.categoria_entrada : resolved.categoria_saida) || null,
+        categoria_entrada_id: entradaV > 0 ? resolved.categoria_entrada : null,
+        categoria_saida_id: saidaV > 0 ? resolved.categoria_saida : null,
         forma_pagamento: obj.forma_pagamento || null, maquininha: obj.maquininha || null,
       })});
     }
