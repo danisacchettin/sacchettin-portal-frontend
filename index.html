@@ -608,7 +608,7 @@
 
   /* Indicadores compactos */
   body.layout-novo #kpiGrid, body.layout-novo #flowGrid{display:grid; gap:14px; justify-content:stretch;}
-  body.layout-novo #kpiGrid{grid-template-columns:repeat(4, minmax(0,1fr));}
+  body.layout-novo #kpiGrid{grid-template-columns:repeat(3, minmax(0,1fr));}
   body.layout-novo #flowGrid{grid-template-columns:repeat(2, minmax(0,1fr)); margin-top:14px;}
   body.layout-novo #kpiGrid .card, body.layout-novo #flowGrid .card{
     border-radius:var(--radius-novo); padding:16px 18px; box-shadow:none; background:var(--surface); border:1px solid var(--border);
@@ -627,7 +627,6 @@
   body.layout-novo #flowGrid .card .val{font-size:18px !important;}
   body.layout-novo .card.tone-urgent{background:var(--surface); border-color:rgba(193,85,75,.30);}
 
-  body.layout-novo #cardSaldo{order:1;}
   body.layout-novo #cardPagar{order:2;}
   body.layout-novo #cardReceber{order:3;}
   body.layout-novo #cardVencidos{order:4;}
@@ -1596,8 +1595,7 @@ function renderKPIs(){
                             sub:`Hoje, ${fmtDate(todayISO())} (${nomeDiaSemanaHoje()})`})}
                             ${cardHTML({label:'A receber', value:fmtBRL(k.receberMes), expandable:true, id:'cardReceber',
                                         sub:`Referente a ${nomeMesAtual()} · ${DATA.contasReceber.length} título(s) em aberto — venda da Cristal é majoritariamente à vista`})}
-                                        ${cardHTML({label:'Saldo atual em contas bancárias', value:fmtBRL(k.saldoCaixa), tone:'gold', valueClass:(k.saldoCaixa<0?'neg':(k.saldoCaixa>0?'pos':'')), expandable:true, id:'cardSaldo',
-                                                    sub: DATA.saldoContas.map(c=>c.conta.split('—')[0].trim()).join(' · ')})}
+
                                                     ${cardHTML({label:'Fechamento de caixa', value:fmtBRL(fs.saldo), tone:'gold', expandable:true, id:'cardFechamentoSemana',
                                                                 sub:`Semana desde ${fmtDate(fs.inicio.toISOString().slice(0,10))} · Dinheiro ${fmtBRL(fs.porForma.Dinheiro)} · Cartão ${fmtBRL(fs.porForma['Cartão'])} · PIX ${fmtBRL(fs.porForma.PIX)}`})}
                                                                 ${cardHTML({label:'Vencidos', value:fmtBRL(k.vencidosTotal), tone: k.vencidosTotal>0?'red':'', valueClass:k.vencidosTotal>0?'neg':'', expandable:true, id:'cardVencidos',
@@ -7159,7 +7157,6 @@ async function init(){
     if(e.target.closest('#cardFechamentoSemana')) openFechamentoSemanaPanel();
     if(e.target.closest('#cardPagar')) openPagarPanel();
     if(e.target.closest('#cardVencidos')) openVencidosPanel();
-    if(e.target.closest('#cardSaldo')) openSaldoPanel();
     if(e.target.closest('#cardPagarHoje')) openPagarHojePanel();
   });
   document.getElementById('flowGrid').addEventListener('click', e=>{
@@ -7217,7 +7214,7 @@ init();
       { id:'receber',     rotulo:'A receber',              ic:'↑', alvo:'#cardReceber' },
       { id:'vencidos',    rotulo:'Vencidos',               ic:'!', alvo:'#cardVencidos' },
       { id:'faixas',      rotulo:'Faixas de atraso',       ic:'≡', alvo:'#cardAging' },
-      { id:'saldo',       rotulo:'Saldo em contas',        ic:'$', alvo:'#cardSaldo' },
+      { id:'saldo',       rotulo:'Saldos bancários',       ic:'$', acao:openSaldoPanel },
       { id:'fechamento',  rotulo:'Fechamento de caixa',    ic:'▦', alvo:'#cardFechamentoSemana' }
     ]},
     { grupo:'Dívidas e contratos', itens:[
@@ -7358,6 +7355,12 @@ init();
       window.scrollTo({top:0, behavior:'smooth'});
       return;
     }
+    if(typeof it.acao === 'function'){
+      marcar(it.id);
+      gatilho = btn;
+      it.acao();
+      return;
+    }
     var el = document.querySelector(it.alvo);
     if(!el){
       aviso(it.id === 'saude'
@@ -7478,12 +7481,12 @@ init();
 
   // atalho de diagnóstico: quais itens do menu ficaram sem alvo (usado nos testes de fase)
   window.__navAlvos = function(){
-    var o = []; MENU.forEach(function(g){ g.itens.forEach(function(it){ if(it.alvo !== 'painel') o.push(it.alvo); }); }); return o;
+    var o = []; MENU.forEach(function(g){ g.itens.forEach(function(it){ if(it.alvo && it.alvo !== 'painel') o.push(it.alvo); }); }); return o;
   };
   window.__navDiagnostico = function(){
     var out = [];
     MENU.forEach(function(g){ g.itens.forEach(function(it){
-      if(it.alvo !== 'painel') out.push(it.id + ':' + (document.querySelector(it.alvo) ? 'ok' : 'SEM_ALVO'));
+      if(it.alvo !== 'painel') out.push(it.id + ':' + (typeof it.acao === 'function' || document.querySelector(it.alvo) ? 'ok' : 'SEM_ALVO'));
     }); });
     return out;
   };
@@ -7491,3 +7494,4 @@ init();
 </script>
 </body>
 </html>
+
