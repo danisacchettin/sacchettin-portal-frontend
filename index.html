@@ -239,6 +239,9 @@
   .fc-periodo-aplicado{font-size:12px; color:var(--ink-soft); margin:8px 0 20px;}
   .fc-abas .fc-seg{display:flex; flex-wrap:wrap;}
   @media(max-width:600px){.fc-periodo-form .btn{width:100%;}.fc-abas .fc-seg button{flex:1 1 auto;}.fc-periodo-form label{min-width:0;}}
+  #saudeEmpresaCard, .nav-item[data-item="saude"]{display:none !important;}
+  body.saude-admin #saudeEmpresaCard{display:block !important;}
+  body.saude-admin .nav-item[data-item="saude"]{display:flex !important;}
   .fc-filtro{display:flex; align-items:center; gap:14px 22px; flex-wrap:wrap; margin-bottom:12px;}
   .fc-seg{display:inline-flex; border:1px solid var(--gold-line); border-radius:10px; overflow:hidden; background:var(--surface-soft);}
   .fc-seg button{border:0; background:transparent; color:var(--ink-soft); font:inherit; font-size:13px; padding:9px 14px; cursor:pointer; border-right:1px solid var(--gold-line);}
@@ -962,8 +965,16 @@ let DATA = null;
 const API_BASE = 'https://sacchettin-portal-backend.onrender.com';
 let authToken = localStorage.getItem('portalToken') || null;
 let USUARIO = null;
+function podeVerSaudeEmpresa(){
+  return !!(USUARIO && USUARIO.papel === 'escritorio' && !localStorage.getItem('portalAdminToken'));
+}
 function setUsuario(u){
   USUARIO = u;
+  document.body.classList.toggle('saude-admin', podeVerSaudeEmpresa());
+  if(!podeVerSaudeEmpresa()){
+    const saude = document.getElementById('saudeEmpresaCard');
+    if(saude) saude.innerHTML = '';
+  }
   // Tema visual do escritório (paleta de marca da Danielle) x tema do cliente
   // (paleta padrão do portal) — aplicado conforme o papel do usuário logado,
   // para ela sempre saber, de relance, se está na própria conta ou "vendo
@@ -4846,6 +4857,7 @@ function corSaudeEmpresa(cor){
 async function renderSaudeEmpresaCard(){
   const el = document.getElementById('saudeEmpresaCard');
   if(!el) return;
+  if(!podeVerSaudeEmpresa()){ el.innerHTML = ''; return; }
   el.innerHTML = `<div style="padding:16px; text-align:center; color:var(--ink-faint); font-size:12.5px;">Calculando a saúde do negócio…</div>`;
   let calc;
   try{
@@ -4855,6 +4867,7 @@ async function renderSaudeEmpresaCard(){
     el.innerHTML = '';
     return;
   }
+  if(!podeVerSaudeEmpresa()){ el.innerHTML = ''; return; }
   const status = statusSaudeEmpresa(calc);
   const c = corSaudeEmpresa(status.cor);
   const optsPeriodo = Object.entries(LABELS_PERIODO_SAUDE).map(([v,l])=>`<option value="${v}" ${v===periodoSaudeEmpresa?'selected':''}>${l}</option>`).join('');
@@ -4883,6 +4896,7 @@ async function renderSaudeEmpresaCard(){
 }
 
 function abrirDetalheSaudeEmpresa(calc, status){
+  if(!podeVerSaudeEmpresa()) return;
   const c = corSaudeEmpresa(status.cor);
   const linha = (label, valor, destaque) => `
     <tr><td${destaque?' style="font-weight:600;"':''}>${label}</td><td style="text-align:right;${destaque?' font-weight:600;':''}">${valor}</td></tr>`;
