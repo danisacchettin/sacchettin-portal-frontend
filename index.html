@@ -229,6 +229,16 @@
 
   .panel-actions{display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap;}
   /* Fechamento de caixa: filtro de período (botões + navegador) */
+
+  .fc-periodo-form{align-items:flex-end; padding:16px; background:var(--surface-soft); border:1px solid var(--border); border-radius:8px; gap:12px;}
+  .fc-periodo-form label{display:flex; flex-direction:column; gap:6px; font-size:12px; color:var(--ink-soft); flex:1 1 150px;}
+  .fc-periodo-form input,.fc-periodo-form select{box-sizing:border-box; width:100%; min-height:42px; padding:9px 12px; font:inherit; font-size:14px; color:var(--ink); background:var(--surface); border:1px solid var(--border); border-radius:6px;}
+  .fc-periodo-form .btn{min-height:42px; margin:0;}
+  .fc-filtro-erro{flex-basis:100%; margin:0; color:var(--red); font-size:12px;}
+  .fc-filtro-erro:empty{display:none;}
+  .fc-periodo-aplicado{font-size:12px; color:var(--ink-soft); margin:8px 0 20px;}
+  .fc-abas .fc-seg{display:flex; flex-wrap:wrap;}
+  @media(max-width:600px){.fc-periodo-form .btn{width:100%;}.fc-abas .fc-seg button{flex:1 1 auto;}.fc-periodo-form label{min-width:0;}}
   .fc-filtro{display:flex; align-items:center; gap:14px 22px; flex-wrap:wrap; margin-bottom:12px;}
   .fc-seg{display:inline-flex; border:1px solid var(--gold-line); border-radius:10px; overflow:hidden; background:var(--surface-soft);}
   .fc-seg button{border:0; background:transparent; color:var(--ink-soft); font:inherit; font-size:13px; padding:9px 14px; cursor:pointer; border-right:1px solid var(--gold-line);}
@@ -608,7 +618,7 @@
 
   /* Indicadores compactos */
   body.layout-novo #kpiGrid, body.layout-novo #flowGrid{display:grid; gap:14px; justify-content:stretch;}
-  body.layout-novo #kpiGrid{grid-template-columns:repeat(3, minmax(0,1fr));}
+  body.layout-novo #kpiGrid{grid-template-columns:repeat(4, minmax(0,1fr));}
   body.layout-novo #flowGrid{grid-template-columns:repeat(2, minmax(0,1fr)); margin-top:14px;}
   body.layout-novo #kpiGrid .card, body.layout-novo #flowGrid .card{
     border-radius:var(--radius-novo); padding:16px 18px; box-shadow:none; background:var(--surface); border:1px solid var(--border);
@@ -630,21 +640,11 @@
   body.layout-novo #cardPagar{order:2;}
   body.layout-novo #cardReceber{order:3;}
   body.layout-novo #cardVencidos{order:4;}
-  body.layout-novo #cardPagarHoje, body.layout-novo #cardFechamentoSemana{
-    grid-column:1 / -1; display:flex; align-items:center; flex-wrap:wrap; gap:6px 18px; padding:12px 18px !important;
-  }
-  body.layout-novo #cardPagarHoje{order:5;}
-  body.layout-novo #fechamentoSlot{margin:14px 28px 0;}
-  body.layout-novo #fechamentoSlot .card{border-radius:var(--radius-novo); box-shadow:none; border:1px solid var(--nav-bg);}
-  body.layout-novo #fechamentoSlot #cardFechamentoSemana{display:flex; align-items:center; flex-wrap:wrap; gap:6px 18px; padding:12px 18px !important;}
-  body.layout-novo #cardFechamentoSemana{order:6; background:var(--nav-bg) !important; border-color:var(--nav-bg) !important; color:var(--nav-ink);}
-  body.layout-novo #cardPagarHoje .lbl, body.layout-novo #cardFechamentoSemana .lbl{margin:0;}
-  body.layout-novo #cardPagarHoje .val, body.layout-novo #cardFechamentoSemana .val{font-size:17px !important;}
-  body.layout-novo #cardPagarHoje .sub, body.layout-novo #cardFechamentoSemana .sub{margin:0;}
-  body.layout-novo #cardPagarHoje.card.expandable::after, body.layout-novo #cardFechamentoSemana.card.expandable::after{margin:0 0 0 auto;}
-  body.layout-novo #cardFechamentoSemana .lbl, body.layout-novo #cardFechamentoSemana .val, body.layout-novo #cardFechamentoSemana .sub,
-  body.layout-novo #cardFechamentoSemana.card.expandable::after{color:var(--nav-ink);}
-  body.layout-novo #cardFechamentoSemana .val.neg{color:#F0A89F;}
+  body.layout-novo #cardPagarHoje{order:6; grid-column:1 / -1; display:flex; align-items:center; flex-wrap:wrap; gap:6px 18px; padding:12px 18px !important;}
+  body.layout-novo #cardFechamentoSemana{order:5;}
+  body.layout-novo #cardPagarHoje .lbl, body.layout-novo #cardPagarHoje .sub{margin:0;}
+  body.layout-novo #cardPagarHoje .val{font-size:17px !important;}
+  body.layout-novo #cardPagarHoje.card.expandable::after{margin:0 0 0 auto;}
 
   /* botões flutuantes continuam, mais discretos */
   body.layout-novo .fab{width:46px; height:46px;}
@@ -1587,7 +1587,7 @@ function cardHTML({label, value, valueClass='', sub='', tone='', expandable=fals
 
 function renderKPIs(){
   const k = computeKPIs();
-  const fs = k.fechamentoSemana;
+  const fs = fcRealizado(fcIntervalo('semana', 0));
   document.getElementById('kpiGrid').innerHTML = `
     ${cardHTML({label:'A pagar', value:fmtBRL(k.pagarMes), tone:'gold', expandable:true, id:'cardPagar',
                 sub:`Referente a ${nomeMesAtual()} · ${DATA.contasPagar.length} título(s) em aberto · clique para trocar o período`})}
@@ -1597,7 +1597,7 @@ function renderKPIs(){
                                         sub:`Referente a ${nomeMesAtual()} · ${DATA.contasReceber.length} título(s) em aberto — venda da Cristal é majoritariamente à vista`})}
 
                                                     ${cardHTML({label:'Fechamento de caixa', value:fmtBRL(fs.saldo), tone:'gold', expandable:true, id:'cardFechamentoSemana',
-                                                                sub:`Semana desde ${fmtDate(fs.inicio.toISOString().slice(0,10))} · Dinheiro ${fmtBRL(fs.porForma.Dinheiro)} · Cartão ${fmtBRL(fs.porForma['Cartão'])} · PIX ${fmtBRL(fs.porForma.PIX)}`})}
+                                                                sub:`Resultado realizado nesta semana · Entradas menos saídas`})}
                                                                 ${cardHTML({label:'Vencidos', value:fmtBRL(k.vencidosTotal), tone: k.vencidosTotal>0?'red':'', valueClass:k.vencidosTotal>0?'neg':'', expandable:true, id:'cardVencidos',
                                                                             sub:`${k.vencidosCount} título(s) em atraso, de qualquer mês · para negociação com fornecedor`})}
                                                                             `;
@@ -4319,25 +4319,44 @@ function openSaldoPanel(){
 }
 
 function fcNavegar(delta){ fcPeriodo.offset = delta===0 ? 0 : fcPeriodo.offset + delta; openFechamentoPanel(); }
-function fcMudarTipo(tipo){ fcPeriodo = { tipo, offset:0 }; openFechamentoPanel(); }
+function fcMudarTipo(tipo){
+  if(tipo==='personalizado') return;
+  fcPeriodo = { tipo:tipo==='mesAnterior'?'mes':tipo, offset:tipo==='mesAnterior'?-1:0 };
+  openFechamentoPanel();
+}
+function fcIntervaloSelecionado(){
+  if(fcPeriodo.tipo!=='personalizado') return fcIntervalo(fcPeriodo.tipo, fcPeriodo.offset);
+  return {ini:fcPeriodo.ini, fim:fcPeriodo.fim,
+    iniDate:new Date(fcPeriodo.ini+'T12:00:00'), fimDate:new Date(fcPeriodo.fim+'T12:00:00')};
+}
+function fcAplicarIntervalo(e){
+  e.preventDefault();
+  const ini = document.getElementById('fcInicio').value;
+  const fim = document.getElementById('fcFim').value;
+  const erro = document.getElementById('fcFiltroErro');
+  if(!ini || !fim || ini>fim){
+    erro.textContent = 'A data final deve ser igual ou posterior à data inicial.';
+    document.getElementById('fcFim').focus(); return;
+  }
+  fcPeriodo = {tipo:'personalizado', offset:0, ini, fim};
+  openFechamentoPanel();
+}
 // Nome antigo mantido: o cartão, o menu e o extrato do dia ainda chamam openFechamentoSemanaPanel().
-function openFechamentoSemanaPanel(){ fcAba = 'resumo'; openFechamentoPanel(); }
+function openFechamentoSemanaPanel(){ fcAba = 'resumo'; fcPeriodo = {tipo:'semana', offset:0}; openFechamentoPanel(); }
 // "Fluxo de caixa" deixou de ser um menu separado (08/10/2026): a projeção de 6 meses é uma visão do Fechamento de caixa.
 function openFluxoPanel(){ fcAba = 'projecao'; openFechamentoPanel(); }
 function fcMudarAba(a){ fcAba = a; openFechamentoPanel(); }
 
 function openFechamentoPanel(){
   const tipo = fcPeriodo.tipo;
-  const iv = fcIntervalo(tipo, fcPeriodo.offset);
+  const iv = fcIntervaloSelecionado();
   const pv = fcPrevisto(iv, tipo);
   const rl = fcRealizado(iv);
   const avisos = fcCobertura(iv);
   const n = v => fmtBRL(Math.round(Number(v||0)*100)/100 + 0);
-  const segTipo = FC_TIPOS.map(t=>`<button type="button" class="${t.v===tipo?'on':''}" aria-pressed="${t.v===tipo}" onclick="fcMudarTipo('${t.v}')">${t.r}</button>`).join('');
-  const faixa = iv.ini === iv.fim ? '' : 'de ' + fmtDate(iv.ini) + ' até ' + fmtDate(iv.fim);
-  const sitPer = fcPeriodo.offset===0 ? 'Período atual' : (fcPeriodo.offset>0 ? 'Período futuro' : 'Período passado');
-  const contagem = l => l.n ? ` <span style="color:var(--ink-faint); font-size:11px;">(${l.n} título${l.n>1?'s':''})</span>` : '';
-  const linhaOrigem = (rotulo, l) => `<tr><td>${rotulo}${contagem(l)}</td><td>${n(l.valor)}</td><td>${n(l.realizado)}</td><td>${n(l.aberto)}</td></tr>`;
+  const presets = [['dia','Hoje'],['semana','Esta semana'],['mes','Este mês'],['mesAnterior','Mês anterior'],['trimestre','Este trimestre'],['semestre','Este semestre'],['ano','Este ano'],['personalizado','Escolher datas']];
+  const preset = tipo==='mes' && fcPeriodo.offset===-1 ? 'mesAnterior' : tipo;
+  const opcoes = presets.map(([v,r])=>`<option value="${v}" ${v===preset?'selected':''}>${r}</option>`).join('');
 
   const prevEnt = pv.entradas.valor, prevSai = pv.sai.valor, prevSaldo = prevEnt - prevSai;
 
@@ -4406,15 +4425,14 @@ function openFechamentoPanel(){
     <div class="fc-filtro fc-abas">
       <div class="fc-seg" role="group" aria-label="Visão">${segAba}</div>
     </div>
-    ${aba==='projecao' ? '' : `<div class="fc-filtro">
-      <div class="fc-seg" role="group" aria-label="Tipo de período">${segTipo}</div>
-      <div class="fc-nav">
-        <button type="button" class="fc-nav-b" onclick="fcNavegar(-1)" aria-label="Período anterior" title="Período anterior">‹</button>
-        <div class="fc-nav-rot"><strong>${fcRotulo(tipo, iv)}</strong>${faixa ? '<span>'+faixa+'</span>' : ''}<span class="fc-chip">${sitPer}</span></div>
-        <button type="button" class="fc-nav-b" onclick="fcNavegar(1)" aria-label="Próximo período" title="Próximo período">›</button>
-      </div>
-      ${fcPeriodo.offset!==0 ? '<button type="button" class="fc-hoje" onclick="fcNavegar(0)">Voltar para o período atual</button>' : ''}
-    </div>`}
+    ${aba==='projecao' ? '' : `<form class="fc-periodo-form fc-filtro" onsubmit="fcAplicarIntervalo(event)">
+      <label>Período<select id="fcAtalho" onchange="fcMudarTipo(this.value)">${opcoes}</select></label>
+      <label>De<input id="fcInicio" type="date" required value="${iv.ini}" onchange="document.getElementById('fcAtalho').value='personalizado'"></label>
+      <label>Até<input id="fcFim" type="date" required value="${iv.fim}" onchange="document.getElementById('fcAtalho').value='personalizado'"></label>
+      <button type="submit" class="btn gold">Aplicar período</button>
+      <p id="fcFiltroErro" class="fc-filtro-erro" role="alert"></p>
+    </form>
+    <p class="fc-periodo-aplicado" aria-live="polite"><strong>Exibindo:</strong> ${fmtDate(iv.ini)} até ${fmtDate(iv.fim)} · ${aba==='movimentos'?'pela data dos movimentos':'previsto por vencimento e realizado pela data dos movimentos'}</p>`}
     <div class="panel-actions" style="align-items:center;">
       <button class="btn gold" onclick="closeOverlay(); openForm('caixa')">+ Adicionar movimento de caixa</button>
       <button class="btn" onclick="window.print()">Imprimir fechamento</button>
@@ -4431,15 +4449,6 @@ function openFechamentoPanel(){
     </tbody></table>
     <p style="font-size:11.5px; color:var(--ink-soft); margin:8px 0 0;">São duas leituras diferentes: "por vencimento" vem de A receber e A pagar; "caixa realizado" vem dos movimentos de caixa já lançados. Não some uma com a outra.</p>
 
-    ${sub('Entradas e saídas por origem — por vencimento')}
-    <div style="overflow-x:auto;"><table class="report"><thead><tr><th>Origem</th><th>Valor</th><th>Já recebido/pago</th><th>Em aberto</th></tr></thead><tbody>
-      ${linhaOrigem('Entrada — Distribuidora (DAV)', pv.ent.dav)}
-      ${linhaOrigem('Entrada — PDV (balcão)', pv.ent.pdv)}
-      ${linhaOrigem('Entrada — Demais categorias de A receber', pv.ent.outras)}
-      <tr><td><strong>Total de entradas</strong></td><td><strong>${n(pv.entradas.valor)}</strong></td><td><strong>${n(pv.entradas.realizado)}</strong></td><td><strong>${n(pv.entradas.aberto)}</strong></td></tr>
-      ${linhaOrigem('Saídas — A pagar', pv.sai)}
-      <tr><td><strong>Saldo (entradas − saídas)</strong></td><td><strong>${n(prevSaldo)}</strong></td><td><strong>${n(pv.entradas.realizado - pv.sai.realizado)}</strong></td><td><strong>${n(pv.entradas.aberto - pv.sai.aberto)}</strong></td></tr>
-    </tbody></table></div>
     ${chaves.length ? `
       ${sub(pv.porMes ? 'Mês a mês — por vencimento' : 'Dia a dia — por vencimento')}
       <div style="overflow-x:auto;"><table class="report"><thead><tr><th>${pv.porMes?'Mês':'Dia'}</th><th>DAV</th><th>PDV</th><th>Demais entradas</th><th>Total de entradas</th><th>Saídas</th><th>Saldo</th></tr></thead>
@@ -7214,8 +7223,7 @@ init();
       { id:'receber',     rotulo:'A receber',              ic:'↑', alvo:'#cardReceber' },
       { id:'vencidos',    rotulo:'Vencidos',               ic:'!', alvo:'#cardVencidos' },
       { id:'faixas',      rotulo:'Faixas de atraso',       ic:'≡', alvo:'#cardAging' },
-      { id:'saldo',       rotulo:'Saldos bancários',       ic:'$', acao:openSaldoPanel },
-      { id:'fechamento',  rotulo:'Fechamento de caixa',    ic:'▦', alvo:'#cardFechamentoSemana' }
+      { id:'saldo',       rotulo:'Saldos bancários',       ic:'$', acao:openSaldoPanel }
     ]},
     { grupo:'Dívidas e contratos', itens:[
       { id:'contratos',   rotulo:'Contratos',              ic:'▤', alvo:'#btnContratos' },
@@ -7305,24 +7313,6 @@ init();
   if(saude && kpi && kpi.previousElementSibling){
     kpi.parentNode.insertBefore(saude, kpi.previousElementSibling);
   }
-
-  // --- "Fechamento de caixa da semana": sai do bloco de indicadores e fica abaixo dos gráficos, como na referência ---
-  // O clique original é tratado pelo contêiner #kpiGrid; fora dele, o contêiner próprio abaixo repete o MESMO clique
-  // (openFechamentoSemanaPanel). Se o painel for redesenhado (renderKPIs), o cartão novo é movido de novo.
-  var flow = document.getElementById('flowGrid');
-  var slotFech = document.createElement('div');
-  slotFech.id = 'fechamentoSlot';
-  if(flow && flow.parentNode) flow.parentNode.insertBefore(slotFech, flow.nextSibling);
-  slotFech.addEventListener('click', function(e){
-    if(e.target.closest('#cardFechamentoSemana') && typeof openFechamentoSemanaPanel === 'function') openFechamentoSemanaPanel();
-  });
-  function posicionarFechamento(){
-    if(!kpi) return;
-    var novo = kpi.querySelector('#cardFechamentoSemana');
-    if(novo){ slotFech.innerHTML = ''; slotFech.appendChild(novo); }
-    else if(!kpi.querySelector('.card')){ slotFech.innerHTML = ''; } // painel em estado de erro: não deixa cartão velho
-  }
-  if(kpi){ posicionarFechamento(); new MutationObserver(posicionarFechamento).observe(kpi, {childList:true}); }
 
   function aviso(txt){
     var el = document.getElementById('navAviso');
@@ -7494,4 +7484,5 @@ init();
 </script>
 </body>
 </html>
+
 
