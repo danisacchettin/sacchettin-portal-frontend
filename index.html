@@ -4122,7 +4122,39 @@ function labelMes(m){
 // Estado do filtro fica em módulo (mesmo padrão do painel de Vencidos): a tela se
 // redesenha a cada troca de filtro (mês ou credor), sem embutir nome de fornecedor
 // (que pode ter aspas/acentos) dentro de atributo onchange.
-let filtroPagar = { mes: null, credor: [], busca: ''};
+// A pagar — período (10/10/2026): Dia / Semana (seg–dom) / Mês / Todos, com ‹ › e escolha de data,
+// no mesmo padrão do Fechamento de caixa. tipo 'todos' ignora o período.
+let filtroPagar = { tipo:'mes', offset:0, credor: [], busca: ''};
+function pagarOffsetPara(tipo, iso){
+  const [y,m,d] = String(iso).slice(0,10).split('-').map(Number);
+  const h = new Date(); h.setHours(12,0,0,0);
+  const alvo = new Date(y, m-1, d, 12);
+  if(tipo==='dia') return Math.round((alvo - h)/86400000);
+  if(tipo==='semana'){
+    const seg = dt => { const x = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate(), 12); const dow = x.getDay(); x.setDate(x.getDate() + (dow===0 ? -6 : 1-dow)); return x; };
+    return Math.round((seg(alvo) - seg(h)) / (7*86400000));
+  }
+  return (alvo.getFullYear()-h.getFullYear())*12 + (alvo.getMonth()-h.getMonth());
+}
+function pagarIntervalo(){
+  return fcIntervalo(filtroPagar.tipo==='todos' ? 'mes' : filtroPagar.tipo, filtroPagar.tipo==='todos' ? 0 : filtroPagar.offset);
+}
+function pagarMudarTipo(t){
+  // Data de referência ao trocar o tipo: hoje, se o período atual contém hoje; senão, o início do período.
+  const hojeISO = fcISO(new Date());
+  const ivAtual = pagarIntervalo();
+  const ref = (filtroPagar.tipo==='todos' || (hojeISO >= ivAtual.ini && hojeISO <= ivAtual.fim)) ? hojeISO : ivAtual.ini;
+  filtroPagar.tipo = t;
+  filtroPagar.offset = t==='todos' ? 0 : pagarOffsetPara(t, ref);
+  renderPagarPanel();
+}
+function pagarNavegar(delta){ filtroPagar.offset = delta===0 ? 0 : filtroPagar.offset + delta; renderPagarPanel(); }
+function pagarIrParaData(v){
+  if(!v) return;
+  if(filtroPagar.tipo==='todos') filtroPagar.tipo = 'dia';
+  filtroPagar.offset = pagarOffsetPara(filtroPagar.tipo, v);
+  renderPagarPanel();
+}
 
 function credoresPagar(){
   const nomes = new Set(DATA.contasPagar.map(x=>x.credor || 'Fornecedor não informado'));
@@ -4131,7 +4163,13 @@ function credoresPagar(){
 
 function openPagarPanel(mesFiltro){
   const hoje = todayISO();
-  filtroPagar = { mes: mesFiltro || hoje.slice(0,7), credor: [], busca: '' };
+  // mesFiltro (opcional, vindo de outros pontos do portal): 'AAAA-MM', 'hoje', 'semana' ou 'todos'.
+  let tipo = 'mes', offset = 0;
+  if(mesFiltro==='hoje') tipo = 'dia';
+  else if(mesFiltro==='semana') tipo = 'semana';
+  else if(mesFiltro==='todos') tipo = 'todos';
+  else if(/^\d{4}-\d{2}$/.test(mesFiltro||'')) offset = pagarOffsetPara('mes', mesFiltro + '-01');
+  filtroPagar = { tipo, offset, credor: [], busca: '' };
   renderPagarPanel();
 }
 
@@ -4139,23 +4177,19 @@ function openPagarPanel(mesFiltro){
 // permite refiltrar a cada tecla no campo de busca sem reconstruir o overlay inteiro (que
 // perderia o foco do campo). Mesmo padrão já usado em tabelasReceber().
 function tabelasPagar(){
-  const hoje = todayISO();
-  const { mes, credor, busca } = filtroPagar;
+  const hoje = fcISO(new Date());
+  const { tipo, credor, busca } = filtroPagar;
   const termoBusca = normalizarBusca(busca);
+  const iv = pagarIntervalo();
   let lista;
   if(termoBusca){
     // Localizar por nº de NF/documento ou nº de boleto ignora o filtro de mês -- o objetivo é
     // achar o título onde quer que ele esteja, não só dentro do período em exibição (pedido da
     // Danielle, 03/10/2026).
     lista = DATA.contasPagar;
-  } else if(mes === 'todos') lista = DATA.contasPagar;
-  else if(mes === 'hoje') lista = DATA.contasPagar.filter(x=> String(x.vencimento).slice(0,10) === hoje);
-  else if(mes === 'semana'){
-    const fimSemanaPagar = new Date(); fimSemanaPagar.setDate(fimSemanaPagar.getDate()+6);
-    const fimSemanaPagarStr = fimSemanaPagar.toISOString().slice(0,10);
-    lista = DATA.contasPagar.filter(x=> { const d=String(x.vencimento).slice(0,10); return d>=hoje && d<=fimSemanaPagarStr; });
-  } else {
-    lista = DATA.contasPagar.filter(x=> x.vencimento && String(x.vencimento).slice(0,7)===mes);
+  } else if(tipo === 'todos') lista = DATA.contasPagar;
+  else {
+    lista = DATA.contasPagar.filter(x=> { const d = String(x.vencimento||'').slice(0,10); return d && d >= iv.ini && d <= iv.fim; });
   }
   if(credor.length) lista = lista.filter(x=>credor.includes(x.credor || 'Fornecedor não informado'));
   if(termoBusca){
@@ -4177,29 +4211,40 @@ function tabelasPagar(){
 }
 
 function renderPagarPanel(){
-  const meses = mesesDisponiveisPagar();
-  const { mes, credor, busca } = filtroPagar;
+  const { tipo, offset, credor, busca } = filtroPagar;
+  const iv = pagarIntervalo();
   const _iniJ = inicioJanelaBase();
-  const optsMes = meses.map(m=>`<option value="${m}" ${m===mes?'selected':''}>${labelMes(m)}${(m+'-01') < _iniJ ? ' · base parcial' : ''}</option>`).join('');
-  const _avisoPagar = (mes==='todos' || (/^\d{4}-\d{2}$/.test(mes) && (mes+'-01') < _iniJ)) ? bannerBaseHtml(notaJanelaBase()) : '';
+  const mesRef = tipo==='todos' ? 'todos' : iv.ini.slice(0,7);
+  const _avisoPagar = (mesRef==='todos' || (mesRef+'-01') < _iniJ) ? bannerBaseHtml(notaJanelaBase()) : '';
+  const PAGAR_TIPOS = [{v:'dia', r:'Dia'}, {v:'semana', r:'Semana'}, {v:'mes', r:'Mês'}, {v:'todos', r:'Todos'}];
+  const segPagar = PAGAR_TIPOS.map(t=>`<button type="button" class="${t.v===tipo?'on':''}" aria-pressed="${t.v===tipo}" onclick="pagarMudarTipo('${t.v}')">${t.r}</button>`).join('');
+  const faixaPagar = (tipo==='semana' || tipo==='mes') ? 'de ' + fmtDate(iv.ini) + ' até ' + fmtDate(iv.fim) : '';
+  const sitPagar = offset===0 ? 'Período atual' : (offset>0 ? 'Período futuro' : 'Período passado');
+  const filtroPeriodoHtml = `<div class="fc-filtro">
+      <div class="fc-seg" role="group" aria-label="Tipo de período">${segPagar}</div>
+      ${tipo==='todos' ? '<div class="fc-nav-rot" style="text-align:left;"><strong>Todos os períodos</strong></div>' : `<div class="fc-nav">
+        <button type="button" class="fc-nav-b" onclick="pagarNavegar(-1)" aria-label="Período anterior" title="Período anterior">‹</button>
+        <div class="fc-nav-rot"><strong>${fcRotulo(tipo, iv)}</strong>${faixaPagar ? '<span>'+faixaPagar+'</span>' : ''}<span class="fc-chip">${sitPagar}</span></div>
+        <button type="button" class="fc-nav-b" onclick="pagarNavegar(1)" aria-label="Próximo período" title="Próximo período">›</button>
+      </div>
+      <label style="font-size:12px; color:var(--ink-soft); display:flex; flex-direction:column; gap:3px;">Ir para a data
+        <input type="date" id="pagarIrData" value="${(()=>{ const h = fcISO(new Date()); return (h >= iv.ini && h <= iv.fim) ? h : iv.ini; })()}" style="padding:8px 10px; border-radius:10px; border:1px solid var(--border); background:var(--paper-2); font-family:inherit; font-size:13px; color:var(--ink);">
+      </label>
+      ${offset!==0 ? '<button type="button" class="fc-hoje" onclick="pagarNavegar(0)">Voltar para hoje</button>' : ''}`}
+    </div>`;
   const optsCredor = credoresPagar().map(c=>`<option value="${escapeHtml(c)}" ${credor.includes(c)?'selected':''}>${escapeHtml(c)}</option>`).join('');
   const estiloSelect = 'width:auto; margin-top:0; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:var(--paper-2); font-family:inherit; font-size:13px; color:var(--ink);';
 
   openOverlay(`
     <div class="panel-head">
-        <div><h2>A pagar</h2><p>Filtre por período de vencimento (hoje, próximos 7 dias ou mês), por credor, ou localize um título digitando o nº da nota fiscal/documento ou do boleto. Clique em "Adicionar" para lançar uma nova conta.</p></div>
+        <div><h2>A pagar</h2><p>Filtre por período de vencimento (dia, semana ou mês, com setas e escolha de data), por credor, ou localize um título digitando o nº da nota fiscal/documento ou do boleto. Clique em "Adicionar" para lançar uma nova conta.</p></div>
       <button class="close-x" onclick="closeOverlay()">✕</button>
     </div>
     ${_avisoPagar}
+    ${filtroPeriodoHtml}
     <div class="panel-actions" style="flex-wrap:wrap; gap:10px;">
       <button class="btn gold" onclick="closeOverlay(); openForm('pagar')">+ Adicionar título a pagar</button>
       <button class="btn" onclick="window.print()">Imprimir</button>
-      <select id="filtroMesPagar" style="${estiloSelect}">
-      <option value="hoje" ${mes==='hoje'?'selected':''}>Vencimentos de hoje</option>
-      <option value="semana" ${mes==='semana'?'selected':''}>Próximos 7 dias</option>
-        <option value="todos" ${mes==='todos'?'selected':''}>Todos os meses</option>
-        ${optsMes}
-      </select>
     <select id="filtroCredorPagar" multiple size="5" title="Segure Ctrl (ou Cmd no Mac) e clique para selecionar mais de um credor" style="${estiloSelect}">
         ${optsCredor}
       </select>
@@ -4215,7 +4260,8 @@ function renderPagarPanel(){
     </div>
   `, renderPagarPanel);
 
-  document.getElementById('filtroMesPagar').addEventListener('change', e=>{ filtroPagar.mes = e.target.value; document.getElementById('pagarTabelasContainer').innerHTML = tabelasPagar(); });
+  const _irData = document.getElementById('pagarIrData');
+  if(_irData) _irData.addEventListener('change', e=>pagarIrParaData(e.target.value));
   document.getElementById('filtroCredorPagar').addEventListener('change', e=>{ filtroPagar.credor = Array.from(e.target.selectedOptions).map(o=>o.value); document.getElementById('pagarTabelasContainer').innerHTML = tabelasPagar(); });
   // Mantém o foco/cursor no campo ao digitar: refiltra só o container de tabelas, sem
   // reconstruir o overlay inteiro -- mesmo padrão já usado no filtro de nome em Contas a Receber.
