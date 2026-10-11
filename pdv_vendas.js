@@ -609,6 +609,42 @@ function pdvIndicadores(){
 /* ==========================================================================================
    ABA RESUMO
    ========================================================================================== */
+/* ---------- lucro bruto estimado (custo cadastrado no AutoPlus) ---------- */
+// O backend envia por dia, só para o escritório: vendas (inclui taxa de entrega), vendas_taxa,
+// vendas_com_custo e custo. Sem esses campos (backend ainda sem o ajuste) nada disto aparece.
+function pdvLucroDe(dias){
+  const ds = (dias || []).filter(d => d && d.custo !== undefined && d.custo !== null);
+  if(!ds.length) return null;
+  const soma = f => ds.reduce((t, d) => t + (Number(f(d)) || 0), 0);
+  const vendas = soma(d => d.vendas), taxa = soma(d => d.vendas_taxa), comCusto = soma(d => d.vendas_com_custo), custo = soma(d => d.custo);
+  const merc = vendas - taxa;
+  if(!(merc > 0) || !(comCusto > 0)) return null;
+  const lucro = comCusto - custo;
+  return { lucro, custo, comCusto, merc, semCusto: Math.max(0, merc - comCusto),
+    margem: lucro / comCusto * 100, markup: custo > 0 ? lucro / custo * 100 : null,
+    cobertura: comCusto / merc * 100, projetado: lucro * merc / comCusto };
+}
+function pdvLucroHtml(r){
+  const L = pdvLucroDe(r.por_dia);
+  if(!L) return '';
+  const hoje = pdvISO(new Date());
+  const emAndamento = r.por_dia.some(d => d.data === hoje);
+  const baixa = L.cobertura < 70;
+  return `<div style="border:1px solid var(--border); border-left:4px solid var(--gold); border-radius:12px; padding:14px 16px; margin-bottom:18px; background:var(--paper-2);">
+    <div style="font-size:10.5px; letter-spacing:1px; text-transform:uppercase; color:var(--ink-faint);">Lucro bruto estimado (venda − custo cadastrado no AutoPlus)</div>
+    <div style="font-size:24px; font-weight:600; color:var(--ink); margin-top:6px;">${pdvMoeda(L.lucro)}</div>
+    <div style="font-size:13px; color:var(--ink-soft); margin-top:6px; line-height:1.5;">
+      Margem <strong>${pdvNum(L.margem, 1)}%</strong> (lucro ÷ venda) · Markup <strong>${L.markup === null ? '—' : pdvNum(L.markup, 1) + '%'}</strong> (lucro ÷ custo)
+      · Venda com custo conhecido ${pdvMoeda(L.comCusto)} · Custo ${pdvMoeda(L.custo)}
+    </div>
+    <div style="font-size:12px; margin-top:6px; line-height:1.5; color:${baixa ? 'var(--red)' : 'var(--ink-soft)'};">
+      ${baixa ? 'Atenção: ' : ''}custo conhecido em ${pdvNum(L.cobertura, 1)}% da venda de mercadoria. ${pdvMoeda(L.semCusto)} foram vendidos sem custo cadastrado e ficam fora do lucro acima.
+      ${L.semCusto > 0 ? 'Se esses itens tivessem a mesma margem, o lucro do período seria cerca de <strong>' + pdvMoeda(L.projetado) + '</strong> (suposição, não dado).' : ''}
+    </div>
+    ${pdvNota('Lucro bruto: antes de despesas, impostos, taxas de cartão, perdas e quebra. A taxa de entrega não entra. É uma estimativa: o custo do AutoPlus tem itens sem custo e pode estar desatualizado, e não substitui o DRE nem lança nada no financeiro.' + (emAndamento ? ' O dia de hoje ainda está em andamento: o valor sobe até a loja fechar.' : ''), '8px 0 0')}
+  </div>`;
+}
+
 function pdvAbaResumo(alvo){
   const r = pdvResumo, a = pdvAnalises, t = r.totais, g = a.geral, adm = pdvInteligencia();
   const cmp = pdvTemCmp(), ant = cmp ? pdvResumoAnt.totais : null;
@@ -634,6 +670,7 @@ function pdvAbaResumo(alvo){
     </div>` : '';
 
   const ins = adm ? pdvInsights() : [];
+  const lucroHtml = adm ? pdvLucroHtml(r) : '';
   alvo.innerHTML = `
     ${pdvGrade([
       pdvTileCmp('Vendas por itens', pdvMoeda(t.vendas_itens), t.vendas_itens, ant && ant.vendas_itens, pdvNum(t.dias_com_venda) + ' dia(s) com venda'),
@@ -644,6 +681,7 @@ function pdvAbaResumo(alvo){
       pdvTileCmp('Quilos vendidos', pdvNum(t.kg, 1) + ' kg', t.kg, ant && ant.kg, pdvPct(g.vendas_kg, g.vendas) + ' das vendas é por peso'),
     ])}
     ${aviso}
+    ${lucroHtml}
     ${projHtml}
     ${ins.length ? pdvTitulo('O que chama atenção') + pdvInsightsHtml(ins) + '<div style="height:14px;"></div>' : ''}
     ${pdvTitulo('Vendas por dia')}
@@ -664,7 +702,7 @@ function pdvAbaResumo(alvo){
       ${pdvNota('Por valor de taxa: ' + e.por_valor.map(x => pdvNum(x.taxas) + ' × ' + pdvMoeda(x.valor_taxa)).join(' · ') + '. A taxa de entrega é cobrada no cupom, mas não é mercadoria: fica fora de produtos, grupos e horários, e entra em "Vendas por itens".', '-8px 0 16px')}` : ''}
     ${g.vendas_generico ? `<p style="font-size:12px; color:var(--ink-soft); margin:0 0 16px; padding:10px 12px; border:1px dashed var(--border); border-radius:10px;">
       <strong>${pdvMoeda(g.vendas_generico)}</strong> (${pdvPct(g.vendas_generico, g.vendas)} das vendas, ${pdvNum(g.itens_generico)} itens) foram registrados no caixa como item genérico, com o valor digitado e sem dizer qual é o produto. Esse valor entra no faturamento, mas não pode ser atribuído a nenhum corte.</p>` : ''}
-    ${pdvNota('Margem e rendimento de carcaça ainda não aparecem aqui: o custo e o estoque cadastrados no AutoPlus não são confiáveis (há custo zerado e estoque negativo). Essas leituras dependem do custo das compras lançadas no portal.', '12px 0 0')}`;
+    ${lucroHtml ? pdvNota('Rendimento de carcaça e CMV ainda não aparecem aqui: dependem do custo das compras lançadas no portal e do vínculo produto × estoque. O lucro acima usa só o custo cadastrado no AutoPlus (estimativa).', '12px 0 0') : pdvNota('Margem e rendimento de carcaça ainda não aparecem aqui: o custo e o estoque cadastrados no AutoPlus não são confiáveis (há custo zerado e estoque negativo). Essas leituras dependem do custo das compras lançadas no portal.', '12px 0 0')}`;
   pdvGraficoDias('pdvChartDias', r.por_dia);
 }
 
@@ -676,6 +714,8 @@ function pdvAbaDias(alvo){
   const comparaveis = r.por_dia.filter(d => d.fechamento && d.vendas !== null && d.vendas !== undefined);
   const dif = comparaveis.length ? comparaveis.reduce((s, d) => s + (d.vendas - d.fechamento.total), 0) : null;
   const be = adm ? pdvEsperadoSemana() : null;
+  const temLucro = adm && r.por_dia.some(d => d.custo !== undefined && d.custo !== null);
+  const lucroCel = L => L ? pdvMoeda(L.lucro) + ' <span style="color:var(--ink-faint); font-size:11px;" title="Margem: lucro ÷ venda com custo conhecido">· ' + pdvNum(L.margem, 1) + '%</span>' : '—';
   const formas = [
     pdvTile('Dinheiro', pdvMoeda(t.dinheiro), pdvPct(t.dinheiro, t.fechamento) + ' do fechamento'),
     pdvTile('Cartão de crédito', pdvMoeda(t.cartao_credito), pdvPct(t.cartao_credito, t.fechamento) + ' do fechamento'),
@@ -703,6 +743,7 @@ function pdvAbaDias(alvo){
       <td style="text-align:right; ${diff !== null && Math.abs(diff) >= 1 ? 'color:var(--red);' : ''}">${diff !== null ? pdvMoeda(diff) : '—'}</td>
       <td style="text-align:right;">${pdvNum(d.cupons)}</td>
       <td style="text-align:right;">${d.cupons ? pdvMoeda(d.vendas / d.cupons) : '—'}</td>
+      ${temLucro ? `<td style="text-align:right; white-space:nowrap;">${lucroCel(pdvLucroDe([d]))}</td>` : ''}
       ${adm ? `<td style="text-align:right;">${vsEsp}</td>` : ''}
     </tr>`;
   }).join('');
@@ -717,14 +758,14 @@ function pdvAbaDias(alvo){
       <thead><tr><th>Data</th><th>Dia</th><th style="text-align:right;">Fechamento</th><th style="text-align:right;">Dinheiro</th>
         <th style="text-align:right;">Crédito</th><th style="text-align:right;">Débito</th><th style="text-align:right;">PIX</th>
         <th style="text-align:right;">Vendas por itens</th><th style="text-align:right;">Diferença</th>
-        <th style="text-align:right;">Cupons</th><th style="text-align:right;">Ticket</th>${adm ? '<th style="text-align:right;" title="Vendas por itens do dia contra a média daquele dia da semana nas últimas semanas">vs. média do dia</th>' : ''}</tr></thead>
+        <th style="text-align:right;">Cupons</th><th style="text-align:right;">Ticket</th>${temLucro ? '<th style="text-align:right;" title="Lucro bruto estimado do dia (venda − custo do AutoPlus, só itens com custo cadastrado) e margem">Lucro est.</th>' : ''}${adm ? '<th style="text-align:right;" title="Vendas por itens do dia contra a média daquele dia da semana nas últimas semanas">vs. média do dia</th>' : ''}</tr></thead>
       <tbody>${linhas}</tbody>
       <tfoot><tr style="font-weight:600;"><td colspan="2">Total</td>
         <td style="text-align:right;">${pdvMoeda(t.fechamento)}</td><td style="text-align:right;">${pdvMoeda(t.dinheiro)}</td>
         <td style="text-align:right;">${pdvMoeda(t.cartao_credito)}</td><td style="text-align:right;">${pdvMoeda(t.cartao_debito)}</td>
         <td style="text-align:right;">${pdvMoeda(t.pix)}</td><td style="text-align:right;">${pdvMoeda(t.vendas_itens)}</td>
         <td style="text-align:right;">${dif !== null ? pdvMoeda(dif) : '—'}</td>
-        <td style="text-align:right;">${pdvNum(t.cupons)}</td><td style="text-align:right;">${pdvMoeda(t.ticket_medio)}</td>${adm ? '<td></td>' : ''}</tr></tfoot>
+        <td style="text-align:right;">${pdvNum(t.cupons)}</td><td style="text-align:right;">${pdvMoeda(t.ticket_medio)}</td>${temLucro ? '<td style="text-align:right; white-space:nowrap;">' + lucroCel(pdvLucroDe(r.por_dia)) + '</td>' : ''}${adm ? '<td></td>' : ''}</tr></tfoot>
     </table></div>
     ${pdvNota('Clique em um dia para ver os cupons.' + (adm ? ' "vs. média do dia" compara o dia com a média do mesmo dia da semana nas últimas ~12 semanas' + (be ? '' : ' (ainda carregando ou sem histórico suficiente)') + '.' : ''))}`;
   alvo.querySelectorAll('.pdv-dia').forEach(tr => tr.addEventListener('click', () => openCuponsDoDia(tr.dataset.dia)));
