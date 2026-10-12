@@ -5,7 +5,7 @@ Uso (na raiz do repositório):  python3 tools/gerar_novo.py
 Rode de novo sempre que o index.html ou algum .js da raiz mudar, para a nova versão acompanhar a vigente.
 Não toca em nenhum arquivo da raiz. Falha (com mensagem) se algum trecho esperado não for encontrado,
 para nunca gerar uma versão nova "meio aplicada".
-Arquivos escritos à mão em novo/: config.js, dssj-shell.js, tema-dssj.css, assets/ (este script não os altera).
+Arquivos escritos à mão em novo/: config.js, dssj-shell.js, tema-dssj.css, modulos.css, menu.js, resumos.js, resumos-gestao.js, assets/ (este script não os altera).
 """
 import re, shutil, sys, pathlib
 
@@ -43,7 +43,7 @@ html = trocar(html,
 # 3) identidade da nova versão
 html = trocar(html, '<head>', '<head>\n<!-- GERADO por tools/gerar_novo.py a partir de ../index.html — não editar à mão -->\n<meta name="robots" content="noindex">', '<head>')
 html = trocar(html, '</head>',
-  '<link rel="stylesheet" href="tema-dssj.css">\n<script src="config.js"></script>\n<script src="dssj-shell.js" defer></script>\n</head>', '</head>')
+  '<link rel="stylesheet" href="tema-dssj.css">\n<link rel="stylesheet" href="modulos.css">\n<script src="config.js"></script>\n<script src="dssj-shell.js" defer></script>\n<script src="resumos.js" defer></script>\n<script src="resumos-gestao.js" defer></script>\n<script src="menu.js" defer></script>\n</head>', '</head>')
 
 (NOVO).mkdir(exist_ok=True)
 (NOVO / 'index.html').write_text(html, encoding='utf-8')
