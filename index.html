@@ -10,6 +10,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="custo_produto.js" defer></script>
+  <script src="dav.js" defer></script>
       <script src="carga_tributaria.js" defer></script>
     <script src="maquininhas.js" defer></script>
     <script src="pdv_vendas.js" defer></script>
@@ -831,6 +832,11 @@ Fica fora de .wrap para continuar visível quando .wrap é escondido em @media p
       <div class="lbl">PDV</div>
       <div class="val" style="font-size:19px;">Vendas, fechamento e análise</div>
       <div class="sub">Faturamento por dia e forma de pagamento, cortes, horários e curva ABC, recebido automaticamente do AutoPlus</div>
+    </div>
+    <div class="card" id="btnDAV">
+      <div class="lbl">DAV</div>
+      <div class="val" style="font-size:19px;">Pedidos da distribuidora</div>
+      <div class="sub">Nº do pedido, cliente, datas, vencimento (7 dias) e os produtos comprados em cada pedido</div>
     </div>
     <div class="card" id="btnImportar">
       <div class="lbl">Importação em lote</div>
@@ -4377,7 +4383,7 @@ function openFechamentoPanel(){
     : fmtDate(k) + ' (' + DIAS_SEMANA_PT[new Date(k+'T12:00:00').getDay()] + ')';
   const linhasBucket = chaves.map(k=>{
     const b = pv.buckets[k], e = b.dav + b.pdv + b.outras;
-    return `<tr><td>${rotBucket(k)}</td><td>${n(b.dav)}</td><td>${n(b.pdv)}</td><td>${n(b.outras)}</td><td>${n(e)}</td><td>${n(b.saidas)}</td><td>${n(e-b.saidas)}</td></tr>`;
+    return `<tr><td>${rotBucket(k)}</td><td>${window.davCelula ? davCelula(k, b.dav, n(b.dav)) : n(b.dav)}</td><td>${n(b.pdv)}</td><td>${n(b.outras)}</td><td>${n(e)}</td><td>${n(b.saidas)}</td><td>${n(e-b.saidas)}</td></tr>`;
   }).join('');
 
   const mqs = Object.assign({'Getnet':0, 'Mercado Pago':0}, rl.porMaquininha);
@@ -4462,10 +4468,11 @@ function openFechamentoPanel(){
 
     ${chaves.length ? `
       ${sub(pv.porMes ? 'Mês a mês — por vencimento' : 'Dia a dia — por vencimento')}
-      <div style="overflow-x:auto;"><table class="report"><thead><tr><th>${pv.porMes?'Mês':'Dia'}</th><th>DAV</th><th>PDV</th><th>Demais entradas</th><th>Total de entradas</th><th>Saídas</th><th>Saldo</th></tr></thead>
+      <div style="overflow-x:auto;"><table class="report"><thead><tr><th>${pv.porMes?'Mês':'Dia'}</th><th>${window.davCab ? davCab(iv.ini, iv.fim) : 'DAV'}</th><th>PDV</th><th>Demais entradas</th><th>Total de entradas</th><th>Saídas</th><th>Saldo</th></tr></thead>
       <tbody>${linhasBucket}
-        <tr><td><strong>Total do período</strong></td><td><strong>${n(pv.ent.dav.valor)}</strong></td><td><strong>${n(pv.ent.pdv.valor)}</strong></td><td><strong>${n(pv.ent.outras.valor)}</strong></td><td><strong>${n(prevEnt)}</strong></td><td><strong>${n(prevSai)}</strong></td><td><strong>${n(prevSaldo)}</strong></td></tr>
+        <tr><td><strong>Total do período</strong></td><td><strong>${window.davCelulaTotal ? davCelulaTotal(iv.ini, iv.fim, pv.ent.dav.valor, n(pv.ent.dav.valor)) : n(pv.ent.dav.valor)}</strong></td><td><strong>${n(pv.ent.pdv.valor)}</strong></td><td><strong>${n(pv.ent.outras.valor)}</strong></td><td><strong>${n(prevEnt)}</strong></td><td><strong>${n(prevSai)}</strong></td><td><strong>${n(prevSaldo)}</strong></td></tr>
       </tbody></table></div>
+      <div id="fcDavCard" class="dav-card" hidden></div>
     ` : '<p style="font-size:13px; color:var(--ink-soft); margin-top:12px;">Nenhum título a receber ou a pagar vence neste período.</p>'}
 
     ${sub('Caixa realizado — por forma de pagamento')}
@@ -7235,6 +7242,7 @@ init();
       { id:'pagar',       rotulo:'A pagar',                ic:'↓', alvo:'#cardPagar' },
       { id:'pagarhoje',   rotulo:'A pagar hoje',           ic:'⊙', alvo:'#cardPagarHoje' },
       { id:'receber',     rotulo:'A receber',              ic:'↑', alvo:'#cardReceber' },
+      { id:'fechamento',  rotulo:'Fechamento de caixa',    ic:'⊞', alvo:'#cardFechamentoSemana' },
       { id:'vencidos',    rotulo:'Vencidos',               ic:'!', alvo:'#cardVencidos' },
       { id:'faixas',      rotulo:'Faixas de atraso',       ic:'≡', alvo:'#cardAging' },
       { id:'saldo',       rotulo:'Saldos bancários',       ic:'$', acao:openSaldoPanel }
@@ -7252,6 +7260,7 @@ init();
     { grupo:'Relatórios', itens:[
       { id:'dre',         rotulo:'DRE',                    ic:'▥', alvo:'#btnDRE' },
       { id:'pdv',         rotulo:'PDV',                    ic:'▤', alvo:'#btnPDV' },
+      { id:'dav',         rotulo:'DAV',                    ic:'▤', alvo:'#btnDAV' },
       { id:'imprimir',    rotulo:'Relatório para impressão', ic:'▧', alvo:'#btnPrint' },
       { id:'importar',    rotulo:'Importar planilha',      ic:'⇧', alvo:'#btnImportar' },
       { id:'pagas',       rotulo:'Contas pagas',           ic:'✓', alvo:'#btnContasPagas' }
