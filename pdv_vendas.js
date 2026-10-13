@@ -687,9 +687,14 @@ function pdvAbaDias(alvo){
   const linhas = r.por_dia.map(d => {
     const f = d.fechamento, diff = (f && d.vendas !== null && d.vendas !== undefined) ? d.vendas - f.total : null, dow = pdvData(d.data).getDay();
     const vsEsp = (be && d.data < hoje && d.vendas > 0 && be.esp[dow] > 0) ? pdvDelta(pdvVar(d.vendas, be.esp[dow])) : '—';
+    const selo = pdvIncompleto(d)
+      ? (d.data === hoje
+          ? ' <span class="tag-status tag-aberto" title="Dia em andamento: o fechamento mostrado é parcial e vai subir até a loja fechar. Não é lançado no financeiro até lá.">em andamento</span>'
+          : ' <span class="tag-status tag-atraso" title="O fechamento ficou com valor abaixo das vendas e não foi atualizado depois. Rode de novo o \'processar vendas e atualizar caixa\' no AutoPlus para fechar o dia. Não é lançado no financeiro até lá.">fechamento desatualizado</span>')
+      : '';
     return `<tr class="pdv-dia" data-dia="${d.data}" style="cursor:pointer;" title="Ver os cupons deste dia">
       <td>${pdvDataBR(d.data)}</td><td>${PDV_DIAS_CURTO[dow]}</td>
-      <td style="text-align:right; font-weight:600; color:var(--ink); white-space:nowrap;">${f ? pdvMoeda(f.total) + (pdvIncompleto(d) ? ' <span class="tag-status tag-atraso" title="O fechamento foi gravado antes do fim do dia: está menor que as vendas. Este dia não é lançado no financeiro até o fechamento ser atualizado.">incompleto</span>' : '') : '<span style="color:var(--ink-faint);">sem fechamento</span>'}</td>
+      <td style="text-align:right; font-weight:600; color:var(--ink); white-space:nowrap;">${f ? pdvMoeda(f.total) + selo : '<span style="color:var(--ink-faint);">sem fechamento</span>'}</td>
       <td style="text-align:right;">${f ? pdvMoeda(f.dinheiro) : '—'}</td>
       <td style="text-align:right;">${f ? pdvMoeda(f.cartao_credito) : '—'}</td>
       <td style="text-align:right;">${f ? pdvMoeda(f.cartao_debito) : '—'}</td>
