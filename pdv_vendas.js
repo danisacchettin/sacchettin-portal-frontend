@@ -113,11 +113,9 @@ function pdvPeriodoAnterior(){
 function pdvTemCmp(){ return !!(pdvResumoAnt && pdvResumoAnt.totais && pdvResumoAnt.totais.dias_com_venda > 0); }
 
 function pdvFiltroHtml(){
-  const opts = PDV_PRESETS.map(p => `<option value="${p[0]}" ${pdvPeriodo.preset===p[0]?'selected':''}>${p[1]}</option>`).join('');
   const est = 'padding:8px 10px; border-radius:8px; border:1px solid var(--border); background:var(--paper-2); font-family:inherit; font-size:12.5px; color:var(--ink);';
   return `
     <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:end; margin-bottom:16px;">
-      <label style="font-size:11px; color:var(--ink-faint);">Período<br><select id="pdvPreset" style="${est} margin-top:4px;">${opts}</select></label>
       <label style="font-size:11px; color:var(--ink-faint);">De<br><input type="date" id="pdvIni" value="${pdvPeriodo.inicio}" style="${est} margin-top:4px;"></label>
       <label style="font-size:11px; color:var(--ink-faint);">Até<br><input type="date" id="pdvFim" value="${pdvPeriodo.fim}" style="${est} margin-top:4px;"></label>
       <button type="button" class="btn gold" id="pdvAplicar">Aplicar</button>
@@ -125,10 +123,10 @@ function pdvFiltroHtml(){
 }
 
 function pdvLigarFiltro(recarregar){
-  const preset = document.getElementById('pdvPreset'), ini = document.getElementById('pdvIni'), fim = document.getElementById('pdvFim');
-  if(!preset) return;
-  preset.addEventListener('change', () => { pdvAplicarPreset(preset.value); if(preset.value !== 'livre') recarregar(); });
-  const livre = () => { preset.value = 'livre'; pdvPeriodo.preset = 'livre'; };
+  // Sem seletor de período (pedido da Dani, 14/10/2026): só "De" e "Até" + Aplicar. A abertura continua no mês corrente.
+  const ini = document.getElementById('pdvIni'), fim = document.getElementById('pdvFim');
+  if(!ini || !fim) return;
+  const livre = () => { pdvPeriodo.preset = 'livre'; };
   ini.addEventListener('change', livre); fim.addEventListener('change', livre);
   document.getElementById('pdvAplicar').addEventListener('click', () => {
     if(!ini.value || !fim.value){ return; }

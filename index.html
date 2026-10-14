@@ -746,6 +746,14 @@
   .v2-seg button[aria-pressed="true"]{background:var(--gold-wash); border-color:var(--gold); color:var(--gold); box-shadow:inset 0 0 0 1px var(--gold);}
   @media(max-width:640px){ .v2-seg{margin-left:0; margin-top:2px; flex:0 0 100%; flex-wrap:wrap;} .v2-tabs{flex-wrap:wrap; overflow-x:visible;} .v2-modtit{flex:0 0 100%; padding:2px 2px 0;} }
   @media print{ .v2-tabs{display:none !important;} }
+
+  /* ---------- Reorganização da interface · PR 3: clicar na linha em vez de botões laterais ---------- */
+  tr.linha-clicavel{cursor:pointer;}
+  tr.linha-clicavel:hover td{color:var(--ink); background:var(--paper-2);}
+  tr.linha-clicavel:focus-visible{outline:2px solid var(--gold); outline-offset:-2px;}
+  table.report td.lc-seta, table.report th.lc-seta{width:22px; padding-left:2px; padding-right:8px; text-align:right; color:var(--ink-faint); font-size:17px; line-height:1;}
+  tr.linha-clicavel:hover td.lc-seta{color:var(--gold);}
+  @media print{ td.lc-seta, th.lc-seta{display:none !important;} }
 </style>
 </head>
 <body>
@@ -1725,6 +1733,25 @@ function origemTag(x){
   return `<span class="origem-tag ${cls}">${label}</span>`;
 }
 
+/* PR 3 (reorganização da interface): linhas de tabela clicáveis no lugar de botões laterais.
+   Cliques em controles de dentro da linha (botão, link, campo) NÃO disparam a linha. */
+function _alvoInterativo(ev){ return !!(ev.target && ev.target.closest && ev.target.closest('button,a,input,select,textarea,label,[contenteditable]')); }
+function linhaDetalhe(ev, tipo, id, org){
+  if(ev.type === 'keydown'){ if((ev.key !== 'Enter' && ev.key !== ' ') || ev.target !== ev.currentTarget) return; ev.preventDefault(); }
+  else if(_alvoInterativo(ev)) return;
+  openDetalhesForItem(tipo, id, org);
+}
+function linhaDia(ev, dia){
+  if(ev.type === 'keydown'){ if((ev.key !== 'Enter' && ev.key !== ' ') || ev.target !== ev.currentTarget) return; ev.preventDefault(); }
+  else if(_alvoInterativo(ev)) return;
+  openFechamentoDiaPanel(dia);
+}
+function tornarLinhaClicavel(tr, fn, rotulo){
+  tr.classList.add('linha-clicavel'); tr.tabIndex = 0;
+  if(rotulo) tr.setAttribute('aria-label', rotulo);
+  tr.addEventListener('click', e=>{ if(_alvoInterativo(e)) return; fn(); });
+  tr.addEventListener('keydown', e=>{ if((e.key === 'Enter' || e.key === ' ') && e.target === tr){ e.preventDefault(); fn(); } });
+}
 // terceiro parâmetro "origin" (opcional, pedido da Danielle, 21/09/2026): identifica de qual
 // tela veio o clique em "Pagar/Receber", pra applyBaixa() saber pra onde voltar depois da baixa
 // em vez de sempre cair no painel genérico de Contas a Pagar/Receber (ver applyBaixa). Quando
@@ -1733,11 +1760,9 @@ function reportTable(list, tipo, origin){
   const org = origin || tipo;
   const nomeCol = tipo==='pagar' ? 'Fornecedor' : 'Cliente';
   const rows = list.map(x=>{
-    const aberto = saldoAberto(x,tipo) > 0;
     const pago = ['Pago Total','Adiantado'].includes(x.status);
-    const acaoLbl = tipo==='pagar' ? '💳 Pagar' : '✅ Receber';
     return `
-    <tr class="${pago ? 'row-pago' : ''}">
+    <tr class="linha-clicavel ${pago ? 'row-pago' : ''}" tabindex="0" title="Clique para abrir os detalhes" onclick="linhaDetalhe(event,'${tipo}','${x.id}','${org}')" onkeydown="linhaDetalhe(event,'${tipo}','${x.id}','${org}')">
       <td>${tipo==='pagar'?x.credor:x.cliente}</td>
       <td>${x.categoria || '—'}</td>
       ${tipo==='pagar' ? `<td>${x.numero_boleto || '—'}</td>` : ''}
@@ -1747,17 +1772,11 @@ function reportTable(list, tipo, origin){
       <td>${statusTag(x,tipo)}</td>
       <td>${origemTag(x)}</td>
       <td>${x.documento || '—'}</td>
-      <td>${(() => {
-        const btns = [];
-        if(aberto) btns.push(`<button type="button" class="btn-mini" onclick="openBaixaForItem('${tipo}','${x.id}','${org}')">${acaoLbl}</button>`);
-        if(tipo==='pagar' && x.forma_pagamento==='Dinheiro') btns.push(`<button type="button" class="btn-mini" onclick="openReciboForm('${x.id}')">🧾 Recibo</button>`);
-        btns.push(`<button type="button" class="btn-mini" onclick="openDetalhesForItem('${tipo}','${x.id}','${org}')">👁 Detalhes</button>`);
-                  return `<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start;">${btns.join('')}</div>`;
-      })()}</td>
+      <td class="lc-seta" aria-hidden="true">›</td>
     </tr>`;
   }).join('');
     return `<div style="overflow-x:auto;"><table class="report"><thead><tr>
-    <th>${nomeCol}</th><th>Categoria</th>${tipo==='pagar' ? '<th>Nº Boleto</th>' : ''}<th>Vencimento</th><th>Valor</th><th>Saldo em aberto</th><th>Status</th><th>Origem</th><th>Documento (NF)</th><th>Ação</th>
+    <th>${nomeCol}</th><th>Categoria</th>${tipo==='pagar' ? '<th>Nº Boleto</th>' : ''}<th>Vencimento</th><th>Valor</th><th>Saldo em aberto</th><th>Status</th><th>Origem</th><th>Documento (NF)</th><th class="lc-seta"></th>
     </tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
@@ -2485,7 +2504,7 @@ function renderContratosPanel(lista){
         ${c.saldo_em_aberto!=null ? `<div style="font-size:11px; color:var(--ink-faint); margin-top:4px;">Saldo em aberto: ${fmtBRL(Number(c.saldo_em_aberto))}</div>` : ''}
       </td>
       <td><span class="tag-status ${c.status==='Ativo'?'tag-aberto':'tag-pago'}">${escapeHtml(c.status)}</span></td>
-      <td><button type="button" class="btn-mini ct-editar">✏️ Editar</button></td>
+      <td class="lc-seta" aria-hidden="true">›</td>
       <td>
         <input type="file" class="ct-anexo-input" style="display:none;" accept="application/pdf,image/*">
         <button type="button" class="btn-mini ct-anexar">Anexar cópia</button>
@@ -2497,11 +2516,11 @@ function renderContratosPanel(lista){
 
   openOverlay(`
     <div class="panel-head">
-      <div><h2>Contratos</h2><p>Empréstimos, financiamentos e renegociações. As parcelas pagas são calculadas automaticamente a partir das baixas dadas em A pagar vinculadas a cada contrato. Use "✏️ Editar" para corrigir valor da parcela, quantidade de parcelas ou data da 1ª parcela — as mudanças refletem automaticamente em A pagar, Caixa e DRE.</p></div>
+      <div><h2>Contratos</h2><p>Empréstimos, financiamentos e renegociações. As parcelas pagas são calculadas automaticamente a partir das baixas dadas em A pagar vinculadas a cada contrato. Clique na linha do contrato para corrigir valor da parcela, quantidade de parcelas ou data da 1ª parcela — as mudanças refletem automaticamente em A pagar, Caixa e DRE.</p></div>
       <button class="close-x" onclick="closeOverlay()">✕</button>
     </div>
     <div style="overflow-x:auto;">
-    <table class="report"><thead><tr><th>Credor / nº</th><th>Finalidade</th><th>Valor total</th><th>Valor parcela</th><th>Juros</th><th>Parcelas</th><th>Status</th><th>Ações</th><th>Anexo</th></tr></thead>
+    <table class="report"><thead><tr><th>Credor / nº</th><th>Finalidade</th><th>Valor total</th><th>Valor parcela</th><th>Juros</th><th>Parcelas</th><th>Status</th><th class="lc-seta"></th><th>Anexo</th></tr></thead>
     <tbody id="ctBody">${linhas || '<tr><td colspan="9">Nenhum contrato cadastrado ainda.</td></tr>'}</tbody></table>
     </div>
 
@@ -2549,12 +2568,11 @@ function renderContratosPanel(lista){
     }
   });
 
-  document.querySelectorAll('#ctBody .ct-editar').forEach(btn=>{
-    btn.addEventListener('click', e=>{
-      const id = e.target.closest('tr').dataset.id;
-      const contrato = (lista||[]).find(c => String(c.id) === String(id));
+  document.querySelectorAll('#ctBody tr[data-id]').forEach(tr=>{
+    tornarLinhaClicavel(tr, ()=>{
+      const contrato = (lista||[]).find(c => String(c.id) === String(tr.dataset.id));
       if (contrato) abrirEditarContrato(contrato);
-    });
+    }, 'Abrir contrato para editar');
   });
   document.querySelectorAll('#ctBody .ct-anexar').forEach(btn=>{
     btn.addEventListener('click', e=>{ e.target.closest('tr').querySelector('.ct-anexo-input').click(); });
@@ -2748,10 +2766,7 @@ function renderContratosPrestadoresPanel(lista){
         <div class="cpr-anexos-lista" style="font-size:10.5px; margin-top:4px;"></div>
         <span class="cpr-msg" style="font-size:10.5px; display:block; margin-top:4px;"></span>
       </td>
-      <td>
-        <button type="button" class="btn-mini cpr-editar" data-id="${c.id}">Editar status</button>
-        <button type="button" class="btn-mini cpr-excluir" data-id="${c.id}" style="margin-top:4px;">Excluir</button>
-      </td>
+      <td class="lc-seta" aria-hidden="true">›</td>
     </tr>`;
   }).join('');
 
@@ -2761,7 +2776,7 @@ function renderContratosPrestadoresPanel(lista){
       <button class="close-x" onclick="closeOverlay()">✕</button>
     </div>
     <div style="overflow-x:auto;">
-      <table class="report"><thead><tr><th>Prestador / nº</th><th>Serviço</th><th>Vencimento</th><th>Parcelas</th><th>Status</th><th>Contrato anexado</th><th></th></tr></thead>
+      <table class="report"><thead><tr><th>Prestador / nº</th><th>Serviço</th><th>Vencimento</th><th>Parcelas</th><th>Status</th><th>Contrato anexado</th><th class="lc-seta"></th></tr></thead>
       <tbody id="cprBody">${linhas || '<tr><td colspan="7">Nenhum contrato cadastrado ainda.</td></tr>'}</tbody></table>
     </div>
     <div id="cprEdicaoWrap"></div>
@@ -2801,20 +2816,11 @@ function renderContratosPrestadoresPanel(lista){
   document.querySelectorAll('#cprBody tr[data-id]').forEach(tr=>{
     carregarAnexosEntidade('contratos_prestadores', tr.dataset.id, tr.querySelector('.cpr-anexos-lista'));
   });
-  document.querySelectorAll('#cprBody .cpr-editar').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      const contrato = lista.find(c => String(c.id) === btn.dataset.id);
-      if(contrato) renderEdicaoContratoPrestador(contrato);
-    });
-  });
-  document.querySelectorAll('#cprBody .cpr-excluir').forEach(btn=>{
-    btn.addEventListener('click', async ()=>{
-      if(!confirm('Excluir este contrato? Só é permitido se nenhuma parcela dele já tiver sido paga — nesse caso, encerre o contrato em vez de excluir.')) return;
-      try{
-        await apiFetch(`/api/contratos-prestadores/${btn.dataset.id}`, {method:'DELETE'});
-        openContratosPrestadoresPanel();
-      }catch(err){ alert('Não foi possível excluir: ' + err.message); }
-    });
+  document.querySelectorAll('#cprBody tr[data-id]').forEach(tr=>{
+    tornarLinhaClicavel(tr, ()=>{
+      const contrato = lista.find(c => String(c.id) === String(tr.dataset.id));
+      if(contrato){ renderEdicaoContratoPrestador(contrato); const w = document.getElementById('cprEdicaoWrap'); if(w && w.scrollIntoView) w.scrollIntoView({block:'nearest', behavior:'smooth'}); }
+    }, 'Abrir contrato para editar');
   });
 }
 
@@ -2834,10 +2840,18 @@ function renderEdicaoContratoPrestador(contrato){
       <div class="panel-actions">
         <button type="button" class="btn olive" id="cprSalvarEdicao">Salvar</button>
         <button type="button" class="btn ghost" id="cprCancelarEdicao">Cancelar</button>
+        <button type="button" class="btn ghost" id="cprExcluirContrato" style="margin-left:auto;">🗑 Excluir contrato</button>
       </div>
     </div>
   `;
   document.getElementById('cprCancelarEdicao').addEventListener('click', ()=>{ document.getElementById('cprEdicaoWrap').innerHTML=''; });
+  document.getElementById('cprExcluirContrato').addEventListener('click', async ()=>{
+    if(!confirm('Excluir este contrato? Só é permitido se nenhuma parcela dele já tiver sido paga — nesse caso, encerre o contrato em vez de excluir.')) return;
+    try{
+      await apiFetch(`/api/contratos-prestadores/${contrato.id}`, {method:'DELETE'});
+      openContratosPrestadoresPanel();
+    }catch(err){ alert('Não foi possível excluir: ' + err.message); }
+  });
   document.getElementById('cprSalvarEdicao').addEventListener('click', async ()=>{
     const btn = document.getElementById('cprSalvarEdicao');
     btn.disabled = true;
@@ -3534,7 +3548,7 @@ async function submeterNovoContratoPrestador(e){
       .join('');
     const tagCor = { 'Em carteira':'tag-aberto', 'Repassado a fornecedor':'tag-pago', 'Título antecipado':'tag-pago' };
     const linhas = cheques.map(c => `
-      <tr>
+      <tr data-id="${c.id}">
         <td>${escapeHtml(c.numero_cheque || '—')}</td>
         <td>${escapeHtml(c.banco || '—')}</td>
         <td>${escapeHtml(c.sacado_nome || '—')}</td>
@@ -3542,7 +3556,7 @@ async function submeterNovoContratoPrestador(e){
         <td>${c.data_pre_datada ? fmtDate(c.data_pre_datada) : '—'}</td>
         <td><span class="tag-status ${tagCor[c.status] || 'tag-aberto'}">${escapeHtml(c.status)}</span></td>
         <td>${escapeHtml(c.status_financeiro || '—')}</td>
-        <td><button type="button" class="btn-mini cheque-editar-status" data-id="${c.id}">Editar status</button></td>
+        <td class="lc-seta" aria-hidden="true">›</td>
       </tr>
     `).join('');
     openOverlay(`
@@ -3558,7 +3572,7 @@ async function submeterNovoContratoPrestador(e){
       </div>
       <div style="overflow-x:auto;">
         <table class="report">
-          <thead><tr><th>Nº cheque</th><th>Banco</th><th>Cliente</th><th style="text-align:right;">Valor</th><th>Data pré-datada</th><th>Status do cheque</th><th>Status do título</th><th></th></tr></thead>
+          <thead><tr><th>Nº cheque</th><th>Banco</th><th>Cliente</th><th style="text-align:right;">Valor</th><th>Data pré-datada</th><th>Status do cheque</th><th>Status do título</th><th class="lc-seta"></th></tr></thead>
           <tbody>${linhas || '<tr><td colspan="8">Nenhum cheque encontrado.</td></tr>'}</tbody>
         </table>
       </div>
@@ -3567,11 +3581,11 @@ async function submeterNovoContratoPrestador(e){
     document.getElementById('chFiltrar').addEventListener('click', ()=>{
       openChequesRecebidosPanel(document.getElementById('chStatusFiltro').value);
     });
-    document.querySelectorAll('.cheque-editar-status').forEach(btn=>{
-      btn.addEventListener('click', ()=>{
-        const cheque = cheques.find(c => String(c.id) === btn.dataset.id);
-        if(cheque) renderEdicaoStatusCheque(cheque, statusFiltro);
-      });
+    document.querySelectorAll('#overlay tbody tr[data-id]').forEach(tr=>{
+      tornarLinhaClicavel(tr, ()=>{
+        const cheque = cheques.find(c => String(c.id) === String(tr.dataset.id));
+        if(cheque){ renderEdicaoStatusCheque(cheque, statusFiltro); const w = document.getElementById('chequeEdicaoWrap'); if(w && w.scrollIntoView) w.scrollIntoView({block:'nearest', behavior:'smooth'}); }
+      }, 'Abrir cheque para editar o status');
     });
   }
 
@@ -4422,11 +4436,11 @@ function openFechamentoPanel(){
   const linhaMaquininha = Object.entries(mqs).map(([mq,v])=>`<tr><td>${escapeHtml(mq)}${mq==='Mercado Pago' ? ' <span style="color:var(--ink-faint); font-size:11px;">(lançamento manual)</span>' : ''}</td><td>${n(v)}</td></tr>`).join('');
   const linhaContaPix = Object.entries(rl.porContaPix).map(([ct,v])=>`<tr><td>${escapeHtml(ct)}</td><td>${n(v)}</td></tr>`).join('');
   const linhasPorDia = rl.porDia.map(d=>`
-    <tr>
+    <tr class="linha-clicavel" tabindex="0" title="Clique para ver / imprimir o extrato do dia" onclick="linhaDia(event,'${d.dia}')" onkeydown="linhaDia(event,'${d.dia}')">
       <td>${fmtDate(d.dia)} (${DIAS_SEMANA_PT[new Date(d.dia+'T12:00:00').getDay()]})</td>
       <td>${n(d.totalEntradas)}</td><td>${n(d.totalSaidas)}</td><td>${n(d.saldo)}</td>
       <td>${n((DATA.caixaSaldoInicial||0) + d.din.gaveta)}</td>
-      <td><button type="button" class="btn-mini" onclick="openFechamentoDiaPanel('${d.dia}')">Ver / imprimir extrato do dia</button></td>
+      <td class="lc-seta" aria-hidden="true">›</td>
     </tr>`).join('');
   const sub = t => `<p style="font-size:12px; color:var(--ink-soft); margin:22px 0 6px;">${t}</p>`;
 
@@ -4523,7 +4537,7 @@ function openFechamentoPanel(){
     ` : ''}
     ${rl.porDia.length ? `
       ${sub('Caixa realizado — dia a dia')}
-      <div style="overflow-x:auto;"><table class="report"><thead><tr><th>Dia</th><th>Entradas</th><th>Saídas</th><th>Saldo</th><th>Fechamento em dinheiro (gaveta)<br><span style="font-weight:400; font-size:10.5px; color:var(--ink-faint);">(com troco de ${fmtBRL(DATA.caixaSaldoInicial||0)}; só conta de caixa)</span></th><th></th></tr></thead>
+      <div style="overflow-x:auto;"><table class="report"><thead><tr><th>Dia</th><th>Entradas</th><th>Saídas</th><th>Saldo</th><th>Fechamento em dinheiro (gaveta)<br><span style="font-weight:400; font-size:10.5px; color:var(--ink-faint);">(com troco de ${fmtBRL(DATA.caixaSaldoInicial||0)}; só conta de caixa)</span></th><th class="lc-seta"></th></tr></thead>
       <tbody>${linhasPorDia}</tbody></table></div>
     ` : '<p style="font-size:13px; color:var(--ink-soft); margin-top:16px;">Nenhum lançamento de caixa neste período.</p>'}
     ` : ''}
