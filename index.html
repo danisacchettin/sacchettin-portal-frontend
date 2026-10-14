@@ -191,6 +191,17 @@
   .card .val.pos{color:var(--gold);}
   .card .val.neg{color:var(--red);}
   .card .sub{font-size:12px; color:var(--ink-faint); margin-top:8px;}
+
+  /* Ícone "?" de ajuda (14/10/2026, pedido da Dani): textos explicativos que ficavam em letra pequena sob
+     os cards agora aparecem ao passar o mouse (sem atraso), ao tocar (celular) ou ao focar pelo teclado. */
+  .ajuda{display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; margin-left:7px;
+    border:1px solid var(--ink-faint); border-radius:50%; font-size:10px; font-weight:700; line-height:1; letter-spacing:0;
+    text-transform:none; color:var(--ink-soft); cursor:help; vertical-align:middle; user-select:none; background:transparent;}
+  .ajuda:hover, .ajuda:focus-visible, .ajuda.aberto{background:var(--gold-wash); color:var(--ink); border-color:var(--ink-soft); outline:none;}
+  #ajudaTip{position:fixed; z-index:200; max-width:min(320px, calc(100vw - 24px)); padding:9px 12px; border-radius:8px;
+    background:var(--ink); color:var(--paper); font-size:12.5px; line-height:1.45; letter-spacing:0; text-transform:none; font-weight:400;
+    box-shadow:0 10px 30px rgba(0,0,0,.28); pointer-events:none; display:none;}
+  @media print{ .ajuda, #ajudaTip{display:none !important;} }
   .card canvas.mini{margin-top:10px; max-height:46px;}
 
   .card.tone-gold{border-color:var(--gold-line);}
@@ -820,84 +831,68 @@ Fica fora de .wrap para continuar visível quando .wrap é escondido em @media p
   <div class="section-title">Relatórios</div>
   <div class="grid">
     <div class="card" id="btnDRE">
-      <div class="lbl">Demonstrativo</div>
+      <div class="lbl">Demonstrativo <span class="ajuda" tabindex="0" role="button" aria-label="Ajuda: Monta o resultado do exercício com base nos lançamentos atuais" data-tip="Monta o resultado do exercício com base nos lançamentos atuais">?</span></div>
       <div class="val" style="font-size:19px;">Gerar DRE automático</div>
-      <div class="sub">Monta o resultado do exercício com base nos lançamentos atuais</div>
     </div>
     <div class="card" id="btnPrint">
-      <div class="lbl">Impressão</div>
+      <div class="lbl">Impressão <span class="ajuda" tabindex="0" role="button" aria-label="Ajuda: Estoque, produtos, A pagar, A receber e fluxo — em PDF ou planilha Excel" data-tip="Estoque, produtos, A pagar, A receber e fluxo — em PDF ou planilha Excel">?</span></div>
       <div class="val" style="font-size:19px;">Relatório para impressão</div>
-      <div class="sub">Estoque, produtos, A pagar, A receber e fluxo — em PDF ou planilha Excel</div>
     </div>
     <div class="card" id="btnPDV">
-      <div class="lbl">PDV</div>
+      <div class="lbl">PDV <span class="ajuda" tabindex="0" role="button" aria-label="Ajuda: Faturamento por dia e forma de pagamento, cortes, horários e curva ABC, recebido automaticamente do AutoPlus" data-tip="Faturamento por dia e forma de pagamento, cortes, horários e curva ABC, recebido automaticamente do AutoPlus">?</span></div>
       <div class="val" style="font-size:19px;">Vendas, fechamento e análise</div>
-      <div class="sub">Faturamento por dia e forma de pagamento, cortes, horários e curva ABC, recebido automaticamente do AutoPlus</div>
     </div>
     <div class="card" id="btnDAV">
-      <div class="lbl">DAV</div>
+      <div class="lbl">DAV <span class="ajuda" tabindex="0" role="button" aria-label="Ajuda: Nº do pedido, cliente, datas, vencimento (7 dias) e os produtos comprados em cada pedido" data-tip="Nº do pedido, cliente, datas, vencimento (7 dias) e os produtos comprados em cada pedido">?</span></div>
       <div class="val" style="font-size:19px;">Pedidos da distribuidora</div>
-      <div class="sub">Nº do pedido, cliente, datas, vencimento (7 dias) e os produtos comprados em cada pedido</div>
     </div>
     <div class="card" id="btnImportar">
-      <div class="lbl">Importação em lote</div>
+      <div class="lbl">Importação em lote <span class="ajuda" tabindex="0" role="button" aria-label="Ajuda: Sobe de uma vez um histórico de A pagar, A receber ou caixa" data-tip="Sobe de uma vez um histórico de A pagar, A receber ou caixa">?</span></div>
       <div class="val" style="font-size:19px;">Importar planilha</div>
-      <div class="sub">Sobe de uma vez um histórico de A pagar, A receber ou caixa</div>
     </div>
     <div class="card" id="btnContratos">
-      <div class="lbl">Contratos</div>
+      <div class="lbl">Contratos <span class="ajuda" tabindex="0" role="button" aria-label="Ajuda: Parcelas, juros, vencimentos e cópia de cada contrato" data-tip="Parcelas, juros, vencimentos e cópia de cada contrato">?</span></div>
       <div class="val" style="font-size:19px;">Empréstimos e financiamentos</div>
-      <div class="sub">Parcelas, juros, vencimentos e cópia de cada contrato</div>
     </div>
     <div class="card" id="btnDespesasFinanceiras">
-      <div class="lbl">Despesas Financeiras</div>
+      <div class="lbl">Despesas Financeiras <span class="ajuda" tabindex="0" role="button" aria-label="Ajuda: Cheque especial e financiamentos — separado de Compras/COGS" data-tip="Cheque especial e financiamentos — separado de Compras/COGS">?</span></div>
       <div class="val" style="font-size:19px;">Juros e encargos bancários</div>
-      <div class="sub">Cheque especial e financiamentos — separado de Compras/COGS</div>
     </div>
     <div class="card" id="btnFuncionarios">
-      <div class="lbl">Funcionários</div>
+      <div class="lbl">Funcionários <span class="ajuda" tabindex="0" role="button" aria-label="Ajuda: Salário, benefícios, encargos e alertas de férias" data-tip="Salário, benefícios, encargos e alertas de férias">?</span></div>
       <div class="val" style="font-size:19px;">Cadastro de RH</div>
-      <div class="sub">Salário, benefícios, encargos e alertas de férias</div>
     </div>
     <div class="card" id="btnContasPagas">
-      <div class="lbl">Contas Pagas</div>
+      <div class="lbl">Contas Pagas <span class="ajuda" tabindex="0" role="button" aria-label="Ajuda: Todos os pagamentos já feitos, filtrando por período e credor/fornecedor" data-tip="Todos os pagamentos já feitos, filtrando por período e credor/fornecedor">?</span></div>
       <div class="val" style="font-size:19px;">Relatório de pagamentos</div>
-      <div class="sub">Todos os pagamentos já feitos, filtrando por período e credor/fornecedor</div>
     </div>
     <div class="card" id="btnConciliacao">
-      <div class="lbl">Conciliação Bancária</div>
+      <div class="lbl">Conciliação Bancária <span class="ajuda" tabindex="0" role="button" aria-label="Ajuda: Compara o extrato do banco com o Caixa e Bancos e aponta as diferenças" data-tip="Compara o extrato do banco com o Caixa e Bancos e aponta as diferenças">?</span></div>
       <div class="val" style="font-size:19px;">Enviar extrato (PDF)</div>
-      <div class="sub">Compara o extrato do banco com o Caixa e Bancos e aponta as diferenças</div>
     </div>
     <div class="card" id="btnChequesRecebidos">
-      <div class="lbl">Cheques Recebidos</div>
+      <div class="lbl">Cheques Recebidos <span class="ajuda" tabindex="0" role="button" aria-label="Ajuda: Em carteira, repassados a fornecedor ou com título antecipado" data-tip="Em carteira, repassados a fornecedor ou com título antecipado">?</span></div>
       <div class="val" style="font-size:19px;">Controle de cheques</div>
-      <div class="sub">Em carteira, repassados a fornecedor ou com título antecipado</div>
     </div>
     <div class="card" id="btnContratosPrestadores">
-      <div class="lbl">Contratos de Prestadores</div>
+      <div class="lbl">Contratos de Prestadores <span class="ajuda" tabindex="0" role="button" aria-label="Ajuda: Contrato anexado, parcelas de pagamento e alerta de vencimento" data-tip="Contrato anexado, parcelas de pagamento e alerta de vencimento">?</span><span id="badgeContratosPrestadores"></span></div>
       <div class="val" style="font-size:19px;">Serviços terceirizados</div>
-      <div class="sub">Contrato anexado, parcelas de pagamento e alerta de vencimento<span id="badgeContratosPrestadores"></span></div>
     </div>
     <div class="card" id="btnCustoProduto">
-        <div class="lbl">Custo de Produto</div>
+        <div class="lbl">Custo de Produto <span class="ajuda" tabindex="0" role="button" aria-label="Ajuda: Custo por corte/produto, preço de venda, margem e estoque" data-tip="Custo por corte/produto, preço de venda, margem e estoque">?</span></div>
         <div class="val" style="font-size:19px;">Rateio de compra / CMV</div>
-        <div class="sub">Custo por corte/produto, preço de venda, margem e estoque</div>
     </div>
         <div class="card" id="btnCargaTributaria">
-                <div class="lbl">Carga Tributária</div>
+                <div class="lbl">Carga Tributária <span class="ajuda" tabindex="0" role="button" aria-label="Ajuda: Apuração do Simples Nacional por competência, evolução mês a mês" data-tip="Apuração do Simples Nacional por competência, evolução mês a mês">?</span></div>
                 <div class="val" style="font-size:19px;">DAS Mensal</div>
-                <div class="sub">Apuração do Simples Nacional por competência, evolução mês a mês</div>
         </div>
         <div class="card" id="btnMaquininhas">
-                <div class="lbl">Taxas de Maquininha</div>
+                <div class="lbl">Taxas de Maquininha <span class="ajuda" tabindex="0" role="button" aria-label="Ajuda: Vigência de taxas por operadora e lançamento diário de recebimentos" data-tip="Vigência de taxas por operadora e lançamento diário de recebimentos">?</span></div>
                 <div class="val" style="font-size:19px;">Recebimentos do PDV</div>
-                <div class="sub">Vigência de taxas por operadora e lançamento diário de recebimentos</div>
         </div>
         <div class="card" id="btnNotasEntrada">
-                <div class="lbl">Notas de Entrada</div>
+                <div class="lbl">Notas de Entrada <span class="ajuda" tabindex="0" role="button" aria-label="Ajuda: Notas fiscais de compra baixadas automaticamente, com conferência do contas a pagar" data-tip="Notas fiscais de compra baixadas automaticamente, com conferência do contas a pagar">?</span></div>
                 <div class="val" style="font-size:19px;">NF-e recebidas (SEFAZ)</div>
-                <div class="sub">Notas fiscais de compra baixadas automaticamente, com conferência do contas a pagar</div>
         </div>
   </div>
 
@@ -1600,9 +1595,15 @@ function computeAging(){
 /* ==========================================================================================
    RENDER
    ========================================================================================== */
-function cardHTML({label, value, valueClass='', sub='', tone='', expandable=false, id=''}){
+/* "?" de ajuda: texto explicativo que aparece ao passar o mouse / tocar / focar (ver #ajudaTip no fim do script). */
+function ajudaHTML(texto){
+  const t = escapeHtml(texto);
+  return `<span class="ajuda" tabindex="0" role="button" aria-label="Ajuda: ${t}" data-tip="${t}">?</span>`;
+}
+
+function cardHTML({label, value, valueClass='', sub='', tone='', expandable=false, id='', ajuda=''}){
   return `<div class="card ${tone?'tone-'+tone:''} ${expandable?'expandable':''}" ${id?`id="${id}"`:''}>
-    <div class="lbl">${label}</div>
+    <div class="lbl">${label}${ajuda?ajudaHTML(ajuda):''}</div>
     <div class="val ${valueClass}">${value}</div>
     ${sub?`<div class="sub">${sub}</div>`:''}
   </div>`;
@@ -1613,31 +1614,33 @@ function renderKPIs(){
   const fs = fcRealizado(fcIntervalo('semana', 0));
   document.getElementById('kpiGrid').innerHTML = `
     ${cardHTML({label:'A pagar', value:fmtBRL(k.pagarMes), tone:'gold', expandable:true, id:'cardPagar',
-                sub:`Referente a ${nomeMesAtual()} · ${DATA.contasPagar.length} título(s) em aberto · clique para trocar o período`})}
+                sub:`Referente a ${nomeMesAtual()} · ${DATA.contasPagar.length} título(s) em aberto`,
+                ajuda:'Clique no card para abrir a lista de contas a pagar e trocar o período.'})}
                 ${cardHTML({label:'A pagar hoje', value:fmtBRL(k.pagarHoje), tone: k.pagarHoje>0?'urgent':'', valueClass:k.pagarHoje>0?'neg':'', expandable:true, id:'cardPagarHoje',
                             sub:`Hoje, ${fmtDate(todayISO())} (${nomeDiaSemanaHoje()})`})}
                             ${cardHTML({label:'A receber', value:fmtBRL(k.receberMes), expandable:true, id:'cardReceber',
-                                        sub:`Referente a ${nomeMesAtual()} · ${DATA.contasReceber.length} título(s) em aberto — venda da Cristal é majoritariamente à vista`})}
+                                        sub:`Referente a ${nomeMesAtual()} · ${DATA.contasReceber.length} título(s) em aberto`,
+                                        ajuda:'A venda da Cristal é majoritariamente à vista; por isso este valor representa só o que ficou a prazo.'})}
 
                                                     ${cardHTML({label:'Fechamento de caixa', value:fmtBRL(fs.saldo), tone:'gold', expandable:true, id:'cardFechamentoSemana',
-                                                                sub:`Resultado realizado nesta semana · Entradas menos saídas`})}
+                                                                sub:`Esta semana`,
+                                                                ajuda:'Resultado realizado nesta semana: entradas menos saídas.'})}
                                                                 ${cardHTML({label:'Vencidos', value:fmtBRL(k.vencidosTotal), tone: k.vencidosTotal>0?'red':'', valueClass:k.vencidosTotal>0?'neg':'', expandable:true, id:'cardVencidos',
-                                                                            sub:`${k.vencidosCount} título(s) em atraso, de qualquer mês · para negociação com fornecedor`})}
+                                                                            sub:`${k.vencidosCount} título(s) em atraso`,
+                                                                            ajuda:'Considera títulos de qualquer mês. Serve de base para negociar com o fornecedor.'})}
                                                                             `;
 }
 
 function renderFlowCards(){
   document.getElementById('flowGrid').innerHTML = `
     <div class="card expandable" id="cardFluxo" style="grid-column:span 2;">
-      <div class="lbl">Fluxo de caixa projetado — 6 meses</div>
+      <div class="lbl">Fluxo de caixa projetado — 6 meses${ajudaHTML('Saldo acumulado projetado a partir do caixa atual')}</div>
       <div class="val" id="fluxoSaldoFinal" style="font-size:22px;"></div>
-      <div class="sub">Saldo acumulado projetado a partir do caixa atual</div>
       <canvas class="mini" id="miniFlow"></canvas>
     </div>
     <div class="card expandable" id="cardAging" style="grid-column:span 2;">
-      <div class="lbl">Vencidos por faixa de atraso</div>
+      <div class="lbl">Vencidos por faixa de atraso${ajudaHTML('Valor em aberto, por tempo de vencimento')}</div>
       <div class="val" id="agingTotal" style="font-size:22px;"></div>
-      <div class="sub">Valor em aberto, por tempo de vencimento</div>
       <canvas class="mini" id="miniAging"></canvas>
     </div>
   `;
@@ -3122,9 +3125,8 @@ async function submeterNovoContratoPrestador(e){
 
     <div class="grid" style="grid-template-columns:repeat(4, minmax(220px, 1fr));">
     <div class="card">
-    <div class="lbl">Juros de Cheque Especial <span style="font-size:10px; padding:2px 8px; border-radius:20px; background:var(--gold-wash); color:var(--gold); vertical-align:middle;">aguardando dados</span></div>
+    <div class="lbl">Juros de Cheque Especial <span style="font-size:10px; padding:2px 8px; border-radius:20px; background:var(--gold-wash); color:var(--gold); vertical-align:middle;">aguardando dados</span>${ajudaHTML('Pendente dos extratos bancários com a linha de juros de cheque especial discriminada.')}</div>
     <div class="val" style="font-size:22px; color:var(--ink-faint);">— —</div>
-    <div class="sub">Pendente dos extratos bancários com a linha de juros de cheque especial discriminada.</div>
     </div>
     <div class="card">
     <div class="lbl">Juros/Encargos de Financiamentos</div>
@@ -3133,16 +3135,14 @@ async function submeterNovoContratoPrestador(e){
     <div class="sub">${contratosPJ.length} contrato(s) Santander ativo(s) (PJ).</div>
     </div>
     <div class="card">
-    <div class="lbl">Juros e Encargos Moratórios</div>
+    <div class="lbl">Juros e Encargos Moratórios${ajudaHTML('Mora paga ao quitar títulos em atraso (à parte de Pix/boleto/manutenção de conta).')}</div>
     <div class="val" style="font-size:22px;">${fmtBRL(jm.mesAtual)}</div>
     <div class="sub" style="color:${deltaJmCor};">${deltaJmTxt}</div>
-    <div class="sub">Mora paga ao quitar títulos em atraso (à parte de Pix/boleto/manutenção de conta).</div>
     </div>
     <div class="card">
-    <div class="lbl">Deságio de Antecipação de Recebíveis</div>
+    <div class="lbl">Deságio de Antecipação de Recebíveis${ajudaHTML('Custo de antecipar cheques/recebíveis junto a uma financeira antes do vencimento.')}</div>
     <div class="val" style="font-size:22px;">${fmtBRL(da.mesAtual)}</div>
     <div class="sub" style="color:${deltaDaCor};">${deltaDaTxt}</div>
-    <div class="sub">Custo de antecipar cheques/recebíveis junto a uma financeira antes do vencimento.</div>
     </div>
     </div>
 
@@ -7511,6 +7511,50 @@ init();
     }); });
     return out;
   };
+})();
+</script>
+
+<script>
+/* Ícone "?" de ajuda — um único balão para a página toda (não é cortado por cards nem por tabelas).
+   Mouse: aparece na hora, sem atraso. Toque/teclado: clique ou Enter/Espaço abre e fecha; Esc fecha. */
+(function(){
+  var tip = document.createElement('div');
+  tip.id = 'ajudaTip'; tip.setAttribute('role', 'tooltip');
+  document.body.appendChild(tip);
+  var atual = null;
+  function mostrar(el){
+    var texto = el.getAttribute('data-tip'); if(!texto) return;
+    if(atual && atual !== el) atual.classList.remove('aberto');
+    atual = el; el.classList.add('aberto');
+    tip.textContent = texto; tip.style.display = 'block';
+    el.setAttribute('aria-describedby', 'ajudaTip');
+    var r = el.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight;
+    var x = Math.min(Math.max(8, r.left + r.width/2 - w/2), window.innerWidth - w - 8);
+    var y = r.top - h - 8; if(y < 8) y = r.bottom + 8;
+    tip.style.left = x + 'px'; tip.style.top = y + 'px';
+  }
+  function esconder(){
+    if(atual){ atual.classList.remove('aberto'); atual.removeAttribute('aria-describedby'); atual = null; }
+    tip.style.display = 'none';
+  }
+  function alvo(e){ return e.target && e.target.closest ? e.target.closest('.ajuda') : null; }
+  document.addEventListener('mouseover', function(e){ var a = alvo(e); if(a) mostrar(a); });
+  document.addEventListener('mouseout', function(e){ var a = alvo(e); if(a && atual === a) esconder(); });
+  document.addEventListener('focusin', function(e){ var a = alvo(e); if(a) mostrar(a); });
+  document.addEventListener('focusout', function(e){ var a = alvo(e); if(a) esconder(); });
+  // clique no "?" nunca abre o card/botão em que ele está; no celular, alterna o balão
+  document.addEventListener('click', function(e){
+    var a = alvo(e); if(!a) { if(atual) esconder(); return; }
+    e.stopPropagation(); e.preventDefault();
+    if(atual === a && tip.style.display === 'block' && e.detail === 0) esconder(); else mostrar(a);
+  }, true);
+  document.addEventListener('keydown', function(e){
+    if(e.key === 'Escape') esconder();
+    var a = alvo(e);
+    if(a && (e.key === 'Enter' || e.key === ' ')){ e.preventDefault(); e.stopPropagation(); if(atual === a) esconder(); else mostrar(a); }
+  }, true);
+  window.addEventListener('scroll', esconder, true);
+  window.addEventListener('resize', esconder);
 })();
 </script>
 </body>
