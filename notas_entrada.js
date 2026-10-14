@@ -14,6 +14,7 @@ let neStatus = null;
 let neFiltro = { periodo: '90d', situacao: '', financeiro: '', q: '' };
 const neAbertas = new Set();
 const neDetalhes = {};
+const neMsgPend = {};   // mensagem a mostrar depois que o cartão for redesenhado
 
 (function neEstilo(){
   if (document.getElementById('neStyle')) return;
@@ -57,6 +58,9 @@ const neDetalhes = {};
   .ne-aviso{border-radius:8px; padding:9px 12px; font-size:12.5px; margin:8px 0; background:var(--gold-wash); color:#5a4510;}
   .ne-aviso.vermelho{background:var(--red-wash); color:var(--red);}
   .ne-aviso.verde{background:var(--olive-wash); color:var(--olive);}
+  .ne-confirma{display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; border-radius:8px; padding:10px 12px; margin:8px 0; background:var(--gold-wash); color:#5a4510; font-size:12.5px;}
+  .ne-confirma .btn{white-space:nowrap;}
+  .ne-pend-conf{font-size:10.5px; color:#8a6d1c; margin-top:3px;}
   .ne-sug{border:1px solid var(--gold-line, #c9a24b); border-radius:8px; padding:10px 12px; background:#fffdf6;}
   body.tema-escritorio .ne-sug{background:#faf6e8;}
   .ne-sug input, .ne-sug select{font-size:12.5px; padding:4px 6px; max-width:100%;}
@@ -175,7 +179,7 @@ function neLinhaHtml(n){
       <td>${escapeHtml(n.numero || '—')}${n.serie ? `<span style="color:var(--ink-faint);"> /${escapeHtml(n.serie)}</span>` : ''}</td>
       <td>${neDataEmissao(n.data_emissao)}</td>
       <td class="ne-hide-m">${escapeHtml(n.forma_pagamento_prevista || (n.xml_completo ? 'não informada' : '—'))}</td>
-      <td>${neTagSituacao(n.situacao)}</td>
+      <td>${neTagSituacao(n.situacao)}${n.situacao === 'autorizada' && !n.recebimento_confirmado_em ? '<div class="ne-pend-conf">recebimento a confirmar</div>' : ''}</td>
       <td>${emissor}</td>
       <td>${neTagSimples(n.emitente_simples)}</td>
       <td style="text-align:right;">${n.valor_total != null ? fmtBRL(Number(n.valor_total)) : '—'}</td>
@@ -265,7 +269,7 @@ async function neCarregarCard(id){
   try {
     const d = await apiFetch('/api/nfe-entrada/' + id);
     neDetalhes[id] = d;
-    const alvo2 = document.getElementById('neCard-' + id); if (alvo2) { alvo2.innerHTML = neCardHtml(d); neLigarCard(d); }
+    const alvo2 = document.getElementById('neCard-' + id); if (alvo2) { alvo2.innerHTML = neCardHtml(d); neLigarCard(d); if (neMsgPend[id]) { neMsg(id, neMsgPend[id].texto, neMsgPend[id].erro); delete neMsgPend[id]; } }
   } catch (err) { alvo.innerHTML = `<span style="color:var(--red);">Erro ao abrir a nota: ${escapeHtml(err.message)}</span>`; }
 }
 
@@ -277,6 +281,16 @@ function neCardHtml(n){
   if (!n.xml_completo) aviso = `<div class="ne-aviso">Somente o <b>resumo</b> desta nota foi recebido. A SEFAZ libera o XML completo (itens, pagamento, regime do emitente) após a Ciência da Operação, que o portal registra automaticamente na próxima sincronização.</div>`;
   if (n.situacao === 'cancelada') aviso += `<div class="ne-aviso vermelho">Nota <b>cancelada</b> pelo emitente — não gera obrigação de pagamento.</div>`;
   if (n.situacao === 'denegada') aviso += `<div class="ne-aviso vermelho">Uso da nota <b>denegado</b> pela SEFAZ.</div>`;
+
+  let confirma = '';
+  if (n.situacao === 'autorizada') {
+    if (n.recebimento_confirmado_em) {
+      confirma = `<div class="ne-aviso verde">Recebimento <b>confirmado</b> em ${neDataHora(n.recebimento_confirmado_em)}${n.recebimento_confirmado_por ? ' (' + (n.recebimento_confirmado_por === 'cliente' ? 'cliente' : 'escritório') + ')' : ''}.</div>`;
+    } else {
+      confirma = `<div class="ne-confirma"><div><b>Esta mercadoria foi recebida?</b> Ao confirmar, o portal confere se as parcelas e boletos desta nota já estão no Contas a pagar e, se faltar algum, sugere o lançamento já preenchido para você só autorizar.</div>
+        <button type="button" class="btn gold" data-ne-confirmar="${n.id}">Confirmar recebimento</button></div>`;
+    }
+  }
 
   const itens = (n.itens || []).map(i => `<tr><td>${i.n_item ?? ''}</td><td>${escapeHtml(i.descricao || '')}<div style="font-size:10.5px; color:#778;">${escapeHtml(i.codigo || '')}${i.ncm ? ' · NCM ' + escapeHtml(i.ncm) : ''}</div></td>
       <td class="n">${neNum(i.quantidade, 3)} ${escapeHtml(i.unidade || '')}</td><td class="n">${i.peso_kg != null ? neNum(i.peso_kg, 3) + ' kg' : '—'}</td>
@@ -293,6 +307,7 @@ function neCardHtml(n){
       <div style="text-align:right;">${neTagSituacao(n.situacao)}<div style="font-size:11px; color:#667; margin-top:4px;">${escapeHtml(manif)}</div></div>
     </div>
     ${aviso}
+    ${confirma}
     <div class="ne-grid">
       <div><div class="k">Emitente</div><div class="v">${escapeHtml(n.emitente_nome || '—')}</div></div>
       <div><div class="k">CNPJ</div><div class="v">${escapeHtml(neCnpj(n.emitente_cnpj))}${n.emitente_uf ? ' · ' + escapeHtml(n.emitente_uf) : ''}</div></div>
@@ -329,8 +344,12 @@ function neFinanceiroHtml(n){
     corpo += `<div class="ne-aviso verde">Todas as parcelas desta nota estão conferidas com o Contas a pagar.</div>`;
   } else {
     const nenhuma = pend.length === dups.filter(d => d.vinculo_status !== 'dispensada').length && !dups.some(d => d.vinculo_status === 'vinculada');
-    corpo += `<div class="ne-aviso vermelho"><b>${nenhuma ? 'Não foi detectado nenhum lançamento financeiro desta nota no Contas a pagar.' : `${pend.length} parcela(s) desta nota sem lançamento no Contas a pagar.`}</b> Deseja incluir? O portal já preencheu os dados abaixo — revise e autorize.</div>`;
-    corpo += neSugestaoHtml(n);
+    if (!n.recebimento_confirmado_em) {
+      corpo += `<div class="ne-aviso">Confirme o recebimento da mercadoria (botão acima) para o portal conferir estas parcelas com o Contas a pagar e sugerir o lançamento.</div>`;
+    } else {
+      corpo += `<div class="ne-aviso vermelho"><b>${nenhuma ? 'Não foi detectado nenhum lançamento financeiro desta nota no Contas a pagar.' : `${pend.length} parcela(s) desta nota sem lançamento no Contas a pagar.`}</b> Deseja incluir? O portal já preencheu os dados abaixo — revise e autorize.</div>`;
+      corpo += neSugestaoHtml(n);
+    }
   }
   return `<div class="ne-sec"><h4>Pagamento previsto na nota${n.forma_pagamento_prevista ? ' — ' + escapeHtml(n.forma_pagamento_prevista) : ''}</h4>${corpo}</div>`;
 }
@@ -339,12 +358,12 @@ function neSugestaoHtml(n){
   const sugs = n.sugestoes || [];
   const forma = neFormaSugerida(n.pagamentos);
   const cats = (CADASTROS.categoriasDespesa || []);
-  const catSel = n.fornecedor_categoria_id ? String(n.fornecedor_categoria_id) : '';
+  const catSel = n.categoria_sugerida_id ? String(n.categoria_sugerida_id) : (n.fornecedor_categoria_id ? String(n.fornecedor_categoria_id) : '');
   const optCat = '<option value="">Selecione a categoria…</option>' + cats.map(c => `<option value="${c.id}"${String(c.id) === catSel ? ' selected' : ''}>${escapeHtml(c.nome_categoria || c.nome || '')}</option>`).join('');
   const optForma = ['', 'PIX', 'Boleto', 'TED', 'Cartão', 'Dinheiro'].map(f => `<option value="${f}"${f === forma ? ' selected' : ''}>${f || 'Selecione…'}</option>`).join('');
   const linhas = sugs.map((s, i) => {
     const l = s.lancamento; const cand = s.candidatos_existentes || [];
-    const candHtml = cand.length ? `<div style="margin-top:4px; font-size:11.5px;">Já existe lançamento parecido: <select class="ne-cand" data-dup="${s.duplicata_id}">${cand.map(c => `<option value="${c.id}">${escapeHtml(c.codigo || '')} · ${escapeHtml(c.documento || 's/ doc')} · ${fmtDate(c.vencimento)} · ${fmtBRL(Number(c.valor_original))}</option>`).join('')}</select>
+    const candHtml = cand.length ? `<div style="margin-top:4px; font-size:11.5px;">Já existe lançamento parecido: <select class="ne-cand" data-dup="${s.duplicata_id}">${cand.map(c => `<option value="${c.id}">${escapeHtml(c.codigo || '')} · ${escapeHtml(c.documento || 's/ doc')} · ${fmtDate(c.vencimento)} · ${fmtBRL(Number(c.valor_original))}${c.forma_pagamento ? ' · ' + escapeHtml(c.forma_pagamento) : ''}</option>`).join('')}</select>
       <button type="button" class="btn ghost" data-ne-vinc="${s.duplicata_id}" data-nfe="${n.id}">Vincular a este</button></div>` : '';
     return `<tr data-dup="${s.duplicata_id}">
       <td><input type="checkbox" class="ne-sel" checked></td>
@@ -369,6 +388,7 @@ function neSugestaoHtml(n){
 
 function neLigarCard(n){
   const raiz = document.getElementById('neCard-' + n.id); if (!raiz) return;
+  raiz.querySelectorAll('[data-ne-confirmar]').forEach(b => b.addEventListener('click', () => neConfirmarRecebimento(n.id, b)));
   raiz.querySelectorAll('[data-ne-xml]').forEach(b => b.addEventListener('click', () => neBaixarXml(n.id)));
   raiz.querySelectorAll('[data-ne-lancar]').forEach(b => b.addEventListener('click', () => neLancar(n.id)));
   raiz.querySelectorAll('[data-ne-vinc]').forEach(b => b.addEventListener('click', () => neVincularExistente(n.id, b.dataset.neVinc, b)));
@@ -397,6 +417,20 @@ async function neBaixarXml(id){
     const n = neDetalhes[id]; a.download = ((n && n.chave) ? String(n.chave).trim() : 'nfe') + '.xml';
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   } catch (err) { neMsg(id, 'Não foi possível baixar o XML: ' + err.message, true); }
+}
+
+async function neConfirmarRecebimento(id, btn){
+  if (btn) btn.disabled = true;
+  try {
+    const r = await apiFetch('/api/nfe-entrada/' + id + '/confirmar-recebimento', { method: 'POST', body: JSON.stringify({}) });
+    let texto;
+    if (r.aguardando_xml) texto = 'Recebimento confirmado. Os dados de pagamento ainda não chegaram (só o resumo da nota foi recebido); assim que o XML completo chegar, a conferência com o Contas a pagar aparece aqui.';
+    else if (!r.parcelas) texto = 'Recebimento confirmado. Esta nota não prevê pagamento a prazo (sem parcelas).';
+    else if (!r.pendentes) texto = `Recebimento confirmado. ${r.vinculadas} de ${r.parcelas} parcela(s) já estavam lançadas no Contas a pagar — nada a incluir.`;
+    else texto = `Recebimento confirmado. ${r.vinculadas} de ${r.parcelas} parcela(s) já estavam no Contas a pagar; ${r.pendentes} ainda sem lançamento — revise a sugestão abaixo e autorize.`;
+    neMsgPend[id] = { texto, erro: false };
+    await neRecarregarNota(id);
+  } catch (err) { if (btn) btn.disabled = false; neMsg(id, 'Não foi possível confirmar o recebimento: ' + err.message, true); }
 }
 
 async function neLancar(id){
