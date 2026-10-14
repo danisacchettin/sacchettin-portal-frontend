@@ -725,20 +725,26 @@
      Só vale com body.menu-v2 (ligado pelo script de módulos; ?menu=antigo desliga e mostra o menu de 25 itens). */
   body.menu-v2 #navLateral .nav-grupo-titulo[data-v2]{margin-top:18px; letter-spacing:1px; text-transform:uppercase; font-size:10.5px;}
   body.menu-v2 #navLateral .nav-item[data-v2] .nav-sub{margin-left:auto; font-size:10.5px; opacity:.72; letter-spacing:.2px;}
-  .v2-tabs{flex:0 0 100%; order:50; display:none; align-items:center; gap:2px; overflow-x:auto; padding:2px 0 0; border-top:1px solid var(--border); margin-top:6px; scrollbar-width:thin;}
+  .v2-tabs{flex:0 0 100%; order:50; display:none; align-items:center; gap:8px; overflow-x:auto; padding:10px 2px 6px; border-top:1px solid var(--border); margin-top:6px; scrollbar-width:thin;}
   body.v2-aba-ativa .v2-tabs{display:flex;}
-  .v2-modtit{font:600 11px/1 'Inter',sans-serif; letter-spacing:1.2px; text-transform:uppercase; color:var(--ink-faint); padding:0 14px 0 2px; white-space:nowrap; flex:none;}
-  .v2-tab{appearance:none; background:none; border:0; border-bottom:2px solid transparent; padding:10px 14px 9px; font:600 12.5px/1 'Inter',sans-serif; color:var(--ink-soft); cursor:pointer; white-space:nowrap; border-radius:6px 6px 0 0; flex:none;}
-  .v2-tab:hover{color:var(--ink); background:rgba(127,127,127,.08);}
-  .v2-tab[aria-selected="true"]{color:var(--gold); border-bottom-color:var(--gold);}
-  .v2-tab:focus-visible, .v2-seg button:focus-visible{outline:2px solid var(--gold); outline-offset:-2px;}
-  .v2-n{display:inline-block; min-width:16px; margin-left:6px; padding:1px 5px; border-radius:9px; background:rgba(193,85,75,.14); color:#C1554B; font-size:10.5px; text-align:center;}
-  .v2-seg{display:inline-flex; margin-left:auto; flex:none; border:1px solid var(--border); border-radius:var(--radius-novo,7px); overflow:hidden; align-self:center; padding:0;}
-  .v2-seg button{appearance:none; border:0; border-right:1px solid var(--border); background:var(--surface); padding:7px 12px; font:600 12px/1 'Inter',sans-serif; color:var(--ink-soft); cursor:pointer; white-space:nowrap;}
-  .v2-seg button:last-child{border-right:0;}
-  .v2-seg button:hover{color:var(--ink);}
-  .v2-seg button[aria-pressed="true"]{background:var(--gold); color:#fff;}
-  @media(max-width:640px){ .v2-seg{margin-left:0; margin-top:6px; flex:0 0 auto;} .v2-tabs{flex-wrap:wrap; overflow-x:visible;} .v2-modtit{flex:0 0 100%; padding:4px 2px 2px;} }
+  .v2-modtit{font:600 11px/1 'Inter',sans-serif; letter-spacing:1.2px; text-transform:uppercase; color:var(--ink-faint); padding:0 10px 0 2px; white-space:nowrap; flex:none;}
+  /* submódulos = botões: contorno suave, realce de cor ao passar o mouse, cheio quando selecionado */
+  .v2-tab{appearance:none; display:inline-flex; align-items:center; gap:6px; flex:none; white-space:nowrap; cursor:pointer;
+    padding:9px 16px; border-radius:999px; border:1px solid var(--gold-line); background:var(--surface); color:var(--ink-soft);
+    font:600 12.5px/1 'Inter',sans-serif; box-shadow:0 1px 0 rgba(0,0,0,.03);
+    transition:background-color .16s ease, border-color .16s ease, color .16s ease, box-shadow .16s ease, transform .16s ease;}
+  .v2-tab:hover{background:var(--gold-wash); border-color:var(--gold-soft); color:var(--gold); transform:translateY(-1px); box-shadow:0 4px 12px rgba(122,90,38,.16);}
+  .v2-tab:active{transform:translateY(0); box-shadow:none;}
+  .v2-tab[aria-selected="true"], .v2-tab[aria-selected="true"]:hover{background:linear-gradient(135deg, var(--gold-soft), var(--gold)); border-color:transparent; color:#fff; box-shadow:0 4px 14px rgba(122,90,38,.28); transform:none;}
+  .v2-tab:focus-visible, .v2-seg button:focus-visible{outline:2px solid var(--gold); outline-offset:2px;}
+  .v2-n{display:inline-block; min-width:16px; margin-left:2px; padding:2px 6px; border-radius:9px; background:rgba(193,85,75,.14); color:#C1554B; font-size:10.5px; text-align:center;}
+  .v2-tab[aria-selected="true"] .v2-n{background:rgba(255,255,255,.9); color:#B23A2F;}
+  .v2-seg{display:inline-flex; gap:6px; margin-left:auto; flex:none; align-self:center; padding:0; border:0;}
+  .v2-seg button{appearance:none; padding:8px 13px; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--ink-soft); cursor:pointer; white-space:nowrap;
+    font:600 12px/1 'Inter',sans-serif; transition:background-color .16s ease, border-color .16s ease, color .16s ease, box-shadow .16s ease;}
+  .v2-seg button:hover{background:var(--gold-wash); border-color:var(--gold-soft); color:var(--gold);}
+  .v2-seg button[aria-pressed="true"]{background:var(--gold-wash); border-color:var(--gold); color:var(--gold); box-shadow:inset 0 0 0 1px var(--gold);}
+  @media(max-width:640px){ .v2-seg{margin-left:0; margin-top:2px; flex:0 0 100%; flex-wrap:wrap;} .v2-tabs{flex-wrap:wrap; overflow-x:visible;} .v2-modtit{flex:0 0 100%; padding:2px 2px 0;} }
   @media print{ .v2-tabs{display:none !important;} }
 </style>
 </head>
@@ -7682,7 +7688,7 @@ init();
     n.focus(); e.preventDefault();
   });
 
-  var estado = {mod:null, aba:null, it:null, armado:false, ultimoBotao:null};
+  var estado = {mod:null, aba:null, it:null, ultimoBotao:null, tFecha:null};
   function toast(txt){
     var el = document.getElementById('v2Toast');
     if(!el){ el = document.createElement('div'); el.id = 'v2Toast'; el.setAttribute('role', 'status');
@@ -7732,30 +7738,29 @@ init();
     if(!velho){ toast('Este módulo ainda não carregou. Tente de novo em instantes.'); return; }
     var anterior = {mod:estado.mod, aba:estado.aba, it:estado.it};
     estado.mod = modId; estado.aba = a.id; estado.it = it; estado.ultimoBotao = botoes[modId];
-    estado.armado = true; setTimeout(function(){ estado.armado = false; }, 80);
     velho.classList.remove('ativo');
     velho.click();                                   // mesmo clique de antes: o menu antigo faz a verificação e abre a tela
     if(!velho.classList.contains('ativo')){          // o menu antigo recusou (cartão ainda não carregou): volta ao estado anterior
-      estado.mod = anterior.mod; estado.aba = anterior.aba; estado.it = anterior.it; estado.armado = false;
+      estado.mod = anterior.mod; estado.aba = anterior.aba; estado.it = anterior.it;
       return;
     }
     marcarNav(modId); desenharTabs();
   }
 
-  // --- a barra acompanha a tela interna: some quando ela fecha ou se for aberta por outro caminho ---
+  // --- a barra acompanha a tela interna: só some quando ela FECHA de verdade ---
+  // (Correção: antes a barra e o módulo marcado voltavam para "Início" sozinhos quando o módulo terminava de carregar,
+  //  porque a tela interna é redesenhada e isso era lido como "aberta por outro caminho". Abrir ou redesenhar nunca mexe na barra.)
   var ov = document.getElementById('overlay');
   if(ov) new MutationObserver(function(){
-    var aberto = ov.classList.contains('open');
-    if(!aberto){
+    if(ov.classList.contains('open')) return;          // aberta, redesenhada ou carregando: nada muda
+    clearTimeout(estado.tFecha);
+    estado.tFecha = setTimeout(function(){
+      if(ov.classList.contains('open')) return;        // fechou e reabriu em seguida (ex.: troca de página): mantém
       var voltar = estado.ultimoBotao;
       estado.mod = null; estado.aba = null; estado.it = null; marcarNav(null); desenharTabs();
-      setTimeout(function(){ // o foco voltava para um botão do menu antigo (oculto): leva para o módulo de origem
-        var ae = document.activeElement;
-        if((!ae || ae === document.body || ov.contains(ae)) && voltar && voltar.offsetParent !== null && !ov.classList.contains('open')){ try{ voltar.focus(); }catch(e){} }
-      }, 120);
-      return;
-    }
-    if(!estado.armado && estado.mod){ estado.mod = null; estado.aba = null; estado.it = null; marcarNav(null); desenharTabs(); }
+      var ae = document.activeElement;                 // o foco voltava para um botão do menu antigo (oculto): leva para o módulo de origem
+      if((!ae || ae === document.body || ov.contains(ae)) && voltar && voltar.offsetParent !== null){ try{ voltar.focus(); }catch(e){} }
+    }, 150);
   }).observe(ov, {attributes:true, attributeFilter:['class']});
 
   // --- selos (Contratos de prestadores) espelhados do cartão original ---
