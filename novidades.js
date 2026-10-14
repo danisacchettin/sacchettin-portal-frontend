@@ -9,10 +9,13 @@
    ========================================================================================== */
 (function(){
   'use strict';
-  var PORTAL_VERSAO = '4.0';
+  var PORTAL_VERSAO = '4.1';
 
   // Mais recente primeiro. id = identificador estável (nunca reaproveitar). Texto: frases curtas e simples.
   var NOVIDADES = [
+    { id:'2026-10-15-notas-busca-automatica', versao:'4.1', data:'15/10/2026',
+      titulo:'Notas de entrada: busca automática',
+      texto:'Quando a busca automática estiver ativada pelo escritório, o portal procura notas novas na SEFAZ a cada 30 minutos. Como a SEFAZ atende cerca de uma consulta por hora quando não há novidades, uma nota nova pode levar até cerca de 1 hora para aparecer. As notas chegam primeiro só com o resumo (emitente, valor e data).' },
     { id:'2026-10-14-menu-modulos', versao:'4.0', data:'14/10/2026',
       titulo:'Menu novo, em dois grupos',
       texto:'O menu lateral agora está dividido em Operacional (o dia a dia: Financeiro, Notas de entrada e Vendas) e Gestão (Resultado, Dívidas e contratos, Compras e custos, Pessoas e Importar planilha). Todas as telas de antes continuam disponíveis.' },

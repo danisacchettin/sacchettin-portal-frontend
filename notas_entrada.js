@@ -152,10 +152,12 @@ function neStatusHtml(){
   }
   const quando = s.ultima_consulta ? neDataHora(s.ultima_consulta) : 'ainda não consultou';
   const prox = s.proxima_consulta_apos && new Date(s.proxima_consulta_apos) > new Date() ? ` · próxima consulta liberada a partir de ${neDataHora(s.proxima_consulta_apos)}` : '';
-  const resumo = Number(s.notas_so_resumo) > 0 ? ` · <b>${s.notas_so_resumo}</b> nota(s) só com resumo (o XML completo chega após a Ciência da Operação, feita automaticamente)` : '';
+  const explicaResumo = s.ciencia_automatica === true ? 'o XML completo chega após a Ciência da Operação, feita automaticamente' : 'a SEFAZ só libera o XML completo após a Ciência da Operação, que o portal não envia automaticamente';
+  const resumo = Number(s.notas_so_resumo) > 0 ? ` · <b>${s.notas_so_resumo}</b> nota(s) só com resumo (${explicaResumo})` : '';
+  const auto = Number(s.sincronizacao_automatica_min) > 0 ? ` · busca automática a cada ${Number(s.sincronizacao_automatica_min)} min (a SEFAZ só atende cerca de 1 consulta por hora quando não há novidades)` : '';
   const botao = neEhEscritorio() ? `<button type="button" class="btn ghost" id="neSincronizar">Sincronizar agora</button>` : '';
   const erro = s.ultimo_erro ? `<div style="color:var(--red);">Último aviso: ${escapeHtml(s.ultimo_erro)}</div>` : '';
-  return `<div class="ne-status${s.ultimo_erro ? ' erro' : ''}"><div>SEFAZ (${escapeHtml(s.ambiente)}): última consulta ${escapeHtml(quando)}${prox}${resumo}${erro}</div>${botao}<span id="neSyncMsg" class="ne-msg"></span></div>`;
+  return `<div class="ne-status${s.ultimo_erro ? ' erro' : ''}"><div>SEFAZ (${escapeHtml(s.ambiente)}): última consulta ${escapeHtml(quando)}${prox}${auto}${resumo}${erro}</div>${botao}<span id="neSyncMsg" class="ne-msg"></span></div>`;
 }
 
 function neKpisHtml(){
@@ -247,7 +249,7 @@ async function neSincronizarAgora(){
     await Promise.all([neCarregarStatus(), neCarregarLista()]);
     neRender();
     const m2 = document.getElementById('neSyncMsg');
-    if (m2) { m2.textContent = r.ok ? `Concluído: ${r.importadas} documento(s) novo(s), ${r.ciencias} Ciência(s) registrada(s), ${r.vinculadas} parcela(s) vinculada(s).` : 'Atenção: ' + (r.erro || r.motivo); }
+    if (m2) { m2.textContent = r.ok ? `Concluído: ${r.importadas} documento(s) novo(s)${Number(r.ciencias) > 0 ? ', ' + r.ciencias + ' Ciência(s) registrada(s)' : ''}, ${r.vinculadas} parcela(s) vinculada(s).` : 'Atenção: ' + (r.erro || r.motivo); }
   } catch (err) { msg.style.color = 'var(--red)'; msg.textContent = err.message; btn.disabled = false; }
 }
 
@@ -278,7 +280,7 @@ function neCardHtml(n){
   const manif = { sem_manifestacao: 'sem manifestação', ciencia: 'Ciência da Operação registrada', confirmada: 'Operação confirmada', desconhecida: 'Operação desconhecida', nao_realizada: 'Operação não realizada' }[n.manifestacao] || n.manifestacao;
   const regime = n.emitente_simples === true ? 'Optante pelo Simples Nacional' : n.emitente_simples === false ? 'Regime normal (não optante)' : 'não informado no resumo';
   let aviso = '';
-  if (!n.xml_completo) aviso = `<div class="ne-aviso">Somente o <b>resumo</b> desta nota foi recebido. A SEFAZ libera o XML completo (itens, pagamento, regime do emitente) após a Ciência da Operação, que o portal registra automaticamente na próxima sincronização.</div>`;
+  if (!n.xml_completo) aviso = `<div class="ne-aviso">Somente o <b>resumo</b> desta nota foi recebido. A SEFAZ libera o XML completo (itens, pagamento, regime do emitente) após a Ciência da Operação${(typeof neStatus !== 'undefined' && neStatus && neStatus.ciencia_automatica === true) ? ', que o portal registra automaticamente na próxima sincronização' : ', que o portal não envia automaticamente. Até lá, a nota fica listada apenas com os dados do resumo (emitente, valor e data)'}.</div>`;
   if (n.situacao === 'cancelada') aviso += `<div class="ne-aviso vermelho">Nota <b>cancelada</b> pelo emitente — não gera obrigação de pagamento.</div>`;
   if (n.situacao === 'denegada') aviso += `<div class="ne-aviso vermelho">Uso da nota <b>denegado</b> pela SEFAZ.</div>`;
 
