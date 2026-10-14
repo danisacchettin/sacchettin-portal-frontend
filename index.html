@@ -720,6 +720,26 @@
   }
 
   @media print{ .nav-lateral{display:none !important;} body.layout-novo .wrap{margin-left:0 !important; max-width:none !important;} body.layout-novo .subbar{margin-left:0 !important;} }
+
+  /* ---------- Reorganização da interface · PR 2: menu por módulos (Operacional / Gestão) ----------
+     Só vale com body.menu-v2 (ligado pelo script de módulos; ?menu=antigo desliga e mostra o menu de 25 itens). */
+  body.menu-v2 #navLateral .nav-grupo-titulo[data-v2]{margin-top:18px; letter-spacing:1px; text-transform:uppercase; font-size:10.5px;}
+  body.menu-v2 #navLateral .nav-item[data-v2] .nav-sub{margin-left:auto; font-size:10.5px; opacity:.72; letter-spacing:.2px;}
+  .v2-tabs{flex:0 0 100%; order:50; display:none; align-items:center; gap:2px; overflow-x:auto; padding:2px 0 0; border-top:1px solid var(--border); margin-top:6px; scrollbar-width:thin;}
+  body.v2-aba-ativa .v2-tabs{display:flex;}
+  .v2-modtit{font:600 11px/1 'Inter',sans-serif; letter-spacing:1.2px; text-transform:uppercase; color:var(--ink-faint); padding:0 14px 0 2px; white-space:nowrap; flex:none;}
+  .v2-tab{appearance:none; background:none; border:0; border-bottom:2px solid transparent; padding:10px 14px 9px; font:600 12.5px/1 'Inter',sans-serif; color:var(--ink-soft); cursor:pointer; white-space:nowrap; border-radius:6px 6px 0 0; flex:none;}
+  .v2-tab:hover{color:var(--ink); background:rgba(127,127,127,.08);}
+  .v2-tab[aria-selected="true"]{color:var(--gold); border-bottom-color:var(--gold);}
+  .v2-tab:focus-visible, .v2-seg button:focus-visible{outline:2px solid var(--gold); outline-offset:-2px;}
+  .v2-n{display:inline-block; min-width:16px; margin-left:6px; padding:1px 5px; border-radius:9px; background:rgba(193,85,75,.14); color:#C1554B; font-size:10.5px; text-align:center;}
+  .v2-seg{display:inline-flex; margin-left:auto; flex:none; border:1px solid var(--border); border-radius:var(--radius-novo,7px); overflow:hidden; align-self:center; padding:0;}
+  .v2-seg button{appearance:none; border:0; border-right:1px solid var(--border); background:var(--surface); padding:7px 12px; font:600 12px/1 'Inter',sans-serif; color:var(--ink-soft); cursor:pointer; white-space:nowrap;}
+  .v2-seg button:last-child{border-right:0;}
+  .v2-seg button:hover{color:var(--ink);}
+  .v2-seg button[aria-pressed="true"]{background:var(--gold); color:#fff;}
+  @media(max-width:640px){ .v2-seg{margin-left:0; margin-top:6px; flex:0 0 auto;} .v2-tabs{flex-wrap:wrap; overflow-x:visible;} .v2-modtit{flex:0 0 100%; padding:4px 2px 2px;} }
+  @media print{ .v2-tabs{display:none !important;} }
 </style>
 </head>
 <body>
@@ -7555,6 +7575,209 @@ init();
   }, true);
   window.addEventListener('scroll', esconder, true);
   window.addEventListener('resize', esconder);
+})();
+</script>
+<script>
+/* ==========================================================================================
+   Reorganização da interface · PR 2 — menu por MÓDULOS (Operacional / Gestão) + barra de abas horizontal.
+
+   Princípio de segurança (o mesmo do menu de 25 itens): este script NÃO reimplementa nenhum módulo. Cada aba
+   ou alternador aciona, por clique, o MESMO item do menu anterior (id em `it`), que por sua vez aciona o cartão
+   ou função que já existia (mesma permissão, mesma tela). Os 25 itens continuam todos acessíveis.
+   Os botões antigos ficam num contêiner oculto (#navLegado); `?menu=antigo` na URL não executa este script e
+   mostra o menu antigo (reversão imediata, sem mexer em dados).
+   ========================================================================================== */
+(function(){
+  'use strict';
+  if(!document.body.classList.contains('layout-novo')) return;
+  if(/[?&]menu=antigo\b/.test(location.search)) return;
+  var nav = document.getElementById('navLateral');
+  var subbar = document.querySelector('.subbar');
+  if(!nav || !subbar) return;
+  var rodape = nav.querySelector('.nav-rodape');
+
+  /* it   = id do item do menu antigo que será acionado
+     alt  = alternadores (segmentos) dentro da aba: cada um aciona outro item do menu antigo */
+  var MODULOS = [
+    { grupo:'Operacional', itens:[
+      { id:'financeiro', rot:'Financeiro', ic:'$', abas:[
+        { id:'pagar',   rot:'A pagar', alt:[ {it:'pagar', rot:'No mês'}, {it:'pagarhoje', rot:'Hoje'}, {it:'vencidos', rot:'Vencidos'}, {it:'faixas', rot:'Faixas de atraso'} ] },
+        { id:'receber', rot:'A receber', it:'receber' },
+        { id:'caixa',   rot:'Caixa e bancos', alt:[ {it:'fechamento', rot:'Fechamento de caixa'}, {it:'saldo', rot:'Saldos bancários'}, {it:'conciliacao', rot:'Conciliação'}, {it:'cheques', rot:'Cheques recebidos'} ] },
+        { id:'pagas',   rot:'Contas pagas', it:'pagas' } ] },
+      { id:'nfe', rot:'Notas de entrada', ic:'▤', abas:[ { id:'nfe', rot:'Notas de entrada', it:'nfe' } ] },
+      { id:'vendas', rot:'Vendas', sub:'PDV', ic:'▤', abas:[
+        { id:'pdv',  rot:'PDV', it:'pdv' },
+        { id:'dav',  rot:'DAV', it:'dav' },
+        { id:'maq',  rot:'Taxas de maquininha', it:'maquininhas' } ] }
+    ]},
+    { grupo:'Gestão', itens:[
+      { id:'resultado', rot:'Resultado', ic:'▥', abas:[
+        { id:'dre',   rot:'DRE', it:'dre' },
+        { id:'saude', rot:'Saúde da empresa', it:'saude', so:'admin' },
+        { id:'imp',   rot:'Relatório para impressão', it:'imprimir' } ] },
+      { id:'dividas', rot:'Dívidas e contratos', ic:'▤', badge:'#badgeContratosPrestadores', abas:[
+        { id:'contratos',   rot:'Contratos', it:'contratos' },
+        { id:'despfin',     rot:'Despesas financeiras', it:'despfin' },
+        { id:'prestadores', rot:'Contratos de prestadores', it:'prestadores', badge:'#badgeContratosPrestadores' } ] },
+      { id:'custos', rot:'Compras e custos', ic:'▣', abas:[
+        { id:'custo', rot:'Custo de produto', it:'custo' },
+        { id:'carga', rot:'Carga tributária', it:'carga' } ] },
+      { id:'pessoas', rot:'Pessoas', ic:'♦', abas:[ { id:'func', rot:'Funcionários', it:'func' } ] },
+      { id:'importar', rot:'Importar planilha', ic:'⇧', abas:[ { id:'importar', rot:'Importar planilha', it:'importar' } ] }
+    ]}
+  ];
+
+  // --- guarda os botões do menu antigo num contêiner oculto (continuam clicáveis por script) ---
+  var antigos = {};
+  var legado = document.createElement('div');
+  legado.id = 'navLegado'; legado.hidden = true; legado.setAttribute('aria-hidden', 'true');
+  Array.prototype.slice.call(nav.children).forEach(function(el){
+    if(el.classList.contains('nav-item')){ antigos[el.dataset.item] = el; legado.appendChild(el); }
+    else if(el.classList.contains('nav-grupo-titulo')){ legado.appendChild(el); }
+  });
+  if(!antigos.painel){ // o menu antigo não montou: não mexe em nada
+    Array.prototype.slice.call(legado.children).forEach(function(el){ nav.insertBefore(el, rodape); });
+    return;
+  }
+  document.body.appendChild(legado);
+  document.body.classList.add('menu-v2');
+
+  var porId = {}, botoes = {};
+  function badgeTexto(sel){ var s = document.querySelector(sel); var t = s ? (s.textContent || '').trim() : ''; return (t && t !== '0') ? t : ''; }
+
+  // --- menu lateral ---
+  function criarItem(m){
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = 'nav-item'; b.setAttribute('data-v2', m.id);
+    b.innerHTML = '<span class="nav-ic" aria-hidden="true">' + m.ic + '</span><span>' + m.rot + '</span>' +
+                  (m.sub ? '<span class="nav-sub">' + m.sub + '</span>' : '') +
+                  (m.badge ? '<span class="nav-badge" data-v2-badge="' + m.badge + '" style="display:none;"></span>' : '');
+    b.addEventListener('click', function(){ selecionar(m.id, m.abas[0].id); });
+    nav.insertBefore(b, rodape);
+    botoes[m.id] = b; porId[m.id] = m;
+  }
+  var inicio = document.createElement('button');
+  inicio.type = 'button'; inicio.className = 'nav-item ativo'; inicio.setAttribute('data-v2', 'inicio');
+  inicio.setAttribute('aria-current', 'page');
+  inicio.innerHTML = '<span class="nav-ic" aria-hidden="true">⌂</span><span>Início</span>';
+  inicio.addEventListener('click', function(){ estado.mod = null; estado.aba = null; antigos.painel.click(); marcarNav(null); desenharTabs(); });
+  nav.insertBefore(inicio, rodape); botoes.inicio = inicio;
+  MODULOS.forEach(function(g){
+    var t = document.createElement('div');
+    t.className = 'nav-grupo-titulo'; t.setAttribute('data-v2', '1'); t.textContent = g.grupo;
+    nav.insertBefore(t, rodape);
+    g.itens.forEach(criarItem);
+  });
+
+  // --- barra de abas horizontais (dentro da barra superior) ---
+  var tabs = document.createElement('div');
+  tabs.className = 'v2-tabs'; tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'Páginas do módulo');
+  subbar.appendChild(tabs);
+  tabs.addEventListener('keydown', function(e){
+    if(e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+    var l = Array.prototype.slice.call(tabs.querySelectorAll('.v2-tab')), i = l.indexOf(document.activeElement);
+    if(i === -1) return;
+    var n = l[(i + (e.key === 'ArrowRight' ? 1 : -1) + l.length) % l.length];
+    n.focus(); e.preventDefault();
+  });
+
+  var estado = {mod:null, aba:null, it:null, armado:false, ultimoBotao:null};
+  function toast(txt){
+    var el = document.getElementById('v2Toast');
+    if(!el){ el = document.createElement('div'); el.id = 'v2Toast'; el.setAttribute('role', 'status');
+      el.style.cssText = 'position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:var(--nav-bg);color:var(--nav-ink);padding:10px 18px;border-radius:7px;font-size:12.5px;z-index:80;box-shadow:0 10px 30px rgba(0,0,0,.25);';
+      document.body.appendChild(el); }
+    el.textContent = txt; el.style.display = 'block'; clearTimeout(toast._t); toast._t = setTimeout(function(){ el.style.display = 'none'; }, 3500);
+  }
+  function marcarNav(modId){
+    Object.keys(botoes).forEach(function(k){
+      var on = (k === modId) || (modId === null && k === 'inicio');
+      botoes[k].classList.toggle('ativo', on);
+      if(on) botoes[k].setAttribute('aria-current', 'page'); else botoes[k].removeAttribute('aria-current');
+    });
+  }
+  function abasVisiveis(m){ return m.abas.filter(function(a){ return a.so !== 'admin' || document.body.classList.contains('saude-admin'); }); }  // mesma regra visual do menu antigo (Saúde da empresa só para o escritório)
+  function abaAtual(){ var m = porId[estado.mod]; return m ? m.abas.filter(function(a){ return a.id === estado.aba; })[0] : null; }
+  function desenharTabs(){
+    var m = porId[estado.mod];
+    var lista = m ? abasVisiveis(m) : [];
+    if(!m || lista.length < 2){ // módulo de uma só página (Notas de entrada, Pessoas...): não precisa de barra
+      tabs.innerHTML = ''; document.body.classList.remove('v2-aba-ativa'); return;
+    }
+    var h = '<span class="v2-modtit">' + m.rot + '</span>';
+    h += lista.map(function(a){
+      var sel = a.id === estado.aba;
+      var n = a.badge ? badgeTexto(a.badge) : '';
+      return '<button type="button" class="v2-tab" role="tab" data-aba="' + a.id + '" aria-selected="' + sel + '" tabindex="' + (sel ? '0' : '-1') + '">' + a.rot +
+             (a.badge ? '<span class="v2-n" data-v2-badge="' + a.badge + '"' + (n ? '' : ' style="display:none;"') + '>' + n + '</span>' : '') + '</button>';
+    }).join('');
+    var at = abaAtual();
+    if(at && at.alt){
+      h += '<div class="v2-seg" role="group" aria-label="' + at.rot + ': visão">' + at.alt.map(function(x){
+        return '<button type="button" data-it="' + x.it + '" aria-pressed="' + (x.it === estado.it) + '">' + x.rot + '</button>';
+      }).join('') + '</div>';
+    }
+    tabs.innerHTML = h;
+    document.body.classList.add('v2-aba-ativa');
+    Array.prototype.forEach.call(tabs.querySelectorAll('.v2-tab'), function(b){ b.addEventListener('click', function(){ selecionar(estado.mod, b.dataset.aba); }); });
+    Array.prototype.forEach.call(tabs.querySelectorAll('.v2-seg button'), function(b){ b.addEventListener('click', function(){ selecionar(estado.mod, estado.aba, b.dataset.it); }); });
+  }
+
+  function selecionar(modId, abaId, itemId){
+    var m = porId[modId]; if(!m) return;
+    var a = m.abas.filter(function(x){ return x.id === abaId; })[0] || m.abas[0];
+    var it = itemId || a.it || (a.alt && a.alt[0].it);
+    var velho = antigos[it];
+    if(!velho){ toast('Este módulo ainda não carregou. Tente de novo em instantes.'); return; }
+    var anterior = {mod:estado.mod, aba:estado.aba, it:estado.it};
+    estado.mod = modId; estado.aba = a.id; estado.it = it; estado.ultimoBotao = botoes[modId];
+    estado.armado = true; setTimeout(function(){ estado.armado = false; }, 80);
+    velho.classList.remove('ativo');
+    velho.click();                                   // mesmo clique de antes: o menu antigo faz a verificação e abre a tela
+    if(!velho.classList.contains('ativo')){          // o menu antigo recusou (cartão ainda não carregou): volta ao estado anterior
+      estado.mod = anterior.mod; estado.aba = anterior.aba; estado.it = anterior.it; estado.armado = false;
+      return;
+    }
+    marcarNav(modId); desenharTabs();
+  }
+
+  // --- a barra acompanha a tela interna: some quando ela fecha ou se for aberta por outro caminho ---
+  var ov = document.getElementById('overlay');
+  if(ov) new MutationObserver(function(){
+    var aberto = ov.classList.contains('open');
+    if(!aberto){
+      var voltar = estado.ultimoBotao;
+      estado.mod = null; estado.aba = null; estado.it = null; marcarNav(null); desenharTabs();
+      setTimeout(function(){ // o foco voltava para um botão do menu antigo (oculto): leva para o módulo de origem
+        var ae = document.activeElement;
+        if((!ae || ae === document.body || ov.contains(ae)) && voltar && voltar.offsetParent !== null && !ov.classList.contains('open')){ try{ voltar.focus(); }catch(e){} }
+      }, 120);
+      return;
+    }
+    if(!estado.armado && estado.mod){ estado.mod = null; estado.aba = null; estado.it = null; marcarNav(null); desenharTabs(); }
+  }).observe(ov, {attributes:true, attributeFilter:['class']});
+
+  // --- selos (Contratos de prestadores) espelhados do cartão original ---
+  function atualizarSelos(){
+    Array.prototype.forEach.call(document.querySelectorAll('#navLateral [data-v2-badge], .v2-tabs [data-v2-badge]'), function(el){
+      var t = badgeTexto(el.getAttribute('data-v2-badge'));
+      el.textContent = t; el.style.display = t ? '' : 'none';
+    });
+  }
+  atualizarSelos();
+  var src = document.querySelector('#badgeContratosPrestadores');
+  if(src) new MutationObserver(atualizarSelos).observe(src, {childList:true, characterData:true, subtree:true});
+
+  // diagnóstico (testes): ids do menu antigo cobertos pelos módulos × ids existentes
+  window.__menuModulosDiagnostico = function(){
+    var usados = {};
+    MODULOS.forEach(function(g){ g.itens.forEach(function(m){ m.abas.forEach(function(a){
+      if(a.it) usados[a.it] = 1; (a.alt || []).forEach(function(x){ usados[x.it] = 1; });
+    }); }); });
+    usados.painel = 1; // "Início"
+    return {usados:Object.keys(usados).sort(), antigos:Object.keys(antigos).sort()};
+  };
 })();
 </script>
 </body>
