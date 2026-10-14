@@ -14,6 +14,7 @@
       <script src="carga_tributaria.js" defer></script>
     <script src="maquininhas.js" defer></script>
     <script src="pdv_vendas.js" defer></script>
+    <script src="notas_entrada.js" defer></script>
     <style>
   :root{
     /* paleta clara — ivory quente + cards brancos foscos */
@@ -892,6 +893,11 @@ Fica fora de .wrap para continuar visível quando .wrap é escondido em @media p
                 <div class="lbl">Taxas de Maquininha</div>
                 <div class="val" style="font-size:19px;">Recebimentos do PDV</div>
                 <div class="sub">Vigência de taxas por operadora e lançamento diário de recebimentos</div>
+        </div>
+        <div class="card" id="btnNotasEntrada">
+                <div class="lbl">Notas de Entrada</div>
+                <div class="val" style="font-size:19px;">NF-e recebidas (SEFAZ)</div>
+                <div class="sub">Notas fiscais de compra baixadas automaticamente, com conferência do contas a pagar</div>
         </div>
   </div>
 
@@ -6979,6 +6985,7 @@ document.getElementById('btnCustoProduto').addEventListener('click', ()=>openCus
   document.getElementById('btnCargaTributaria').addEventListener('click', ()=>openCargaTributariaPanel());
   document.getElementById('btnMaquininhas').addEventListener('click', ()=>openMaquininhasPanel());
   document.getElementById('btnPDV').addEventListener('click', ()=>openPdvPanel());
+  document.getElementById('btnNotasEntrada').addEventListener('click', ()=>openNotasEntradaPanel());
 
 document.getElementById('loginForm').addEventListener('submit', async e=>{
   e.preventDefault();
@@ -7245,7 +7252,8 @@ init();
       { id:'fechamento',  rotulo:'Fechamento de caixa',    ic:'⊞', alvo:'#cardFechamentoSemana' },
       { id:'vencidos',    rotulo:'Vencidos',               ic:'!', alvo:'#cardVencidos' },
       { id:'faixas',      rotulo:'Faixas de atraso',       ic:'≡', alvo:'#cardAging' },
-      { id:'saldo',       rotulo:'Saldos bancários',       ic:'$', acao:openSaldoPanel }
+      { id:'saldo',       rotulo:'Saldos bancários',       ic:'$', acao:openSaldoPanel },
+      { id:'nfe',         rotulo:'Notas de entrada',       ic:'▤', alvo:'#btnNotasEntrada' }
     ]},
     { grupo:'Dívidas e contratos', itens:[
       { id:'contratos',   rotulo:'Contratos',              ic:'▤', alvo:'#btnContratos' },
