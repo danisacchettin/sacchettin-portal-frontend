@@ -4629,7 +4629,8 @@ async function openDRE(){
   const hoje = new Date();
   // Regime de competência: considera o mês de vencimento, não a data em que foi de fato pago/recebido.
   const noPeriodo = iso => { const d = new Date(iso); return d.getUTCFullYear()===hoje.getFullYear() && d.getUTCMonth()===hoje.getMonth(); };
-  const receberPeriodo = DATA.contasReceber.filter(x=>noPeriodo(x.vencimento));
+  // Regra (Dani, 14/10/2026): título CANCELADO nunca entra na receita (DAV ou qualquer outro). Continua por vencimento (competência).
+  const receberPeriodo = DATA.contasReceber.filter(x=>x.status!=='Cancelado' && noPeriodo(x.vencimento));
   const pagarPeriodo = DATA.contasPagar.filter(x=>noPeriodo(x.vencimento));
 
   const receitaBruta = receberPeriodo.reduce((s,x)=>s+x.valor_original,0);
@@ -4787,7 +4788,8 @@ async function calcularSaudeEmpresa(periodo){
   const chaves = janelaMesesSaude(periodo);
   const noPeriodo = iso => chaves.includes(String(iso).slice(0,7));
 
-  const receberPeriodo = (DATA.contasReceber||[]).filter(x=>noPeriodo(x.vencimento));
+  // Mesma regra do DRE: título cancelado não entra na receita.
+  const receberPeriodo = (DATA.contasReceber||[]).filter(x=>x.status!=='Cancelado' && noPeriodo(x.vencimento));
   const pagarPeriodo = (DATA.contasPagar||[]).filter(x=>noPeriodo(x.vencimento));
 
   const receitaBruta = receberPeriodo.reduce((s,x)=>s+x.valor_original,0);
