@@ -361,7 +361,7 @@ function neSugestaoHtml(n){
   const forma = neFormaSugerida(n.pagamentos);
   const cats = (CADASTROS.categoriasDespesa || []);
   const catSel = n.categoria_sugerida_id ? String(n.categoria_sugerida_id) : (n.fornecedor_categoria_id ? String(n.fornecedor_categoria_id) : '');
-  const optCat = '<option value="">Selecione a categoria…</option>' + cats.map(c => `<option value="${c.id}"${String(c.id) === catSel ? ' selected' : ''}>${escapeHtml(c.nome_categoria || c.nome || '')}</option>`).join('');
+  const optCat = '<option value="">Selecione a categoria…</option>' + cats.map(c => `<option value="${c.id}"${String(c.id) === catSel ? ' selected' : ''}>${escapeHtml(c.nome_categoria || c.nome || '')}</option>`).join('') + optionNovaCategoria(false);
   const optForma = ['', 'PIX', 'Boleto', 'TED', 'Cartão', 'Dinheiro'].map(f => `<option value="${f}"${f === forma ? ' selected' : ''}>${f || 'Selecione…'}</option>`).join('');
   const linhas = sugs.map((s, i) => {
     const l = s.lancamento; const cand = s.candidatos_existentes || [];
@@ -379,7 +379,7 @@ function neSugestaoHtml(n){
   return `<div class="ne-sug" id="neSug-${n.id}">
     <div style="font-size:12.5px; margin-bottom:8px;">${fornInfo}</div>
     <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:8px; font-size:12.5px;">
-      <label>Categoria *<br><select id="neCat-${n.id}">${optCat}</select></label>
+      <label>Categoria *<br><select id="neCat-${n.id}">${optCat}</select>${novaCategoriaFormHtml('neNovaCat-' + n.id, false)}</label>
       <label>Forma de pagamento *<br><select id="neForma-${n.id}">${optForma}</select></label>
     </div>
     <div style="overflow-x:auto;"><table style="font-size:12.5px;"><thead><tr><th></th><th>Documento</th><th>Vencimento *</th><th class="n">Valor *</th><th>Nº do boleto</th><th></th></tr></thead><tbody>${linhas}</tbody></table></div>
@@ -393,6 +393,7 @@ function neLigarCard(n){
   raiz.querySelectorAll('[data-ne-confirmar]').forEach(b => b.addEventListener('click', () => neConfirmarRecebimento(n.id, b)));
   raiz.querySelectorAll('[data-ne-xml]').forEach(b => b.addEventListener('click', () => neBaixarXml(n.id)));
   raiz.querySelectorAll('[data-ne-lancar]').forEach(b => b.addEventListener('click', () => neLancar(n.id)));
+  ligarNovaCategoria(document.getElementById('neCat-' + n.id), 'neNovaCat-' + n.id);
   raiz.querySelectorAll('[data-ne-vinc]').forEach(b => b.addEventListener('click', () => neVincularExistente(n.id, b.dataset.neVinc, b)));
   raiz.querySelectorAll('[data-ne-disp]').forEach(b => b.addEventListener('click', () => neDispensar(n.id, b.dataset.neDisp)));
   raiz.querySelectorAll('[data-ne-atualiza]').forEach(b => b.addEventListener('click', () => neAtualizarFornecedor(n.id)));
@@ -438,9 +439,14 @@ async function neConfirmarRecebimento(id, btn){
 async function neLancar(id){
   const n = neDetalhes[id]; if (!n) return;
   const caixa = document.getElementById('neSug-' + id);
-  const categoria = document.getElementById('neCat-' + id).value;
+  let categoria = document.getElementById('neCat-' + id).value;
   const forma = document.getElementById('neForma-' + id).value;
   if (!categoria) return neMsg(id, 'Selecione a categoria.', true);
+  let novaCat = null;
+  if (categoria === VALOR_NOVA_CATEGORIA) {
+    novaCat = lerNovaCategoria('neNovaCat-' + id);
+    if (novaCat.erro) return neMsg(id, novaCat.erro, true);
+  }
   if (!forma) return neMsg(id, 'Selecione a forma de pagamento.', true);
   const linhas = Array.from(caixa.querySelectorAll('tr[data-dup]')).filter(tr => tr.querySelector('.ne-sel').checked).map(tr => ({
     dupId: tr.dataset.dup, documento: tr.querySelector('.ne-doc').value.trim(), vencimento: tr.querySelector('.ne-venc').value,
@@ -454,6 +460,8 @@ async function neLancar(id){
   const btn = caixa.querySelector('[data-ne-lancar]'); btn.disabled = true;
   let feitas = 0;
   try {
+    // Categoria nova: criada só agora, depois de todas as validações (nada é criado se a pessoa desistir).
+    if (novaCat) categoria = await criarCategoriaDespesa(novaCat.nome, novaCat.grupo);
     for (const l of linhas) {
       const body = {
         categoria_id: categoria, documento: l.documento || null, numero_boleto: l.boleto, vencimento: l.vencimento,
