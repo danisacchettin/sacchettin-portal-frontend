@@ -45,6 +45,7 @@ const neMsgPend = {};   // mensagem a mostrar depois que o cartão for redesenha
   .ne-grid .k{font-size:10.5px; text-transform:uppercase; letter-spacing:.4px; color:#667;}
   .ne-grid .v{font-weight:500;}
   .ne-wrap{width:0; min-width:100%; overflow-x:auto;}
+  @media (max-width:600px){ .ne-titulo-nf .ne-card{padding:12px 8px;} .ne-titulo-nf .ne-card table{font-size:11px;} .ne-titulo-nf .ne-card th, .ne-titulo-nf .ne-card td{padding:4px 3px !important; letter-spacing:0;} .ne-titulo-nf .ne-card th{font-size:9.5px;} .ne-titulo-nf .ne-card td.n, .ne-titulo-nf .ne-card th.n{white-space:normal;} }
   table.report td.ne-celula{padding:12px 10px;}
   .ne-card table{width:100%; border-collapse:collapse; font-size:12.5px; margin-bottom:12px;}
   table.report .ne-card th{text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.4px; color:#667; border-bottom:1px solid #1b2b3a; padding:5px 6px; background:transparent;}
@@ -379,7 +380,7 @@ function neSugestaoHtml(n){
   return `<div class="ne-sug" id="neSug-${n.id}">
     <div style="font-size:12.5px; margin-bottom:8px;">${fornInfo}</div>
     <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:8px; font-size:12.5px;">
-      <label>Categoria *<br><select id="neCat-${n.id}">${optCat}</select>${novaCategoriaFormHtml('neNovaCat-' + n.id, false)}</label>
+      <label>Categoria *<br><select id="neCat-${n.id}">${optCat}</select>${novaCategoriaFormHtml('neNovaCat-' + n.id, false)}<span id="neDiverso-${n.id}" style="display:none; margin-top:6px;"><input type="text" id="neDiversoTxt-${n.id}" maxlength="160" placeholder="Descreva o que é (obrigatório em “diversos”)" style="width:100%; box-sizing:border-box;"></span></label>
       <label>Forma de pagamento *<br><select id="neForma-${n.id}">${optForma}</select></label>
     </div>
     <div style="overflow-x:auto;"><table style="font-size:12.5px;"><thead><tr><th></th><th>Documento</th><th>Vencimento *</th><th class="n">Valor *</th><th>Nº do boleto</th><th></th></tr></thead><tbody>${linhas}</tbody></table></div>
@@ -393,7 +394,13 @@ function neLigarCard(n){
   raiz.querySelectorAll('[data-ne-confirmar]').forEach(b => b.addEventListener('click', () => neConfirmarRecebimento(n.id, b)));
   raiz.querySelectorAll('[data-ne-xml]').forEach(b => b.addEventListener('click', () => neBaixarXml(n.id)));
   raiz.querySelectorAll('[data-ne-lancar]').forEach(b => b.addEventListener('click', () => neLancar(n.id)));
-  ligarNovaCategoria(document.getElementById('neCat-' + n.id), 'neNovaCat-' + n.id);
+  const neAtualizaDiverso = () => {
+    const sel = document.getElementById('neCat-' + n.id); const caixa = document.getElementById('neDiverso-' + n.id); if (!sel || !caixa) return;
+    const nome = sel.value === VALOR_NOVA_CATEGORIA ? ((document.getElementById('neNovaCat-' + n.id + 'Nome') || {}).value || '') : ((sel.options[sel.selectedIndex] || {}).text || '');
+    caixa.style.display = ehCategoriaDiversa(nome) ? 'block' : 'none';
+  };
+  ligarNovaCategoria(document.getElementById('neCat-' + n.id), 'neNovaCat-' + n.id, neAtualizaDiverso);
+  neAtualizaDiverso();
   raiz.querySelectorAll('[data-ne-vinc]').forEach(b => b.addEventListener('click', () => neVincularExistente(n.id, b.dataset.neVinc, b)));
   raiz.querySelectorAll('[data-ne-disp]').forEach(b => b.addEventListener('click', () => neDispensar(n.id, b.dataset.neDisp)));
   raiz.querySelectorAll('[data-ne-atualiza]').forEach(b => b.addEventListener('click', () => neAtualizarFornecedor(n.id)));
@@ -403,6 +410,7 @@ function neLigarCard(n){
 function neMsg(id, texto, erro){ const m = document.getElementById('neCardMsg-' + id); if (m) { m.style.color = erro ? 'var(--red)' : 'var(--olive)'; m.textContent = texto; } }
 
 async function neRecarregarNota(id){
+  neNotaTitulo.lista = null; neNotaTitulo.mapaPromessa = null; neNotaTitulo.porConta = {};
   await Promise.all([neCarregarLista(), neCarregarStatus()]);
   const corpo = document.getElementById('neBody');
   if (corpo) {
@@ -448,6 +456,16 @@ async function neLancar(id){
     if (novaCat.erro) return neMsg(id, novaCat.erro, true);
   }
   if (!forma) return neMsg(id, 'Selecione a forma de pagamento.', true);
+  // Categoria "diversos": exige descrever o que é (18/10/2026); o texto vai no início das observações do título.
+  let diversosTxt = '';
+  {
+    const selCat = document.getElementById('neCat-' + id);
+    const nomeCat = categoria === VALOR_NOVA_CATEGORIA ? novaCat.nome : ((selCat.options[selCat.selectedIndex] || {}).text || '');
+    if (ehCategoriaDiversa(nomeCat)) {
+      diversosTxt = String((document.getElementById('neDiversoTxt-' + id) || {}).value || '').trim();
+      if (diversosTxt.length < 3) return neMsg(id, 'A categoria “' + nomeCat.trim() + '” é genérica: descreva o que é no campo “Descreva o que é”, abaixo da categoria.', true);
+    }
+  }
   const linhas = Array.from(caixa.querySelectorAll('tr[data-dup]')).filter(tr => tr.querySelector('.ne-sel').checked).map(tr => ({
     dupId: tr.dataset.dup, documento: tr.querySelector('.ne-doc').value.trim(), vencimento: tr.querySelector('.ne-venc').value,
     valor: parseFloat(tr.querySelector('.ne-valor').value) || 0,
@@ -466,7 +484,7 @@ async function neLancar(id){
       const body = {
         categoria_id: categoria, documento: l.documento || null, numero_boleto: l.boleto, vencimento: l.vencimento,
         valor_original: l.valor, forma_pagamento: forma, origem: 'Documento',
-        observacoes: `Lançado a partir da NF-e ${n.numero || ''} (chave ${String(n.chave).trim()}), autorizado por ${USUARIO && USUARIO.papel === 'escritorio' ? 'escritório' : 'cliente'}.`,
+        observacoes: (diversosTxt ? 'Diversos: ' + diversosTxt + ' — ' : '') + `Lançado a partir da NF-e ${n.numero || ''} (chave ${String(n.chave).trim()}), autorizado por ${USUARIO && USUARIO.papel === 'escritorio' ? 'escritório' : 'cliente'}.`,
       };
       if (n.fornecedor_id) body.fornecedor_id = n.fornecedor_id; else body.fornecedor_nome = String(n.emitente_nome || '').toUpperCase();
       const cp = await apiFetch('/api/contas-pagar', { method: 'POST', body: JSON.stringify(body) });
@@ -519,4 +537,123 @@ function neEscolherFornecedor(id){
       await carregarCadastros(); await neRecarregarNota(id);
     } catch (err) { neMsg(id, err.message, true); }
   });
+}
+
+/* ==========================================================================================
+   NOTA FISCAL DO LANÇAMENTO (A pagar) — pedido da Dani, 18/10/2026
+   Ao abrir um lançamento do A pagar que está vinculado a uma parcela de NF-e (vínculo feito
+   pelo botão "Autorizar e lançar" ou detectado automaticamente), mostra a nota no layout de NF:
+   número, data da compra, dados do fornecedor, itens, total e o valor de cada parcela.
+   Só leitura; usa as mesmas rotas das Notas de entrada (/api/nfe-entrada). Se o lançamento não
+   estiver vinculado a nenhuma nota, não mostra nada.
+   ========================================================================================== */
+const neNotaTitulo = { lista: null, listaPromessa: null, mapaPromessa: null, porConta: {} };
+
+async function neListaCompleta(){
+  if (neNotaTitulo.lista) return neNotaTitulo.lista;
+  if (!neNotaTitulo.listaPromessa) neNotaTitulo.listaPromessa = apiFetch('/api/nfe-entrada').then(l => { neNotaTitulo.lista = l || []; return neNotaTitulo.lista; }).finally(() => { neNotaTitulo.listaPromessa = null; });
+  return neNotaTitulo.listaPromessa;
+}
+async function neDetalheNota(id){
+  if (neDetalhes[id] && neDetalhes[id].duplicatas) return neDetalhes[id];
+  const d = await apiFetch('/api/nfe-entrada/' + id);
+  neDetalhes[id] = d;
+  return d;
+}
+async function neConstruirMapaTitulos(lista){
+  const cand = lista.filter(n => n.parcelas_vinculadas === undefined || Number(n.parcelas_vinculadas) > 0);
+  let i = 0;
+  const worker = async () => {
+    while (i < cand.length) {
+      const n = cand[i++];
+      try {
+        const d = await neDetalheNota(n.id);
+        (d.duplicatas || []).forEach(x => { if (x.contas_pagar_id) neNotaTitulo.porConta[String(x.contas_pagar_id)] = n.id; });
+      } catch (e) { /* uma nota que falha não impede as outras */ }
+    }
+  };
+  await Promise.all([worker(), worker(), worker(), worker()]);
+}
+// Devolve o detalhe da nota ligada ao título, ou null se ele não vem de nota.
+async function neNotaDoTitulo(item){
+  const contaId = String(item.id);
+  if (neNotaTitulo.porConta[contaId]) return neDetalheNota(neNotaTitulo.porConta[contaId]);
+  const lista = await neListaCompleta();
+  // Atalho: o botão "Autorizar e lançar" grava a chave da nota nas observações do título.
+  const m = /chave\s+(\d{44})/.exec(String(item.observacoes || ''));
+  if (m) {
+    const n = lista.find(x => String(x.chave).trim() === m[1]);
+    if (n) {
+      const d = await neDetalheNota(n.id);
+      if ((d.duplicatas || []).some(x => String(x.contas_pagar_id) === contaId)) { neNotaTitulo.porConta[contaId] = n.id; return d; }
+    }
+  }
+  if (!neNotaTitulo.mapaPromessa) neNotaTitulo.mapaPromessa = neConstruirMapaTitulos(lista);
+  await neNotaTitulo.mapaPromessa;
+  const id = neNotaTitulo.porConta[contaId];
+  return id ? neDetalheNota(id) : null;
+}
+
+function neNotaTituloHtml(n, item){
+  const regime = n.emitente_simples === true ? 'Optante pelo Simples Nacional' : n.emitente_simples === false ? 'Regime normal (não optante)' : 'não informado';
+  const dups = (n.duplicatas || []).filter(d => d.vinculo_status !== 'dispensada');
+  const pesoTotal = (n.itens || []).reduce((a, i) => a + (i.peso_kg != null ? Number(i.peso_kg) : 0), 0);
+  const itens = (n.itens || []).map(i => `<tr><td>${i.n_item ?? ''}</td><td>${escapeHtml(i.descricao || '')}<div style="font-size:10.5px; color:#778;">${escapeHtml(i.codigo || '')}${i.ncm ? ' · NCM ' + escapeHtml(i.ncm) : ''}</div></td>
+      <td class="n">${neNum(i.quantidade, 3)} ${escapeHtml(i.unidade || '')}</td><td class="n">${i.peso_kg != null ? neNum(i.peso_kg, 3) + ' kg' : '—'}</td>
+      <td class="n">${i.valor_unitario != null ? fmtBRL(Number(i.valor_unitario)) : '—'}</td><td class="n">${i.valor_total != null ? fmtBRL(Number(i.valor_total)) : '—'}</td></tr>`).join('');
+  const blocoItens = n.xml_completo
+    ? `<div class="ne-wrap"><table><thead><tr><th>#</th><th>Descrição</th><th class="n">Quantidade</th><th class="n">Peso</th><th class="n">Vl. unit.</th><th class="n">Valor total</th></tr></thead><tbody>${itens || '<tr><td colspan="6">Sem itens.</td></tr>'}</tbody></table></div>`
+    : `<div class="ne-aviso">Do XML desta nota só o <b>resumo</b> foi recebido, então o detalhamento dos itens ainda não está disponível.</div>`;
+  const totais = `<div class="ne-totais"><span>Produtos: <b>${n.valor_produtos != null ? fmtBRL(Number(n.valor_produtos)) : '—'}</b></span>${Number(n.valor_frete) ? `<span>Frete: <b>${fmtBRL(Number(n.valor_frete))}</b></span>` : ''}${Number(n.valor_desconto) ? `<span>Desconto: <b>${fmtBRL(Number(n.valor_desconto))}</b></span>` : ''}
+      <span>Peso líquido: <b>${n.peso_liquido != null ? neNum(n.peso_liquido, 3) + ' kg' : (pesoTotal ? neNum(pesoTotal, 3) + ' kg (soma dos itens)' : '—')}</b></span><span>Total da nota: <b>${fmtBRL(Number(n.valor_total) || 0)}</b></span></div>`;
+  const statusDe = d => {
+    const t = (typeof DATA !== 'undefined' && DATA.contasPagar || []).find(x => String(x.id) === String(d.contas_pagar_id));
+    return t && typeof statusTag === 'function' ? statusTag(t, 'pagar') : '';
+  };
+  const linhasParc = dups.map(d => {
+    const esta = String(d.contas_pagar_id) === String(item.id);
+    return `<tr${esta ? ' style="background:var(--gold-wash);"' : ''}><td>${escapeHtml(d.numero || '—')}${esta ? ' <b>← este lançamento</b>' : ''}</td><td>${d.vencimento ? fmtDate(d.vencimento) : '—'}</td><td class="n">${fmtBRL(Number(d.valor) || 0)}</td>
+      <td>${d.contas_pagar_id ? escapeHtml(d.cp_codigo || '') + ' ' + statusDe(d) : '<span class="tag-status tag-atraso">Sem lançamento</span>'}</td></tr>`;
+  }).join('');
+  const somaParc = dups.reduce((a, d) => a + (Number(d.valor) || 0), 0);
+  const blocoParc = dups.length
+    ? `<div class="ne-sec"><h4>Parcelas</h4><table><thead><tr><th>Parcela</th><th>Vencimento</th><th class="n">Valor</th><th>Contas a pagar</th></tr></thead><tbody>${linhasParc}</tbody>
+         <tfoot><tr><td colspan="2"><b>${dups.length} parcela(s)</b></td><td class="n"><b>${fmtBRL(somaParc)}</b></td><td></td></tr></tfoot></table></div>`
+    : `<div class="ne-sec"><div class="ne-aviso verde">Esta nota não prevê parcelas.</div></div>`;
+  const aviso = n.situacao === 'cancelada' ? '<div class="ne-aviso vermelho">Nota <b>cancelada</b> pelo emitente.</div>' : (n.situacao === 'denegada' ? '<div class="ne-aviso vermelho">Uso da nota <b>denegado</b> pela SEFAZ.</div>' : '');
+  return `<details open class="ne-titulo-nf" style="margin:0 0 16px;">
+    <summary style="cursor:pointer; font-size:12.5px; color:var(--ink-soft); margin-bottom:8px;">Nota fiscal deste lançamento — NF-e Nº ${escapeHtml(n.numero || '—')} (clique para recolher)</summary>
+    <div class="ne-card">
+      <div class="ne-nfhead">
+        <div><div class="tit">NF-e Nº ${escapeHtml(n.numero || '—')} · Série ${escapeHtml(n.serie || '—')}</div><div class="ne-chave">Chave: ${escapeHtml(neChave(n.chave))}</div></div>
+        <div style="text-align:right;">${neTagSituacao(n.situacao)}</div>
+      </div>
+      ${aviso}
+      <div class="ne-grid">
+        <div><div class="k">Data da compra (emissão)</div><div class="v">${neDataEmissao(n.data_emissao)}</div></div>
+        <div><div class="k">Fornecedor</div><div class="v">${escapeHtml(n.fornecedor_nome || n.emitente_nome || '—')}</div></div>
+        <div><div class="k">Razão social do emitente</div><div class="v">${escapeHtml(n.emitente_nome || '—')}</div></div>
+        <div><div class="k">CNPJ</div><div class="v">${escapeHtml(neCnpj(n.emitente_cnpj))}${n.emitente_uf ? ' · ' + escapeHtml(n.emitente_uf) : ''}</div></div>
+        <div><div class="k">Regime tributário</div><div class="v">${escapeHtml(regime)}</div></div>
+        <div><div class="k">Natureza da operação</div><div class="v">${escapeHtml(n.nat_op || '—')}</div></div>
+        ${n.forma_pagamento_prevista ? `<div><div class="k">Pagamento previsto na nota</div><div class="v">${escapeHtml(n.forma_pagamento_prevista)}</div></div>` : ''}
+      </div>
+      ${blocoItens}
+      ${totais}
+      ${blocoParc}
+    </div>
+  </details>`;
+}
+
+async function neMostrarNotaNoTitulo(item){
+  const alvo = document.getElementById('nfDoTitulo'); if (!alvo) return;
+  alvo.innerHTML = '<div style="font-size:12px; color:var(--ink-faint); margin:0 0 12px;">Procurando a nota fiscal deste lançamento…</div>';
+  const vivo = () => { const a = document.getElementById('nfDoTitulo'); return a && a.dataset.conta === String(item.id) ? a : null; };
+  try {
+    const n = await neNotaDoTitulo(item);
+    const a = vivo(); if (!a) return;
+    a.innerHTML = n ? neNotaTituloHtml(n, item) : '';
+  } catch (err) {
+    const a = vivo(); if (a) a.innerHTML = '<div style="font-size:12px; color:var(--ink-faint); margin:0 0 12px;">Não foi possível carregar a nota fiscal agora (o restante do lançamento está abaixo).</div>';
+  }
 }

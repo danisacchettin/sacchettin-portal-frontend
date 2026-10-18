@@ -1806,6 +1806,7 @@ function openDetalhesForItem(tipo, id, origin, manterRetorno){
       <div><h2>${escapeHtml(nome || (tipo==='pagar'?'Fornecedor não informado':'Cliente não informado'))}</h2><p>${escapeHtml(item.codigo || '')} — ${statusTag(item,tipo)} · ${origemTag(item)}</p></div>
       <button class="close-x" onclick="voltarDoDetalhe()">✕</button>
     </div>
+    ${tipo==='pagar' ? `<div id="nfDoTitulo" data-conta="${escapeHtml(String(item.id))}"></div>` : ''}
     <div class="form-grid">
       ${campo(nomeLbl, escapeHtml(nome))}
       ${campo('Categoria', escapeHtml(item.categoria))}
@@ -1829,6 +1830,8 @@ function openDetalhesForItem(tipo, id, origin, manterRetorno){
       <button type="button" class="btn ghost" onclick="voltarDoDetalhe()">Fechar</button>
     </div>
   `);
+  // Lançamento que veio de nota fiscal: mostra a nota (itens, fornecedor, parcelas) no layout de NF.
+  if(tipo==='pagar' && typeof neMostrarNotaNoTitulo === 'function') neMostrarNotaNoTitulo(item);
 }
 
 /* ---------- editar os dados de cadastro de um lançamento (fornecedor/cliente, categoria,
@@ -1866,6 +1869,7 @@ async function openEditarLancamentoForm(tipo, id){
     </div>
   `);
   document.getElementById('editLancSalvarBtn').addEventListener('click', ()=>salvarEdicaoLancamento(tipo, item.id));
+  atualizarTodasDescricoesDiversos();
 }
 
 async function salvarEdicaoLancamento(tipo, id){
@@ -1877,8 +1881,18 @@ async function salvarEdicaoLancamento(tipo, id){
   const documento = document.getElementById('editLancDocumento').value;
   const vencimento = document.getElementById('editLancVencimento').value;
   const valor = parseFloat(document.getElementById('editLancValor').value);
-  const obs = document.getElementById('editLancObs').value;
+  let obs = document.getElementById('editLancObs').value;
   if(!vencimento){ alert('Informe o vencimento.'); return; }
+  // Categoria "diversos": precisa de descrição — no campo ao lado da categoria ou já nas Observações.
+  {
+    const selCat = form.querySelector('select[name="categoria"]');
+    const nomeCat = textoCategoriaSelecionada(selCat);
+    if(ehCategoriaDiversa(nomeCat)){
+      const d = String((form.querySelector('[name="descricao_diversos_categoria"]') || {}).value || '').trim();
+      if(d.length >= 3) obs = observacaoComDiversos([d], obs);
+      else if(String(obs || '').trim().length < 3){ alert('A categoria “' + nomeCat.trim() + '” é genérica: descreva o que é no campo “Descreva o que é” (ou nas Observações).'); return; }
+    }
+  }
   if(!Number.isFinite(valor) || valor < 0){ alert('Informe um valor original válido.'); return; }
   const body = { documento: documento || null, vencimento, valor_original: valor, observacoes: obs };
   if(nomeSelect.value === '__novo__'){
@@ -5508,11 +5522,15 @@ function renderCadastroField(f, prefill){
   return `
     <div class="field ${f.full?'full':''}">
       <label>${f.label}${f.required ? ' *' : ''}</label>
-      <select name="${f.name}" onchange="toggleCadastroNovo('${f.name}', this.value); if('${f.name}'==='credor'||'${f.name}'==='cliente') sugerirCategoriaPorHistorico('${f.name}', this.value); if('${f.name}'==='categoria') this.dataset.autoSugerida='false';"${requiredAttr}>${optionsHtml}</select>
+      <select name="${f.name}" onchange="toggleCadastroNovo('${f.name}', this.value); atualizarDescricaoDiversos(this); if('${f.name}'==='credor'||'${f.name}'==='cliente') sugerirCategoriaPorHistorico('${f.name}', this.value); if('${f.name}'==='categoria') this.dataset.autoSugerida='false';"${requiredAttr}>${optionsHtml}</select>
       <div id="novo_${f.name}" class="novo-cadastro" style="display:${selectedValue==='__novo__'?'flex':'none'};">
-        <input name="novo_${f.name}" type="text" placeholder="Nome do novo ${meta.novoLabel}" value="${escapeHtml(novoNome)}" />
+        <input name="novo_${f.name}" type="text" placeholder="Nome do novo ${meta.novoLabel}" value="${escapeHtml(novoNome)}"${/^categoria/.test(f.name) ? ` oninput="atualizarDescricaoDiversos(document.querySelector('select[name=&quot;${f.name}&quot;]'))"` : ''} />
         ${extraFieldsHtml}
       </div>
+      ${/^categoria/.test(f.name) ? `<div id="diversoWrap_${f.name}" class="diverso-desc" style="display:none; margin-top:6px;">
+        <input name="descricao_diversos_${f.name}" type="text" maxlength="160" placeholder="Descreva o que é (obrigatório em “diversos”)" style="width:100%; box-sizing:border-box;" />
+        <span style="font-size:10.5px; display:block; color:var(--ink-faint);">Categoria genérica: diga do que se trata. O texto vai no começo das Observações.</span>
+      </div>` : ''}
     </div>`;
 }
 
@@ -5539,6 +5557,10 @@ function categoriaMaisUsada(lista, chaveNome, nomeAlvo){
 }
 
 function sugerirCategoriaPorHistorico(campo, cadastroId){
+  try{ _sugerirCategoriaPorHistoricoBase(campo, cadastroId); }
+  finally{ atualizarTodasDescricoesDiversos(); }
+}
+function _sugerirCategoriaPorHistoricoBase(campo, cadastroId){
   const categoriaSelect = document.querySelector('#formFields select[name="categoria"]');
   if(!categoriaSelect) return;
   // Só pula a sugestão se já houver um valor que foi ESCOLHA MANUAL da pessoa (campo tocado
@@ -5599,6 +5621,7 @@ function renderFormFields(prefill){
     return `<div class="field ${f.full?'full':''}"><label>${f.label}</label>${inputHTML}</div>`;
   }).join('');
   document.getElementById('formFields').style.display = 'grid';
+  atualizarTodasDescricoesDiversos();
   if(currentType === 'pagar'){
     renderParcelasPagar(prefill);
   } else if(currentType === 'receber'){
@@ -5892,6 +5915,46 @@ const VALOR_NOVA_CATEGORIA = '__nova_categoria__';
 function normNomeCategoria(s){
   return String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim().toUpperCase();
 }
+/* ---------- Categoria "diversos" exige descrever o que é (pedido da Dani, 18/10/2026) ----------
+   Categoria genérica esconde para onde o dinheiro vai. Quando a categoria escolhida tem "DIVERS" no nome
+   (ex.: DESPESAS DIVERSAS), abre um campo ao lado "Descreva o que é", obrigatório. O texto vai no início das
+   Observações do lançamento ("Diversos: ..."), campo que já existe — não depende de mudança no servidor. */
+const REGEX_CATEGORIA_DIVERSA = /\bDIVERS/i;
+function ehCategoriaDiversa(nome){ return REGEX_CATEGORIA_DIVERSA.test(String(nome == null ? '' : nome)); }
+function textoCategoriaSelecionada(sel){
+  if(!sel) return '';
+  if(sel.value === '__novo__'){ const n = document.querySelector('input[name="novo_' + sel.name + '"]'); return n ? n.value : ''; }
+  if(sel.value === VALOR_NOVA_CATEGORIA) return '';
+  const op = sel.options[sel.selectedIndex];
+  return op ? op.text : '';
+}
+// Mostra/esconde o campo "Descreva o que é" ao lado do select de categoria (formulários que usam renderCadastroField).
+function atualizarDescricaoDiversos(sel){
+  if(!sel) return;
+  const wrap = document.getElementById('diversoWrap_' + sel.name);
+  if(!wrap) return;
+  wrap.style.display = ehCategoriaDiversa(textoCategoriaSelecionada(sel)) ? 'block' : 'none';
+}
+function atualizarTodasDescricoesDiversos(){
+  document.querySelectorAll('select[name^="categoria"]').forEach(atualizarDescricaoDiversos);
+}
+// Valida e monta o texto: devolve { descs: [...] } ou lança Error com a orientação.
+function exigirDescricaoDiversos(raiz, campos, obj){
+  const descs = [];
+  campos.forEach(campo => {
+    const sel = raiz.querySelector('select[name="' + campo + '"]');
+    const nome = textoCategoriaSelecionada(sel);
+    if(!ehCategoriaDiversa(nome)) return;
+    const d = String((obj && obj['descricao_diversos_' + campo]) || '').trim();
+    if(d.length < 3) throw new Error('A categoria “' + nome.trim() + '” é genérica: descreva o que é no campo “Descreva o que é”, logo abaixo da categoria.');
+    descs.push(d);
+  });
+  return descs;
+}
+function observacaoComDiversos(descs, obs){
+  if(!descs.length) return obs;
+  return 'Diversos: ' + descs.join(' | ') + (obs && String(obs).trim() ? ' — ' + String(obs).trim() : '');
+}
 function optionNovaCategoria(selecionada){
   return `<option value="${VALOR_NOVA_CATEGORIA}"${selecionada ? ' selected' : ''}>+ Adicionar nova categoria…</option>`;
 }
@@ -5987,6 +6050,14 @@ document.getElementById('entryForm').addEventListener('submit', async e=>{
     const resolved = {};
     for(const f of FIELD_SETS[currentType].filter(f=>f.type==='cadastro')){
       resolved[f.name] = await resolverCadastro(f, obj);
+    }
+    // Categoria "diversos" (18/10/2026): exige descrever o que é; o texto vai no início das Observações.
+    {
+      const camposCat = currentType === 'caixa'
+        ? [(parseFloat(obj.entrada)||0) > 0 ? 'categoria_entrada' : null, (parseFloat(obj.saida)||0) > 0 ? 'categoria_saida' : null].filter(Boolean)
+        : ['categoria'];
+      const descs = exigirDescricaoDiversos(e.target, camposCat, obj);
+      obj.observacoes = observacaoComDiversos(descs, obj.observacoes);
     }
     // Forma de pagamento/recebimento obrigatória (08/10/2026): alimenta o fechamento de caixa e o DRE.
     {

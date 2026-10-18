@@ -9,10 +9,19 @@
    ========================================================================================== */
 (function(){
   'use strict';
-  var PORTAL_VERSAO = '4.2';
+  var PORTAL_VERSAO = '4.3';
 
   // Mais recente primeiro. id = identificador estável (nunca reaproveitar). Texto: frases curtas e simples.
   var NOVIDADES = [
+    { id:'2026-10-18-pdv-itens-diversos', versao:'4.3', data:'18/10/2026',
+      titulo:'PDV: descreva os itens “diversos”',
+      texto:'No PDV há uma nova aba, “Itens diversos”, com o que o caixa registrou como item em cadastro ou item avulso. Descreva o que foi vendido, um a um ou todos de uma vez quando o valor se repete (por exemplo, todos de R$ 8,00). A aba só funciona depois que o escritório ativar a atualização do servidor; até lá ela avisa isso.' },
+    { id:'2026-10-18-nota-no-a-pagar', versao:'4.3', data:'18/10/2026',
+      titulo:'A pagar: nota fiscal no próprio lançamento',
+      texto:'Ao abrir um lançamento do A pagar que veio de uma nota fiscal, o portal mostra a nota em formato de card: número, data da compra, dados do fornecedor, itens, total e o valor de cada parcela, com a parcela deste lançamento destacada.' },
+    { id:'2026-10-18-descricao-diversos', versao:'4.3', data:'18/10/2026',
+      titulo:'Categoria “diversos” pede descrição',
+      texto:'Quando você escolhe uma categoria genérica (por exemplo, Despesas diversas) ao lançar, editar ou autorizar uma nota, abre um campo “Descreva o que é”, obrigatório. O texto fica no começo das observações do lançamento.' },
     { id:'2026-10-17-nova-categoria-na-lista', versao:'4.2', data:'17/10/2026',
       titulo:'Criar categoria direto da lista',
       texto:'Nas listas de categoria (autorização de lançamento das Notas de entrada, renegociação por credor e edição de fornecedores) há agora a opção “+ Adicionar nova categoria” no fim da lista. Informe o nome e o grupo do DRE e a categoria é criada ao confirmar a ação da tela. Se o nome já existir, o portal usa a categoria que já existe, sem duplicar.' },

@@ -4,7 +4,7 @@
    src/routes/pdvRelatorios.js = estas leituras). Une o que antes eram "Vendas do PDV" e "Análise
    de vendas (PDV)" e acrescenta leituras de gestão.
 
-   Abas visíveis a todos:  Resumo · Dias e fechamento · Produtos · Grupos · Quando vende
+   Abas visíveis a todos:  Resumo · Dias e fechamento · Produtos · Grupos · Quando vende · Itens diversos
    Só administrador (escritório, fora do "entrar como cliente"):
      - comparação com o período anterior de mesmo tamanho, destaques automáticos, projeção do mês,
        produtos em alta/queda, variação de preço, coluna "vs. média do dia da semana";
@@ -55,7 +55,7 @@ function pdvModoAdmin(){
 }
 function pdvInteligencia(){ return pdvModoAdmin() || PDV_CLIENTE_VE_INTELIGENCIA; }
 function pdvAbasDisponiveis(){
-  const abas = [['resumo', 'Resumo'], ['dias', 'Dias e fechamento'], ['produtos', 'Produtos'], ['grupos', 'Grupos'], ['quando', 'Quando vende']];
+  const abas = [['resumo', 'Resumo'], ['dias', 'Dias e fechamento'], ['produtos', 'Produtos'], ['grupos', 'Grupos'], ['quando', 'Quando vende'], ['diversos', 'Itens diversos']];
   if(pdvModoAdmin()) abas.push(['gestao', 'Gestão'], ['qualidade', 'Qualidade dos dados']);
   return abas;
 }
@@ -275,7 +275,7 @@ function renderPdv(){
   const tabs = abas.map(x => `<button type="button" class="btn ${pdvAba===x[0]?'gold':'ghost'} pdv-tab" data-aba="${x[0]}" style="margin-right:8px; margin-bottom:8px;">${x[1]}${x[0] === 'qualidade' && nq ? ' (' + nq + ')' : ''}</button>`).join('');
   pdvLimparGraficos();
   openOverlay(`
-    ${pdvCabecalho('PDV', 'Vendas, fechamento do caixa e análise de produtos, recebidos automaticamente do AutoPlus. Somente leitura: não gera lançamento financeiro.')}
+    ${pdvCabecalho('PDV', 'Vendas, fechamento do caixa e análise de produtos, recebidos automaticamente do AutoPlus. Somente leitura (a única escrita é a descrição dos itens diversos): não gera lançamento financeiro.')}
     ${pdvFiltroHtml()}
     <p style="font-size:11.5px; color:var(--ink-faint); margin:-6px 0 14px;">
       Último fechamento recebido: <strong>${c.ultimo_fechamento ? pdvDataBR(c.ultimo_fechamento) : '—'}</strong> ·
@@ -300,12 +300,12 @@ function pdvRenderAba(){
   document.querySelectorAll('.pdv-tab').forEach(b => { const on = b.dataset.aba === pdvAba; b.classList.toggle('gold', on); b.classList.toggle('ghost', !on); });
   const sem = !pdvResumo.por_dia.length && !pdvAnalises.geral.cupons;
   const fechar = '<button type="button" class="btn ghost" onclick="closeOverlay()">Fechar</button>';
-  if(sem){
+  if(sem && pdvAba !== 'diversos'){
     alvo.innerHTML = '<p style="font-size:13px; color:var(--ink-soft);">Nenhuma venda ou fechamento recebido neste período.</p>';
     acoes.innerHTML = fechar; return;
   }
   const rend = { resumo: pdvAbaResumo, dias: pdvAbaDias, produtos: pdvAbaProdutos, grupos: pdvAbaGrupos, quando: pdvAbaQuando,
-    gestao: pdvAbaGestao, qualidade: pdvAbaQualidade }[pdvAba] || pdvAbaResumo;
+    gestao: pdvAbaGestao, qualidade: pdvAbaQualidade, diversos: pdvAbaDiversos }[pdvAba] || pdvAbaResumo;
   rend(alvo);
   acoes.innerHTML = (pdvAba === 'dias' ? '<button type="button" class="btn ghost" id="pdvExcelDias">Exportar para Excel</button>' : '') +
     (pdvAba === 'produtos' ? '<button type="button" class="btn ghost" id="pdvExcelProdutos">Exportar para Excel</button>' : '') + fechar;
@@ -1129,4 +1129,209 @@ if(meu !== pdvTicketSeq || !document.getElementById('pdvTicketBox')) return;
 pdvTicketMostrar(`${cab}<hr class="pdv-tk-linha"><div class="pdv-tk-centro" style="color:#a3281f;">Não foi possível carregar: ${pdvEsc(err && err.message)}</div>
 <div class="pdv-tk-botoes" style="gap:8px;"><button type="button" class="btn ghost" id="pdvTicketTentar">Tentar de novo</button><button type="button" class="btn ghost" id="pdvTicketFechar">Fechar</button></div>`, () => openItensDoCupom(dia, cupom));
 }
+}
+
+/* ==========================================================================================
+   ABA "ITENS DIVERSOS" (pedido da Danielle, 18/10/2026)
+   O caixa do AutoPlus registra como "ITEM EM CADASTRO" (código de barras 1) ou "ITEM AVULSO" (código 0)
+   o que não tem cadastro (balas, doces, avulsos). O arquivo de cupom não traz texto livre, então a equipe
+   descreve aqui, depois da venda. Visível a todos os perfis. Fala com /api/pdv-diversos (backend:
+   src/routes/pdvDiversos.js + migração 028). Enquanto o servidor não tiver a rota, a aba avisa e não quebra.
+   ========================================================================================== */
+const PDV_DIV_CATEGORIAS = ['Balas e doces', 'Bebidas', 'Carvão e acendedor', 'Temperos e condimentos', 'Embalagens e descartáveis', 'Frios e laticínios', 'Carne sem cadastro', 'Mercearia', 'Outros'];
+let pdvDiv = { situacao: 'pendentes', dados: null, carregando: false, erro: '', chave: '', sel: new Set(), rasc: {}, lote: null, msg: null, salvando: {}, seq: 0 };
+
+function pdvDivChave(){ return pdvPeriodo.inicio + '|' + pdvPeriodo.fim + '|' + pdvDiv.situacao; }
+function pdvDivNum(v){ const n = Number(v); return isFinite(n) ? n : 0; }
+
+async function pdvDivCarregar(silencioso){
+  const chave = pdvDivChave(), meu = ++pdvDiv.seq;
+  pdvDiv.erro = '';
+  if(!silencioso){ pdvDiv.carregando = true; pdvDivDesenhar(); }
+  try{
+    const d = await apiFetch('/api/pdv-diversos?' + pdvQS() + '&situacao=' + encodeURIComponent(pdvDiv.situacao));
+    if(meu !== pdvDiv.seq) return;
+    pdvDiv.dados = d;
+    const ids = new Set((d.itens || []).map(i => String(i.id)));
+    pdvDiv.sel = new Set(Array.from(pdvDiv.sel).filter(x => ids.has(x)));
+  }catch(err){
+    if(meu !== pdvDiv.seq) return;
+    pdvDiv.dados = null;
+    pdvDiv.erro = /Erro 404/.test(String(err && err.message)) ? 'nao_ativo' : String((err && err.message) || 'erro');
+  }
+  pdvDiv.chave = chave; pdvDiv.carregando = false;
+  pdvDivDesenhar();
+}
+
+// Chamada por pdvRenderAba: carrega na primeira vez e quando o período ou a situação mudam.
+function pdvAbaDiversos(alvo){
+  if(pdvDiv.chave !== pdvDivChave() && !pdvDiv.carregando){ pdvDiv.lote = null; pdvDiv.msg = null; pdvDivCarregar(); return; }
+  pdvDivDesenhar();
+}
+
+function pdvDivRascunhos(){
+  const alvo = document.getElementById('pdvAbaConteudo'); if(!alvo) return;
+  alvo.querySelectorAll('[data-div-desc]').forEach(el => { const id = el.dataset.divDesc; pdvDiv.rasc[id] = Object.assign(pdvDiv.rasc[id] || {}, { d: el.value }); });
+  alvo.querySelectorAll('[data-div-cat]').forEach(el => { const id = el.dataset.divCat; pdvDiv.rasc[id] = Object.assign(pdvDiv.rasc[id] || {}, { c: el.value }); });
+  const ld = document.getElementById('pdvDivLoteDesc'), lc = document.getElementById('pdvDivLoteCat');
+  if(pdvDiv.lote){ if(ld) pdvDiv.lote.d = ld.value; if(lc) pdvDiv.lote.c = lc.value; }
+}
+
+function pdvDivDesenhar(){
+  const alvo = document.getElementById('pdvAbaConteudo');
+  if(!alvo || pdvAba !== 'diversos') return;
+  pdvDivRascunhos();
+  const est = 'padding:7px 9px; border-radius:8px; border:1px solid var(--border); background:var(--paper-2); font-family:inherit; font-size:12.5px; color:var(--ink);';
+  const intro = pdvNota('O caixa registra como “item em cadastro” ou “item avulso” o que não tem cadastro (balas, doces, avulsos). Descreva aqui o que foi vendido, para que nada fique genérico. Quando um valor se repete muitas vezes, descreva todos de uma vez.', '0 0 14px');
+
+  if(pdvDiv.carregando && !pdvDiv.dados){ alvo.innerHTML = intro + '<p style="font-size:13px; color:var(--ink-soft);">Carregando itens diversos…</p>'; return; }
+  if(pdvDiv.erro === 'nao_ativo'){
+    alvo.innerHTML = intro + `<div class="ne-aviso" style="border:1px solid var(--border); border-radius:10px; padding:12px 14px; font-size:13px; color:var(--ink-soft);">Esta função ainda não foi ativada no servidor. Assim que o escritório aplicar a atualização do servidor, os itens genéricos do período aparecem aqui.</div>
+      <button type="button" class="btn ghost" id="pdvDivTentar" style="margin-top:12px;">Verificar de novo</button>`;
+    document.getElementById('pdvDivTentar').addEventListener('click', () => pdvDivCarregar());
+    return;
+  }
+  if(pdvDiv.erro){
+    alvo.innerHTML = intro + `<p style="color:var(--red); font-size:13px;">Não foi possível carregar: ${pdvEsc(pdvDiv.erro)}</p><button type="button" class="btn ghost" id="pdvDivTentar">Tentar de novo</button>`;
+    document.getElementById('pdvDivTentar').addEventListener('click', () => pdvDivCarregar());
+    return;
+  }
+  const d = pdvDiv.dados; if(!d) return;
+  const r = d.resumo || {};
+  const sit = pdvDiv.situacao;
+
+  const tiles = pdvGrade([
+    pdvTile('Pendentes de descrição', pdvNum(pdvDivNum(r.pendentes)), pdvMoeda(pdvDivNum(r.valor_pendente))),
+    pdvTile('Já descritos', pdvNum(pdvDivNum(r.descritos)), pdvMoeda(pdvDivNum(r.valor_descrito))),
+    pdvTile('Itens genéricos no período', pdvNum(pdvDivNum(r.total)), pdvMoeda(pdvDivNum(r.valor_total))),
+  ]);
+
+  const rep = (d.repetidos || []).map(x => {
+    const v = pdvDivNum(x.valor_unitario);
+    return `<button type="button" class="btn ghost pdv-div-rep" data-valor="${v}" data-qtd="${pdvDivNum(x.qtd)}" style="margin:0 8px 8px 0; font-size:12px;">${pdvMoeda(v)} · ${pdvNum(pdvDivNum(x.qtd))}× (${pdvMoeda(pdvDivNum(x.valor))})</button>`;
+  }).join('');
+  const blocoRep = rep ? `<div style="margin:6px 0 14px;"><div style="font-size:11px; color:var(--ink-faint); margin-bottom:6px;">Valores que mais se repetem entre os pendentes — costumam ser o mesmo produto. Clique para descrever todos de uma vez:</div>${rep}</div>` : '';
+
+  let blocoLote = '';
+  if(pdvDiv.lote){
+    const L = pdvDiv.lote;
+    const quem = L.tipo === 'valor' ? `todos os ${pdvNum(L.qtd)} pendentes de ${pdvMoeda(L.valor)} (no período)` : `${pdvNum(pdvDiv.sel.size)} item(ns) escolhido(s)`;
+    blocoLote = `<div style="border:1px solid var(--gold); border-radius:12px; padding:12px 14px; margin:0 0 14px;">
+      <div style="font-size:12.5px; color:var(--ink); margin-bottom:8px;">Descrever ${quem}</div>
+      <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+        <input type="text" id="pdvDivLoteDesc" maxlength="160" list="pdvDivDescLista" placeholder="O que é (ex.: Bala de goma 100 g)" value="${pdvEsc(L.d || '')}" style="${est} flex:1 1 240px; min-width:200px;">
+        <input type="text" id="pdvDivLoteCat" maxlength="80" list="pdvDivCatLista" placeholder="Categoria (opcional)" value="${pdvEsc(L.c || '')}" style="${est} flex:0 1 200px;">
+        <button type="button" class="btn gold" id="pdvDivLoteOk"${pdvDiv.salvando.lote ? ' disabled' : ''}>${pdvDiv.salvando.lote ? 'Salvando…' : 'Aplicar'}</button>
+        <button type="button" class="btn ghost" id="pdvDivLoteCancela">Cancelar</button>
+      </div></div>`;
+  }
+
+  const descs = new Set(); const cats = new Set(PDV_DIV_CATEGORIAS);
+  (d.itens || []).forEach(i => { if(i.descricao) descs.add(i.descricao); if(i.categoria) cats.add(i.categoria); });
+  const listas = `<datalist id="pdvDivDescLista">${Array.from(descs).sort().map(x => `<option value="${pdvEsc(x)}"></option>`).join('')}</datalist>
+    <datalist id="pdvDivCatLista">${Array.from(cats).map(x => `<option value="${pdvEsc(x)}"></option>`).join('')}</datalist>`;
+
+  const linhas = (d.itens || []).map(i => {
+    const id = String(i.id), rs = pdvDiv.rasc[id] || {};
+    const desc = rs.d !== undefined ? rs.d : (i.descricao || ''), cat = rs.c !== undefined ? rs.c : (i.categoria || '');
+    const q = pdvDivNum(i.quantidade), dia = String(i.data_txt || i.data || '').slice(0, 10);
+    const gen = String(i.codigo_barras) === '0' ? 'avulso' : 'em cadastro';
+    const ok = !!i.descricao;
+    const ocupado = !!pdvDiv.salvando[id];
+    return `<tr data-id="${pdvEsc(id)}">
+      <td><input type="checkbox" class="pdv-div-sel" data-id="${pdvEsc(id)}"${pdvDiv.sel.has(id) ? ' checked' : ''} aria-label="Escolher item"></td>
+      <td style="white-space:nowrap;">${dia ? pdvDataBR(dia) : '—'}${i.hora ? '<br><span style="color:var(--ink-faint); font-size:11px;">' + pdvEsc(String(i.hora).slice(0, 5)) + '</span>' : ''}</td>
+      <td style="white-space:nowrap; font-size:12px;">Caixa ${pdvEsc(i.caixa == null ? '—' : i.caixa)}<br>Cupom ${pdvEsc(i.cupom == null ? '—' : i.cupom)}<br><span style="color:var(--ink-faint); font-size:11px;">${gen}</span></td>
+      <td class="n" style="white-space:nowrap;">${pdvNum(q, q % 1 ? 3 : 0)} × ${pdvMoeda(pdvDivNum(i.valor_unitario))}</td>
+      <td class="n" style="white-space:nowrap;"><strong>${pdvMoeda(pdvDivNum(i.valor_total))}</strong></td>
+      <td><input type="text" data-div-desc="${pdvEsc(id)}" maxlength="160" list="pdvDivDescLista" placeholder="O que é" value="${pdvEsc(desc)}" style="${est} width:100%; min-width:180px; box-sizing:border-box;"></td>
+      <td><input type="text" data-div-cat="${pdvEsc(id)}" maxlength="80" list="pdvDivCatLista" placeholder="Categoria" value="${pdvEsc(cat)}" style="${est} width:100%; min-width:130px; box-sizing:border-box;"></td>
+      <td style="white-space:nowrap;"><button type="button" class="btn ${ok ? 'ghost' : 'gold'} pdv-div-salvar" data-id="${pdvEsc(id)}"${ocupado ? ' disabled' : ''} style="font-size:12px;">${ocupado ? 'Salvando…' : (ok ? 'Atualizar' : 'Salvar')}</button>${ok ? ` <button type="button" class="btn ghost pdv-div-desfaz" data-id="${pdvEsc(id)}"${ocupado ? ' disabled' : ''} style="font-size:12px;">Desfazer</button>` : ''}
+        ${ok && i.descrito_por ? '<div style="font-size:10.5px; color:var(--ink-faint); margin-top:3px;">por ' + pdvEsc(i.descrito_por) + '</div>' : ''}</td>
+    </tr>`;
+  }).join('');
+
+  const msg = pdvDiv.msg ? `<p role="status" style="font-size:12.5px; margin:0 0 12px; color:${pdvDiv.msg.erro ? 'var(--red)' : 'var(--olive)'};">${pdvEsc(pdvDiv.msg.texto)}</p>` : '';
+  const nenhum = !(d.itens || []).length ? `<p style="font-size:13px; color:var(--ink-soft); margin:14px 0;">${sit === 'pendentes' ? 'Nenhum item genérico pendente neste período.' : 'Nenhum item neste filtro e período.'}</p>` : '';
+
+  alvo.innerHTML = `${intro}${tiles}
+    <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:end; margin:14px 0 10px;">
+      <label style="font-size:11px; color:var(--ink-faint);">Mostrar<br><select id="pdvDivSit" style="${est} margin-top:4px;">
+        <option value="pendentes"${sit === 'pendentes' ? ' selected' : ''}>Só pendentes</option>
+        <option value="descritos"${sit === 'descritos' ? ' selected' : ''}>Só descritos</option>
+        <option value="todos"${sit === 'todos' ? ' selected' : ''}>Todos</option></select></label>
+      <button type="button" class="btn ghost" id="pdvDivEscolhidos"${pdvDiv.sel.size ? '' : ' disabled'}>Descrever escolhidos (${pdvNum(pdvDiv.sel.size)})</button>
+    </div>
+    ${msg}${blocoRep}${blocoLote}${listas}${nenhum}
+    ${linhas ? `<div style="overflow-x:auto;"><table class="report"><thead><tr><th></th><th>Data</th><th>Venda</th><th class="n">Qtd × unit.</th><th class="n">Total</th><th>O que é</th><th>Categoria</th><th></th></tr></thead><tbody>${linhas}</tbody></table></div>` : ''}
+    ${d.truncado ? pdvNota('Mostrando apenas os ' + pdvNum(pdvDivNum(d.limite)) + ' itens mais recentes. Descreva e a lista avança; ou reduza o período.') : ''}
+    ${pdvNota('A descrição fica no portal (não volta ao AutoPlus). Mesma venda recebida duas vezes pelo sistema aparece uma só vez aqui.')}`;
+  pdvDivLigar(alvo);
+}
+
+function pdvDivMsg(texto, erro){ pdvDiv.msg = texto ? { texto, erro: !!erro } : null; }
+
+function pdvDivLigar(alvo){
+  const sit = document.getElementById('pdvDivSit');
+  if(sit) sit.addEventListener('change', () => { pdvDiv.situacao = sit.value; pdvDiv.msg = null; pdvDiv.lote = null; pdvDiv.sel = new Set(); pdvDivCarregar(); });
+  alvo.querySelectorAll('.pdv-div-rep').forEach(b => b.addEventListener('click', () => {
+    pdvDivRascunhos();
+    pdvDiv.lote = { tipo: 'valor', valor: Number(b.dataset.valor), qtd: Number(b.dataset.qtd), d: '', c: '' }; pdvDiv.msg = null; pdvDivDesenhar();
+    const el = document.getElementById('pdvDivLoteDesc'); if(el) el.focus();
+  }));
+  const esc = document.getElementById('pdvDivEscolhidos');
+  if(esc) esc.addEventListener('click', () => { pdvDivRascunhos(); pdvDiv.lote = { tipo: 'ids', d: '', c: '' }; pdvDiv.msg = null; pdvDivDesenhar(); const el = document.getElementById('pdvDivLoteDesc'); if(el) el.focus(); });
+  alvo.querySelectorAll('.pdv-div-sel').forEach(c => c.addEventListener('change', () => { if(c.checked) pdvDiv.sel.add(c.dataset.id); else pdvDiv.sel.delete(c.dataset.id); const b = document.getElementById('pdvDivEscolhidos'); if(b){ b.disabled = !pdvDiv.sel.size; b.textContent = 'Descrever escolhidos (' + pdvNum(pdvDiv.sel.size) + ')'; } }));
+  alvo.querySelectorAll('[data-div-desc],[data-div-cat]').forEach(el => el.addEventListener('input', pdvDivRascunhos));
+  alvo.querySelectorAll('.pdv-div-salvar').forEach(b => b.addEventListener('click', () => pdvDivSalvarLinha(b.dataset.id)));
+  alvo.querySelectorAll('.pdv-div-desfaz').forEach(b => b.addEventListener('click', () => pdvDivDesfazer(b.dataset.id)));
+  const ok = document.getElementById('pdvDivLoteOk'); if(ok) ok.addEventListener('click', pdvDivAplicarLote);
+  const ca = document.getElementById('pdvDivLoteCancela'); if(ca) ca.addEventListener('click', () => { pdvDiv.lote = null; pdvDivDesenhar(); });
+}
+
+async function pdvDivSalvarLinha(id){
+  pdvDivRascunhos();
+  const item = (pdvDiv.dados.itens || []).find(x => String(x.id) === id), rs = pdvDiv.rasc[id] || {};
+  const desc = String(rs.d !== undefined ? rs.d : (item && item.descricao) || '').replace(/\s+/g, ' ').trim();
+  const cat = String(rs.c !== undefined ? rs.c : (item && item.categoria) || '').replace(/\s+/g, ' ').trim();
+  if(desc.length < 3){ pdvDivMsg('Descreva o que é o item (mínimo 3 letras) antes de salvar.', true); pdvDivDesenhar(); return; }
+  pdvDiv.salvando[id] = true; pdvDivMsg(''); pdvDivDesenhar();
+  try{
+    await apiFetch('/api/pdv-diversos/' + encodeURIComponent(id), { method: 'PUT', body: JSON.stringify({ descricao: desc, categoria: cat || null }) });
+    delete pdvDiv.rasc[id]; pdvDiv.sel.delete(id);
+    pdvDivMsg('Descrição salva.');
+  }catch(err){ pdvDivMsg('Não foi possível salvar: ' + ((err && err.message) || 'erro'), true); }
+  delete pdvDiv.salvando[id];
+  await pdvDivCarregar(true);
+}
+
+async function pdvDivDesfazer(id){
+  pdvDiv.salvando[id] = true; pdvDivMsg(''); pdvDivDesenhar();
+  try{
+    await apiFetch('/api/pdv-diversos/' + encodeURIComponent(id), { method: 'DELETE' });
+    delete pdvDiv.rasc[id]; pdvDivMsg('Descrição desfeita: o item voltou a pendente.');
+  }catch(err){ pdvDivMsg('Não foi possível desfazer: ' + ((err && err.message) || 'erro'), true); }
+  delete pdvDiv.salvando[id];
+  await pdvDivCarregar(true);
+}
+
+async function pdvDivAplicarLote(){
+  pdvDivRascunhos();
+  const L = pdvDiv.lote; if(!L) return;
+  const desc = String(L.d || '').replace(/\s+/g, ' ').trim(), cat = String(L.c || '').replace(/\s+/g, ' ').trim();
+  if(desc.length < 3){ pdvDivMsg('Descreva o que é (mínimo 3 letras) antes de aplicar.', true); pdvDivDesenhar(); return; }
+  const corpo = { descricao: desc, categoria: cat || null };
+  if(L.tipo === 'valor'){ corpo.valor_unitario = L.valor; corpo.inicio = pdvPeriodo.inicio; corpo.fim = pdvPeriodo.fim; }
+  else{
+    const ids = Array.from(pdvDiv.sel); if(!ids.length){ pdvDivMsg('Escolha ao menos um item.', true); pdvDivDesenhar(); return; }
+    corpo.ids = ids.map(Number);
+  }
+  pdvDiv.salvando.lote = true; pdvDivMsg(''); pdvDivDesenhar();
+  try{
+    const r = await apiFetch('/api/pdv-diversos/lote', { method: 'POST', body: JSON.stringify(corpo) });
+    pdvDivMsg(pdvNum(pdvDivNum(r && r.atualizados)) + ' item(ns) descrito(s) como “' + desc + '”.');
+    pdvDiv.lote = null; pdvDiv.sel = new Set();
+  }catch(err){ pdvDivMsg('Não foi possível aplicar: ' + ((err && err.message) || 'erro'), true); }
+  delete pdvDiv.salvando.lote;
+  await pdvDivCarregar(true);
 }
