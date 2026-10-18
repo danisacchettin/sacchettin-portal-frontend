@@ -202,7 +202,7 @@
   #ajudaTip{position:fixed; z-index:200; max-width:min(320px, calc(100vw - 24px)); padding:9px 12px; border-radius:8px;
     background:var(--ink); color:var(--paper); font-size:12.5px; line-height:1.45; letter-spacing:0; text-transform:none; font-weight:400;
     box-shadow:0 10px 30px rgba(0,0,0,.28); pointer-events:none; display:none;}
-  @media print{ .ajuda, #ajudaTip{display:none !important;} }
+  @media print{ .ajuda, #ajudaTip, .no-print{display:none !important;} }
   .card canvas.mini{margin-top:10px; max-height:46px;}
 
   .card.tone-gold{border-color:var(--gold-line);}
@@ -2296,13 +2296,13 @@ async function openEditFornecedores(){
   const optTipoPessoa = tp => `<option value="">— A confirmar —</option>
   <option value="PJ" ${tp==='PJ'?'selected':''}>PJ</option>
   <option value="PF" ${tp==='PF'?'selected':''}>PF</option>`;
-  const categoriaOpts = catId => `<option value="">— Não classificado —</option>` + CADASTROS.categoriasDespesa.map(c=>`<option value="${c.id}" ${String(catId)===String(c.id)?'selected':''}>${escapeHtml(c.nome_categoria)}</option>`).join('');
+  const categoriaOpts = catId => `<option value="">— Não classificado —</option>` + CADASTROS.categoriasDespesa.map(c=>`<option value="${c.id}" ${String(catId)===String(c.id)?'selected':''}>${escapeHtml(c.nome_categoria)}</option>`).join('') + optionNovaCategoria(false);
   const linhas = (lista||[]).map(f => `
   <tr data-id="${f.id}">
   <td><input type="text" class="ec-nome" value="${escapeHtml(f.nome)}" style="width:100%; min-width:220px; ${ESTILO_INPUT_MENU}"></td>
   <td><input type="text" class="ec-cnpj" data-mask="cnpjCpf" value="${escapeHtml(f.cnpj_cpf||'')}" placeholder="CNPJ/CPF" style="width:100%; ${ESTILO_INPUT_MENU}"><span class="doc-feedback" style="font-size:10px; display:block; margin-top:2px;"></span></td>
   <td><select class="ec-tipo-pessoa" style="width:100%; ${ESTILO_INPUT_MENU}">${optTipoPessoa(f.tipo_pessoa)}</select></td>
-  <td><select class="ec-categoria" style="width:100%; ${ESTILO_INPUT_MENU}">${categoriaOpts(f.categoria_padrao_id)}</select></td>
+  <td><select class="ec-categoria" style="width:100%; ${ESTILO_INPUT_MENU}">${categoriaOpts(f.categoria_padrao_id)}</select>${novaCategoriaFormHtml('ecNovaCat' + f.id, false)}</td>
   <td><input type="text" class="ec-contato" data-mask="telefone" value="${escapeHtml(f.contato||'')}" placeholder="Contato" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
   <td><input type="text" class="ec-pix" value="${escapeHtml(f.chave_pix||'')}" placeholder="Chave PIX" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
   <td><input type="text" class="ec-banco" value="${escapeHtml(f.dados_bancarios||'')}" placeholder="Dados bancários" style="width:100%; ${ESTILO_INPUT_MENU}"></td>
@@ -2319,16 +2319,25 @@ async function openEditFornecedores(){
   </div>
   <div class="panel-actions" style="margin-top:20px;"><button type="button" class="btn ghost" onclick="openMenuPanel()">Voltar ao menu</button></div>
   `);
+  document.querySelectorAll('#ecFornecedoresBody tr[data-id]').forEach(tr=>{
+    ligarNovaCategoria(tr.querySelector('.ec-categoria'), 'ecNovaCat' + tr.dataset.id);
+  });
   document.querySelectorAll('#ecFornecedoresBody .ec-salvar').forEach(btn=>{
     btn.addEventListener('click', async e=>{
       const tr = e.target.closest('tr'); const id = tr.dataset.id;
       const msg = tr.querySelector('.ec-msg');
       try{
+        let categoriaPadrao = tr.querySelector('.ec-categoria').value || null;
+        if(categoriaPadrao === VALOR_NOVA_CATEGORIA){
+          const nc = lerNovaCategoria('ecNovaCat' + id);
+          if(nc.erro){ msg.textContent = nc.erro; msg.style.color = 'var(--red)'; return; }
+          categoriaPadrao = await criarCategoriaDespesa(nc.nome, nc.grupo);
+        }
         await apiFetch(`/api/cadastros/fornecedores/${id}`, {method:'PATCH', body: JSON.stringify({
           nome: tr.querySelector('.ec-nome').value,
           cnpj_cpf: tr.querySelector('.ec-cnpj').value || null,
           tipo_pessoa: tr.querySelector('.ec-tipo-pessoa').value || null,
-          categoria_padrao_id: tr.querySelector('.ec-categoria').value || null,
+          categoria_padrao_id: categoriaPadrao,
           contato: tr.querySelector('.ec-contato').value || null,
           chave_pix: tr.querySelector('.ec-pix').value || null,
           dados_bancarios: tr.querySelector('.ec-banco').value || null,
@@ -4625,6 +4634,19 @@ function linhasDetalheLancamentos(lista){
   return lista.map(x=>`<tr><td style="padding-left:24px; color:var(--red); font-size:11.5px;">${escapeHtml(x.credor||'(sem fornecedor)')}${x.documento?` — ${escapeHtml(x.documento)}`:''} · vence ${fmtDate(x.vencimento)}${x.categoria?` · categoria atual: "${escapeHtml(x.categoria)}"`:' · sem categoria'}</td><td style="text-align:right; color:var(--red); font-size:11.5px;">${fmtBRL(x.valor_original)}</td></tr>`).join('');
 }
 
+// Categorias de um grupo do DRE, uma por linha. Por padrão só as que têm movimento no período;
+// com "Mostrar categorias sem movimento" lista também as cadastradas do grupo (R$ 0,00).
+// Pedido da Dani (17/10/2026): o DRE deve exibir as mesmas categorias da classificação dos gastos.
+let dreMostrarSemMovimento = false;
+function detalheCategoriasDRE(itens, gruposAlvo, tipo){
+  const mov = new Map(agruparPorCategoria(itens));
+  if(dreMostrarSemMovimento){
+    const cats = (tipo === 'receita' ? CADASTROS.categoriasReceita : CADASTROS.categoriasDespesa) || [];
+    cats.filter(c => gruposAlvo.includes(c.grupo_dre)).forEach(c => { if(!mov.has(c.nome_categoria)) mov.set(c.nome_categoria, 0); });
+  }
+  return linhasDetalheDRE([...mov.entries()].sort((a, b) => (b[1] - a[1]) || String(a[0]).localeCompare(String(b[0]), 'pt-BR')));
+}
+
 async function openDRE(){
   const hoje = new Date();
   // Regime de competência: considera o mês de vencimento, não a data em que foi de fato pago/recebido.
@@ -4680,16 +4702,18 @@ async function openDRE(){
       <div><h2>DRE automático — ${nomeMesAtual()}</h2><p>Regime de competência (por vencimento) · custos fixos e variáveis separados pelo grupo de DRE de cada categoria.</p></div>
       <button class="close-x" onclick="closeOverlay()">✕</button>
     </div>
+    <label style="display:flex; gap:8px; align-items:center; font-size:12.5px; margin:0 0 10px;" class="no-print"><input type="checkbox" id="dreSemMovimento"${dreMostrarSemMovimento ? ' checked' : ''}> Mostrar categorias sem movimento neste mês</label>
     <table class="report">
       <tbody>
         <tr><td>Receita Operacional Bruta</td><td style="text-align:right;">${fmtBRL(receitaBruta)}</td></tr>
+        ${detalheCategoriasDRE(receberPeriodo, ['Receita'], 'receita')}
         <tr><td>(–) Custos Variáveis (CMV)</td><td style="text-align:right;">${fmtBRL(custosVar)}</td></tr>
-        ${linhasDetalheDRE(agruparPorCategoria(itensVar))}
+        ${detalheCategoriasDRE(itensVar, ['CMV', 'Despesas Variáveis'], 'despesa')}
         <tr><td><strong>Margem de Contribuição</strong></td><td style="text-align:right;"><strong>${fmtBRL(margem)} (${margemPct.toFixed(1)}%)</strong></td></tr>
         <tr><td>(–) Custos Fixos</td><td style="text-align:right;">${fmtBRL(custosFixos)}</td></tr>
-        ${linhasDetalheDRE(agruparPorCategoria(itensFixos))}
+        ${detalheCategoriasDRE(itensFixos, ['Despesas Fixas'], 'despesa')}
         <tr><td style="color:var(--red);">(–) Despesas Financeiras (juros bancários, encargos de financiamentos)</td><td style="text-align:right; color:var(--red);">${fmtBRL(despFin)}</td></tr>
-        ${despFinCad ? linhasDetalheDRE(agruparPorCategoria(itensDespFinCad)) : ''}
+        ${(despFinCad || dreMostrarSemMovimento) ? detalheCategoriasDRE(itensDespFinCad, ['Despesas Financeiras'], 'despesa') : ''}
         ${jurosFinanciamentos ? `<tr><td style="padding-left:24px; color:var(--ink-faint); font-size:11.5px;">Juros/encargos de financiamentos (contratos PJ)</td><td style="text-align:right; color:var(--ink-faint); font-size:11.5px;">${fmtBRL(jurosFinanciamentos)}</td></tr>` : ''}
         ${chequeEspecialDisponivel ? `<tr><td style="padding-left:24px; color:var(--ink-faint); font-size:11.5px;">Juros de cheque especial</td><td style="text-align:right; color:var(--ink-faint); font-size:11.5px;">${fmtBRL(chequeEspecialValor)}</td></tr>` : `<tr><td style="padding-left:24px; color:var(--gold); font-size:11.5px;">⚠ Juros de cheque especial: sem fonte de dado ainda (falta extrato bancário) — não incluído no total acima.</td><td></td></tr>`}
         ${naoClass ? `<tr><td style="color:var(--red);">(–) Não classificado (revisar categoria com a cliente)</td><td style="text-align:right; color:var(--red);">${fmtBRL(naoClass)}</td></tr>${linhasDetalheLancamentos(itensNaoClass)}` : ''}
@@ -4700,14 +4724,19 @@ async function openDRE(){
     <table class="report">
       <tbody>
         <tr><td>Retiradas de Sócios / Pró-labore</td><td style="text-align:right;">${fmtBRL(socios)}</td></tr>
+        ${detalheCategoriasDRE(itensSocios, ['Retiradas de Sócios'], 'despesa')}
         <tr><td>Cartão de Crédito (PJ/PF a confirmar)</td><td style="text-align:right;">${fmtBRL(cartao)}</td></tr>
+        ${detalheCategoriasDRE(itensCartao, ['Cartao de Credito'], 'despesa')}
         <tr><td>Serviço da Dívida (empréstimos/acordos)</td><td style="text-align:right;">${fmtBRL(divida)}</td></tr>
+        ${detalheCategoriasDRE(itensDivida, ['Divida'], 'despesa')}
       </tbody>
     </table>
     <div class="panel-actions" style="margin-top:20px;">
       <button class="btn gold" onclick="window.print()">Imprimir / salvar PDF</button>
     </div>
   `);
+  const chkSemMov = document.getElementById('dreSemMovimento');
+  if(chkSemMov) chkSemMov.addEventListener('change', ()=>{ dreMostrarSemMovimento = chkSemMov.checked; openDRE(); });
 }
 
 /* ==========================================================================================
@@ -5851,6 +5880,67 @@ document.getElementById('entryModeToggle').addEventListener('click', e=>{
   }
 });
 
+/* ---------- "+ Adicionar nova categoria" no fim das listas de categoria (pedido da Dani, 17/10/2026) ----------
+   Uma única implementação, usada em: autorização de lançamento das Notas de entrada (notas_entrada.js),
+   renegociação por credor e Editar fornecedores (categoria padrão). Em "Novo lançamento" o mesmo recurso já
+   existe pelo cadastro genérico ("+ Cadastrar novo categoria"), com a mesma regra: grupo no DRE OBRIGATÓRIO.
+   - A categoria só é criada quando a pessoa CONFIRMA a ação da tela (autorizar/salvar/confirmar), nunca ao
+     escolher a opção -- assim não sobra categoria solta se ela desistir.
+   - Nome já existente (sem diferenciar maiúscula/acento) NÃO duplica: usa a que já existe.
+   - Só despesa (tipo 'despesa'); categorias de receita seguem pelo cadastro genérico. */
+const VALOR_NOVA_CATEGORIA = '__nova_categoria__';
+function normNomeCategoria(s){
+  return String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim().toUpperCase();
+}
+function optionNovaCategoria(selecionada){
+  return `<option value="${VALOR_NOVA_CATEGORIA}"${selecionada ? ' selected' : ''}>+ Adicionar nova categoria…</option>`;
+}
+function novaCategoriaFormHtml(idBase, mostrar, nome, grupo){
+  const grupos = GRUPOS_DRE.filter(g => g !== 'Receita');
+  return `<div class="nova-cat-box" id="${idBase}Box" style="display:${mostrar ? 'flex' : 'none'}; flex-direction:column; gap:6px; margin-top:6px; padding:8px; border-radius:8px; background:var(--gold-wash);">
+    <input type="text" id="${idBase}Nome" placeholder="Nome da nova categoria" value="${escapeHtml(nome || '')}" maxlength="80" style="width:100%; box-sizing:border-box;">
+    <select id="${idBase}Grupo" style="width:100%; box-sizing:border-box;"><option value="">— Grupo no DRE (obrigatório) —</option>${grupos.map(g => `<option value="${g}"${grupo === g ? ' selected' : ''}>${g}</option>`).join('')}</select>
+    <span style="font-size:10.5px; color:var(--ink-faint);">O grupo decide onde o gasto aparece no DRE: CMV e Despesas Variáveis (custo da operação), Despesas Fixas, Despesas Financeiras; Retiradas de Sócios, Cartão e Dívida ficam fora do resultado operacional.</span>
+  </div>`;
+}
+function ligarNovaCategoria(selectEl, idBase, aoMudar){
+  if(!selectEl) return;
+  const atualiza = () => {
+    const box = document.getElementById(idBase + 'Box');
+    if(box) box.style.display = selectEl.value === VALOR_NOVA_CATEGORIA ? 'flex' : 'none';
+    if(selectEl.value === VALOR_NOVA_CATEGORIA){ const n = document.getElementById(idBase + 'Nome'); if(n) n.focus(); }
+    if(aoMudar) aoMudar();
+  };
+  selectEl.addEventListener('change', atualiza);
+  ['Nome', 'Grupo'].forEach(suf => { const el = document.getElementById(idBase + suf); if(el && aoMudar){ el.addEventListener('input', aoMudar); el.addEventListener('change', aoMudar); } });
+}
+// Valida os campos da nova categoria SEM criar nada (para falhar cedo, antes de qualquer gravação).
+function lerNovaCategoria(idBase){
+  const nome = ((document.getElementById(idBase + 'Nome') || {}).value || '').trim();
+  const grupo = (document.getElementById(idBase + 'Grupo') || {}).value || '';
+  if(!nome) return { erro: 'Informe o nome da nova categoria.' };
+  if(!grupo) return { erro: 'Escolha o grupo no DRE da nova categoria — é ele que coloca o gasto no lugar certo do DRE.' };
+  return { nome, grupo };
+}
+// Cria (ou reaproveita, se o nome já existir) e devolve o id como texto. Lança Error com mensagem clara.
+async function criarCategoriaDespesa(nome, grupo){
+  const alvo = normNomeCategoria(nome);
+  const existente = (CADASTROS.categoriasDespesa || []).find(c => normNomeCategoria(c.nome_categoria) === alvo);
+  if(existente) return String(existente.id);
+  const nomeFinal = String(nome).trim().replace(/\s+/g, ' ').toUpperCase();
+  const criado = await apiFetch('/api/cadastros/categorias', { method: 'POST', body: JSON.stringify({ tipo: 'despesa', nome_categoria: nomeFinal, grupo_dre: grupo }) });
+  if(!criado || !criado.id) throw new Error('Não foi possível criar a categoria agora. Tente de novo.');
+  if(criado.grupo_dre !== grupo){
+    try{ await apiFetch('/api/cadastros/categorias/' + criado.id, { method: 'PATCH', body: JSON.stringify({ nome_categoria: nomeFinal, grupo_dre: grupo }) }); }
+    catch(err){
+      try{ await carregarCadastros(); }catch(e){ /* segue */ }
+      throw new Error('A categoria "' + nomeFinal + '" foi criada, mas o grupo do DRE não foi gravado. Abra Menu › Editar › Categorias, escolha o grupo e tente de novo.');
+    }
+  }
+  try{ await carregarCadastros(); }catch(e){ /* a lista local se atualiza na próxima abertura */ }
+  return String(criado.id);
+}
+
 // Resolve um campo do tipo 'cadastro' para um id: se já era um cadastro existente, usa o id
 // direto; se o usuário escolheu "+ Cadastrar novo", cria o cadastro agora (via /api/cadastros/*)
 // e devolve o id recém-criado. Se nada foi selecionado, devolve null (campo fica em branco).
@@ -6201,7 +6291,9 @@ function renderRenegociacaoCredorDetail(){
   }
   const opcoesCategoria = [`<option value="">— Selecione —</option>`]
     .concat((CADASTROS.categoriasDespesa||[]).map(c=>`<option value="${c.id}" ${String(renegCredorState.categoriaId)===String(c.id)?'selected':''}>${escapeHtml(c.nome_categoria)}</option>`))
+    .concat([optionNovaCategoria(renegCredorState.categoriaId === VALOR_NOVA_CATEGORIA)])
     .join('');
+  const novaCatReneg = renegCredorState.novaCat || { nome: '', grupo: '' };
 
   // Dados do gerador automático de parcelas (data de início, entrada, valor por parcela) —
   // ficam salvos no estado pra sobreviver a re-renderizações (ex.: marcar/desmarcar título).
@@ -6281,6 +6373,7 @@ function renderRenegociacaoCredorDetail(){
     <div class="field full" style="margin-bottom:10px;">
       <label>Categoria dos novos títulos</label>
       <select id="renegCategoriaSelect">${opcoesCategoria}</select>
+      ${novaCategoriaFormHtml('renegNovaCat', renegCredorState.categoriaId === VALOR_NOVA_CATEGORIA, novaCatReneg.nome, novaCatReneg.grupo)}
     </div>
     <div class="field full" style="margin-bottom:18px;">
       <label>Observações da renegociação *</label>
@@ -6301,6 +6394,9 @@ function renderRenegociacaoCredorDetail(){
     });
   });
   document.getElementById('renegCategoriaSelect').addEventListener('change', e=>{ renegCredorState.categoriaId = e.target.value; });
+  ligarNovaCategoria(document.getElementById('renegCategoriaSelect'), 'renegNovaCat', ()=>{
+    renegCredorState.novaCat = { nome: (document.getElementById('renegNovaCatNome')||{}).value || '', grupo: (document.getElementById('renegNovaCatGrupo')||{}).value || '' };
+  });
   document.getElementById('renegFormaSelect').addEventListener('change', e=>{ renegCredorState.forma = e.target.value; renderRenegociacaoCredorDetail(); });
   document.querySelectorAll('#renegParcelasWrap .reneg-parcela-boleto').forEach((el,i)=>{
     el.addEventListener('input', e=>{ renegCredorState.parcelas[i].boleto = e.target.value; });
@@ -6389,11 +6485,21 @@ async function confirmarRenegociacaoCredor(){
   if(!renegCredorState.forma){ alert('Escolha a forma de pagamento dos novos títulos — ela decide onde o valor aparece no fechamento de caixa e no DRE.'); return; }
   if(renegCredorState.forma==='Boleto' && parcelasValidas.some(p=>!String(p.boleto||'').trim())){ alert('Informe o número do boleto de todas as parcelas (a forma escolhida é Boleto).'); return; }
   if(!renegCredorState.categoriaId){ alert('Selecione a categoria dos novos títulos.'); return; }
+  let novaCatReneg = null;
+  if(renegCredorState.categoriaId === VALOR_NOVA_CATEGORIA){
+    novaCatReneg = lerNovaCategoria('renegNovaCat');
+    if(novaCatReneg.erro){ alert(novaCatReneg.erro); return; }
+  }
   if(!renegCredorState.observacoes || !renegCredorState.observacoes.trim()){ alert('Descreva a negociação no campo de observações — fica registrado no histórico de ambos os grupos de título.'); return; }
 
   const btn = document.getElementById('renegConfirmarBtn');
   btn.disabled = true; btn.textContent = 'Salvando...';
   try{
+    // Categoria nova: criada só agora, depois de todas as validações da tela.
+    if(novaCatReneg){
+      renegCredorState.categoriaId = await criarCategoriaDespesa(novaCatReneg.nome, novaCatReneg.grupo);
+      renegCredorState.novaCat = undefined;
+    }
     const codigosAntigos = titulosSelecionados.map(t=>t.codigo || `#${t.id}`).join(', ');
     const fornecedorId = fornecedorIdPorNome(renegCredorState.credorNome);
     const novosCodigos = [];
