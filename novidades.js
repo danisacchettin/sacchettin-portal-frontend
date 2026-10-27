@@ -9,10 +9,22 @@
    ========================================================================================== */
 (function(){
   'use strict';
-  var PORTAL_VERSAO = '4.3';
+  var PORTAL_VERSAO = '4.4';
 
   // Mais recente primeiro. id = identificador estável (nunca reaproveitar). Texto: frases curtas e simples.
   var NOVIDADES = [
+    { id:'2026-10-27-rateio-contas-pagar', versao:'4.4', data:'27/10/2026',
+      titulo:'Compras: o pagamento já vai para o A pagar',
+      texto:'Nas telas de Compras e custos (Rateio, Lançamento direto e Vários produtos) há um novo bloco “Pagamento desta compra”. Escolha a forma (PIX, TED, Dinheiro, Boleto ou Cartão) e o portal lança também o título no A pagar, na categoria Compras de mercadorias (COGS). PIX, TED e dinheiro entram como pagos na data da compra; boleto entra em aberto no vencimento e pode ser parcelado; cartão entra em aberto no vencimento da fatura, para o resultado cair no mês certo. Se deixar em branco, tudo continua como antes. Também corrigimos o problema que apagava o fornecedor e o valor total ao incluir uma mercadoria.' },
+    { id:'2026-10-27-aviso-duplicidade', versao:'4.4', data:'27/10/2026',
+      titulo:'Aviso de lançamento duplicado',
+      texto:'Ao lançar uma conta a pagar, uma conta a receber ou uma compra parecida com algo que já existe (mesmo fornecedor ou cliente, mesmo valor e data próxima), o portal mostra o que já está lançado e o efeito que isso teria no resultado (DRE), no caixa e no estoque. Você escolhe cancelar ou gravar mesmo assim; se gravar, fica registrado na observação.' },
+    { id:'2026-10-27-dre-detalhado', versao:'4.4', data:'27/10/2026',
+      titulo:'DRE: clique para ver cada lançamento',
+      texto:'No DRE, clique em um item (por exemplo, Custos Variáveis) ou em uma categoria para abrir os lançamentos que formam o valor: nome, a que se refere, valor e vencimento.' },
+    { id:'2026-10-27-notas-sincronizar', versao:'4.4', data:'27/10/2026',
+      titulo:'Notas de entrada: busca de hora em hora e botão para você',
+      texto:'O portal agora busca notas novas na SEFAZ sozinho, de hora em hora. O botão “Sincronizar agora” também está disponível para você, caso queira buscar na hora. Nos lançamentos que vêm da nota, a categoria já vem como Compras de mercadorias (COGS); você ainda pode trocar.' },
     { id:'2026-10-18-pdv-itens-diversos', versao:'4.3', data:'18/10/2026',
       titulo:'PDV: descreva os itens “diversos”',
       texto:'No PDV há uma nova aba, “Itens diversos”, com o que o caixa registrou como item em cadastro ou item avulso. Descreva o que foi vendido, um a um ou todos de uma vez quando o valor se repete (por exemplo, todos de R$ 8,00). A aba só funciona depois que o escritório ativar a atualização do servidor; até lá ela avisa isso.' },
