@@ -10,7 +10,97 @@
    nem referencia contas_pagar — é só composição de custo/CMV, decisão explícita da Danielle.
    ========================================================================================== */
 let rateioItens = [];
+// CORREÇÃO 26/10/2026 (bug reportado pela Dani): cabeçalho do rateio (fornecedor, data,
+// valor total pago, declarado) vivia só no DOM, sem estado próprio. Toda vez que
+// renderAbaRateioModo1() refazia o HTML inteiro (ao adicionar/remover corte, ou ao
+// selecionar um "tipo de peça" em wireTipoPecaBarra) esses campos voltavam em branco —
+// inclusive o fornecedor, que ficava null e ia assim pro banco (2 lançamentos de teste
+// de R$ 288,00 em 26/10/2026 confirmam isso: compras_rateio id 46 e 47, fornecedor_id
+// NULL). Agora o cabeçalho é um estado próprio, preservado entre re-renderizações.
+let rateioCabecalho = { fornecedorId: '', data: '', valorTotal: '', declarado: '', base: 'peso', pagamento: null };
+// Mesmo bug (cabeçalho apagado ao adicionar/remover linha) existia na aba "Vários Produtos (1 nota)":
+// fornecedor, data e nº da nota voltavam em branco. Estado próprio, igual ao do rateio.
+let multiploCabecalho = { fornecedorId: '', data: '', nota: '', pagamento: null };
 let custoProdutoAba = 'rateio';
+
+/* ---------- Pagamento da compra → Contas a Pagar (pedido 26-27/10/2026) ----------
+   Dani: "essa informação precisa estar no contas a pagar também, além do rateio".
+   Decisão de 29/09/2026 (rateio = só custo/CMV) AMPLIADA, não revogada: com "Forma de pagamento"
+   em branco nada muda; preenchida, o backend grava também o título em Contas a Pagar (categoria
+   Compras de mercadorias (COGS)), na mesma transação do rateio.
+   - PIX / TED / Dinheiro: pago na data informada (padrão = data da compra) e, se escolher a conta, sai do Fluxo de Caixa.
+   - Boleto: em aberto no vencimento (pode parcelar).
+   - Cartão: em aberto no vencimento da FATURA — cartão é dívida: o DRE lança o custo no mês da fatura e a saída
+     de caixa só acontece quando a fatura for paga. */
+function pagamentoRateioHtml(px, est){
+    est = est || {};
+    const formas = ['PIX','Boleto','TED','Cartão','Dinheiro'];
+    const opt = formas.map(f=>`<option value="${f}" ${est.forma===f?'selected':''}>${f}</option>`).join('');
+    const contas = (CADASTROS.contasBancarias||[]).map(c=>`<option value="${c.id}" ${String(est.conta)===String(c.id)?'selected':''}>${escapeHtml(c.nome_conta||c.nome||'')}</option>`).join('');
+    const parc = [1,2,3,4,5,6,7,8,9,10,11,12].map(n=>`<option value="${n}" ${String(est.parcelas||'1')===String(n)?'selected':''}>${n}x</option>`).join('');
+    return `<div id="${px}PagBox" style="border:1px solid var(--border); background:var(--paper-2); border-radius:10px; padding:12px 14px; margin:12px 0;">
+        <div style="font-size:13px; font-weight:700; margin-bottom:2px;">Pagamento desta compra (lança também em Contas a Pagar)</div>
+        <div style="font-size:12px; color:var(--ink-soft); margin-bottom:8px;">Deixe em branco para registrar só o custo e o estoque, como antes.</div>
+        <div class="form-grid">
+          <div class="field"><label>Forma de pagamento</label><select id="${px}Forma"><option value="">— Não lançar em Contas a Pagar —</option>${opt}</select></div>
+          <div class="field" data-pag="doc"><label>Nº da nota / documento (opcional)</label><input type="text" id="${px}Documento" value="${escapeHtml(est.documento||'')}" placeholder="ex: NF 12345"></div>
+          <div class="field" data-pag="pago"><label>Data do pagamento</label><input type="date" id="${px}DataPag" value="${escapeHtml(est.dataPagamento||'')}"></div>
+          <div class="field" data-pag="conta"><label>Conta / PIX / Caixa de onde saiu</label><select id="${px}Conta"><option value="">— opcional —</option>${contas}</select></div>
+          <div class="field" data-pag="venc"><label id="${px}VencLbl">Vencimento</label><input type="date" id="${px}Venc" value="${escapeHtml(est.vencimento||'')}"></div>
+          <div class="field" data-pag="parc"><label>Parcelas</label><select id="${px}Parcelas">${parc}</select></div>
+          <div class="field" data-pag="boleto"><label>Nº do boleto (opcional)</label><input type="text" id="${px}Boleto" value="${escapeHtml(est.boleto||'')}"></div>
+        </div>
+        <div id="${px}PagDica" style="font-size:12px; margin-top:8px; color:var(--ink-soft);"></div>
+      </div>`;
+}
+
+function wirePagamentoRateio(px, getDataCompra){
+    const sel = document.getElementById(px+'Forma'); if(!sel) return;
+    const box = document.getElementById(px+'PagBox');
+    const show = (k,v)=>{ const el = box.querySelector(`[data-pag="${k}"]`); if(el) el.style.display = v ? '' : 'none'; };
+    const atualizar = ()=>{
+        const f = sel.value;
+        const cartao = /cart/i.test(f), boleto = /boleto/i.test(f), avista = !!f && !cartao && !boleto;
+        show('doc', !!f); show('pago', avista); show('conta', avista); show('venc', cartao||boleto); show('parc', cartao||boleto); show('boleto', boleto);
+        document.getElementById(px+'VencLbl').textContent = cartao ? 'Vencimento da fatura do cartão (obrigatório)' : 'Vencimento (obrigatório)';
+        const dp = document.getElementById(px+'DataPag');
+        if(avista && !dp.value && typeof getDataCompra==='function') dp.value = getDataCompra() || todayISO();
+        const dica = document.getElementById(px+'PagDica');
+        dica.textContent = !f ? '' : cartao
+          ? 'Cartão é dívida: o título entra em aberto no vencimento da fatura (o DRE lança o custo no mês da fatura) e só vira saída de caixa quando a fatura for paga.'
+          : boleto ? 'O título entra em aberto no vencimento; parcelas são lançadas mês a mês.'
+          : 'O título entra como pago na data informada, na categoria Compras de mercadorias (COGS)' + (document.getElementById(px+'Conta').value ? ' e sai do Fluxo de Caixa da conta escolhida.' : '. Escolha a conta para que também saia do Fluxo de Caixa.');
+    };
+    sel.addEventListener('change', atualizar);
+    document.getElementById(px+'Conta').addEventListener('change', atualizar);
+    atualizar();
+}
+
+function lerPagamentoRateio(px){
+    const g = id => { const el = document.getElementById(px+id); return el ? el.value : ''; };
+    if(!document.getElementById(px+'Forma')) return null;
+    return { forma:g('Forma'), documento:g('Documento').trim(), dataPagamento:g('DataPag'), conta:g('Conta'), vencimento:g('Venc'), parcelas:g('Parcelas')||'1', boleto:g('Boleto').trim() };
+}
+
+// Converte o estado do formulário nos campos que o POST /api/produtos/rateio espera.
+function pagamentoParaApi(pg){
+    if(!pg || !pg.forma) return {};
+    const cartao = /cart/i.test(pg.forma), boleto = /boleto/i.test(pg.forma);
+    if((cartao||boleto) && !pg.vencimento) throw new Error(cartao ? 'Cartão: informe o vencimento da fatura em que esta compra será cobrada.' : 'Boleto: informe o vencimento.');
+    return {
+        forma_pagamento: pg.forma, documento: pg.documento || undefined,
+        data_pagamento: (!cartao && !boleto) ? (pg.dataPagamento || undefined) : undefined,
+        conta_bancaria_id: (!cartao && !boleto && pg.conta) ? pg.conta : undefined,
+        vencimento: (cartao||boleto) ? pg.vencimento : undefined,
+        parcelas: (cartao||boleto) ? Number(pg.parcelas||1) : undefined,
+        numero_boleto: boleto ? (pg.boleto || undefined) : undefined,
+    };
+}
+
+function msgTituloGerado(salvo){
+    return (salvo && salvo.contas_pagar_codigo) ? ` · lançado em Contas a Pagar (título ${salvo.contas_pagar_codigo})` : '';
+}
+
 
 function custoProdutoTabsHtml(){
     const abas = [
@@ -64,7 +154,20 @@ function optsProdutosRateio(selectedId){
     return opts.join('');
 }
 
-function renderAbaRateioModo1(){
+function renderAbaRateioModo1(preservarCabecalho){
+    // Captura os valores atuais do cabeçalho ANTES de destruir o DOM (exceto logo após
+    // salvar com sucesso, quando salvarRateio() já resetou rateioCabecalho e chama esta
+    // função com preservarCabecalho=false para não reabsorver os valores antigos).
+    if(preservarCabecalho !== false && document.getElementById('rateioValorTotal')){
+          const fselAtual = document.querySelector('select[name="rateio_fornecedor"]');
+          rateioCabecalho.fornecedorId = fselAtual ? fselAtual.value : rateioCabecalho.fornecedorId;
+          rateioCabecalho.data = document.getElementById('rateioData').value || rateioCabecalho.data;
+          rateioCabecalho.valorTotal = document.getElementById('rateioValorTotal').value;
+          rateioCabecalho.declarado = document.getElementById('rateioDeclarado').value;
+          rateioCabecalho.base = document.getElementById('rateioBase').value;
+          rateioCabecalho.pagamento = lerPagamentoRateio('rateio');
+    }
+    if(!rateioCabecalho.data) rateioCabecalho.data = todayISO();
     if(!rateioItens.length){
           rateioItens = [{produto_id:'', produto_nome:'', peso_ou_quantidade:'', preco_venda:'', observacao:''}];
     }
@@ -87,16 +190,17 @@ function renderAbaRateioModo1(){
   document.getElementById('cpAbaContent').innerHTML = `
       <div class="form-grid">
             ${renderCadastroField({name:'rateio_fornecedor', label:'Fornecedor', cadastro:'fornecedores', full:false}, {})}
-                  <div class="field"><label>Data da compra</label><input type="date" id="rateioData" value="${todayISO()}"></div>
-                        <div class="field"><label>Valor total pago (R$)</label><input type="number" step="0.01" min="0" id="rateioValorTotal"></div>
+                  <div class="field"><label>Data da compra</label><input type="date" id="rateioData" value="${escapeHtml(rateioCabecalho.data||todayISO())}"></div>
+                        <div class="field"><label>Valor total pago (R$)</label><input type="number" step="0.01" min="0" id="rateioValorTotal" value="${escapeHtml(String(rateioCabecalho.valorTotal||''))}"></div>
                               <div class="field"><label>Base de rateio</label>
                                       <select id="rateioBase">
-                                                <option value="peso">Peso (kg)</option>
-                                                          <option value="quantidade">Quantidade (un)</option>
+                                                <option value="peso" ${rateioCabecalho.base!=='quantidade'?'selected':''}>Peso (kg)</option>
+                                                          <option value="quantidade" ${rateioCabecalho.base==='quantidade'?'selected':''}>Quantidade (un)</option>
                                                                   </select>
                                                                         </div>
-                                                                              <div class="field"><label>Peso/qtd total declarado (conferência, opcional)</label><input type="number" step="0.001" min="0" id="rateioDeclarado"></div>
+                                                                              <div class="field"><label>Peso/qtd total declarado (conferência, opcional)</label><input type="number" step="0.001" min="0" id="rateioDeclarado" value="${escapeHtml(String(rateioCabecalho.declarado||''))}"></div>
                                                                                   </div>
+                                                                                      ${pagamentoRateioHtml('rateio', rateioCabecalho.pagamento)}
                                                                                       <div id="rateioDivergencia" style="display:none; background:var(--gold-wash); color:var(--gold); border-radius:8px; padding:10px 14px; font-size:12.5px; margin:10px 0;"></div>
                                                                                           <div style="overflow-x:auto;">
                                                                                                 <table class="report">
@@ -111,6 +215,11 @@ function renderAbaRateioModo1(){
                                                                                                                                                 `;
 
   wireAbaRateioModo1();
+    wirePagamentoRateio('rateio', ()=>{ const d = document.getElementById('rateioData'); return d && d.value; });
+    // Restaura o fornecedor selecionado (renderCadastroField não aceita valor inicial
+    // neste ponto do código — restauramos direto no <select> já renderizado).
+    const fselRestaurado = document.querySelector('select[name="rateio_fornecedor"]');
+    if(fselRestaurado && rateioCabecalho.fornecedorId) fselRestaurado.value = rateioCabecalho.fornecedorId;
     recalcularRateio();
 }
 
@@ -209,6 +318,9 @@ async function salvarRateio(){
 
       if(!dataCompra) throw new Error('Informe a data da compra.');
           if(!(valorTotal>0)) throw new Error('Informe o valor total pago.');
+          const pag = lerPagamentoRateio('rateio');
+          if(pag && pag.forma && !fornecedorId) throw new Error('Para lançar em Contas a Pagar, selecione o fornecedor.');
+          const pagApi = pagamentoParaApi(pag);
 
       const itens = rateioItens.map(it=>({
               produto_id: it.produto_id && it.produto_id!=='__novo__' ? it.produto_id : undefined,
@@ -220,17 +332,21 @@ async function salvarRateio(){
 
       if(!itens.length) throw new Error('Informe ao menos um produto/corte com peso/quantidade maior que zero.');
 
-      await apiFetch('/api/produtos/rateio', {method:'POST', body: JSON.stringify({
+      const salvo = await apiFetch('/api/produtos/rateio', {method:'POST', body: JSON.stringify(Object.assign({
               fornecedor_id: fornecedorId, data_compra: dataCompra, valor_total_pago: valorTotal,
               base_rateio: base, modo: 'rateio',
               peso_ou_qtd_total_declarado: declarado ? parseFloat(declarado) : undefined,
               itens,
-      })});
+      }, pagApi))});
 
       rateioItens = [];
+          rateioCabecalho = { fornecedorId:'', data:'', valorTotal:'', declarado:'', base:'peso', pagamento:null };
           await carregarCadastros();
-          msg.textContent = 'Rateio salvo com sucesso ✓'; msg.style.color = 'var(--olive)'; msg.style.display='block';
-          renderAbaRateioModo1();
+          renderAbaRateioModo1(false);
+          // A mensagem vai DEPOIS de redesenhar a tela (antes ela era escrita num elemento que o redesenho apagava em seguida,
+          // então a pessoa nunca via a confirmação de que salvou).
+          const msg2 = document.getElementById('rateioMsg');
+          if(msg2){ msg2.textContent = 'Rateio salvo com sucesso ✓' + msgTituloGerado(salvo); msg2.style.color = 'var(--olive)'; msg2.style.display='block'; }
     }catch(err){
           msg.textContent = 'Erro: ' + err.message; msg.style.color='var(--red)'; msg.style.display='block';
           btn.disabled = false;
@@ -249,7 +365,8 @@ function renderAbaRateioModo2(){
                                       <div class="field"><label>Valor total pago (R$)</label><input type="number" step="0.01" min="0" id="diretoValorTotal"></div>
                                             <div class="field"><label>Preço de venda (R$/un)</label><input type="number" step="0.01" min="0" id="diretoPrecoVenda"></div>
                                                 </div>
-                                                    <div id="diretoResumo" style="background:var(--paper-2); border:1px solid var(--border); border-radius:10px; padding:12px; margin:12px 0; font-size:13px;">Preencha quantidade e valor total para ver o cálculo.</div>
+                                                    ${pagamentoRateioHtml('direto', null)}
+<div id="diretoResumo" style="background:var(--paper-2); border:1px solid var(--border); border-radius:10px; padding:12px; margin:12px 0; font-size:13px;">Preencha quantidade e valor total para ver o cálculo.</div>
                                                         <div id="diretoMsg" style="font-size:12px; margin-top:8px; display:none;"></div>
                                                             <div class="panel-actions" style="margin-top:14px;"><button type="button" class="btn gold" id="diretoSalvar">Salvar lançamento</button></div>
                                                               `;
@@ -257,6 +374,7 @@ function renderAbaRateioModo2(){
           document.getElementById(id).addEventListener('input', recalcularDireto);
     });
     document.getElementById('diretoSalvar').addEventListener('click', salvarDireto);
+    wirePagamentoRateio('direto', ()=>document.getElementById('diretoData').value);
 }
 
 function recalcularDireto(){
@@ -294,16 +412,20 @@ async function salvarDireto(){
       if(!dataCompra) throw new Error('Informe a data da compra.');
           if(!(qtd>0)) throw new Error('Informe a quantidade comprada.');
           if(!(valorTotal>0)) throw new Error('Informe o valor total pago.');
+          const pag = lerPagamentoRateio('direto');
+          if(pag && pag.forma && !fornecedorId) throw new Error('Para lançar em Contas a Pagar, selecione o fornecedor.');
+          const pagApi = pagamentoParaApi(pag);
 
-      await apiFetch('/api/produtos/rateio', {method:'POST', body: JSON.stringify({
+      const salvo = await apiFetch('/api/produtos/rateio', {method:'POST', body: JSON.stringify(Object.assign({
               fornecedor_id: fornecedorId, data_compra: dataCompra, valor_total_pago: valorTotal,
               base_rateio: 'quantidade', modo: 'direto',
               itens: [{ produto_id: produtoId, peso_ou_quantidade: qtd, preco_venda: preco?parseFloat(preco):undefined }],
-      })});
+      }, pagApi))});
 
       await carregarCadastros();
-          msg.textContent = 'Lançamento salvo com sucesso ✓'; msg.style.color='var(--olive)'; msg.style.display='block';
           renderAbaRateioModo2();
+          const msg2 = document.getElementById('diretoMsg');
+          if(msg2){ msg2.textContent = 'Lançamento salvo com sucesso ✓' + msgTituloGerado(salvo); msg2.style.color='var(--olive)'; msg2.style.display='block'; }
     }catch(err){
           msg.textContent = 'Erro: ' + err.message; msg.style.color='var(--red)'; msg.style.display='block';
           btn.disabled = false;
@@ -323,7 +445,16 @@ function optsProdutosMultiplo(selectedId){
     return opts.join('');
 }
 
-function renderAbaMultiplo(){
+function renderAbaMultiplo(preservar){
+    // Preserva o cabeçalho (fornecedor, data, nº da nota, pagamento) ao adicionar/remover produto.
+    if(preservar !== false && document.getElementById('multiploData')){
+          const fs = document.querySelector('select[name="multiplo_fornecedor"]');
+          multiploCabecalho.fornecedorId = fs ? fs.value : multiploCabecalho.fornecedorId;
+          multiploCabecalho.data = document.getElementById('multiploData').value || multiploCabecalho.data;
+          multiploCabecalho.nota = document.getElementById('multiploNota').value;
+          multiploCabecalho.pagamento = lerPagamentoRateio('multiplo');
+    }
+    if(!multiploCabecalho.data) multiploCabecalho.data = todayISO();
     if(!multiploItens.length){
           multiploItens = [{produto_id:'', produto_nome:'', quantidade:'', valor_pago:'', preco_venda:'', observacao:''}];
     }
@@ -346,11 +477,12 @@ function renderAbaMultiplo(){
   document.getElementById('cpAbaContent').innerHTML = `
       <div class="form-grid">
             ${renderCadastroField({name:'multiplo_fornecedor', label:'Fornecedor', cadastro:'fornecedores', full:false}, {})}
-                  <div class="field"><label>Data da compra</label><input type="date" id="multiploData" value="${todayISO()}"></div>
-                        <div class="field"><label>Nº da nota (opcional)</label><input type="text" id="multiploNota" placeholder="ex: NF 12345"></div>
+                  <div class="field"><label>Data da compra</label><input type="date" id="multiploData" value="${escapeHtml(multiploCabecalho.data)}"></div>
+                        <div class="field"><label>Nº da nota (opcional)</label><input type="text" id="multiploNota" placeholder="ex: NF 12345" value="${escapeHtml(multiploCabecalho.nota||'')}"></div>
                               </div>
                                   <p style="font-size:12px; color:var(--ink-soft); margin:-4px 0 10px;">Uma nota com vários produtos diferentes, cada um com o valor efetivamente pago por ele (sem rateio proporcional).</p>
-                                      <div style="overflow-x:auto;">
+                                      ${pagamentoRateioHtml('multiplo', multiploCabecalho.pagamento)}
+<div style="overflow-x:auto;">
                                             <table class="report">
                                                     <thead><tr><th>Produto</th><th>Qtd/Peso</th><th>Valor pago</th><th>Custo/un</th><th>Preço venda</th><th>Lucro/un</th><th>Lucro total</th><th>Obs.</th><th></th></tr></thead>
                                                             <tbody id="multiploBody">${linhas}</tbody>
@@ -363,6 +495,9 @@ function renderAbaMultiplo(){
                                                                                             `;
 
   wireAbaMultiplo();
+    wirePagamentoRateio('multiplo', ()=>document.getElementById('multiploData').value);
+    const fsRest = document.querySelector('select[name="multiplo_fornecedor"]');
+    if(fsRest && multiploCabecalho.fornecedorId) fsRest.value = multiploCabecalho.fornecedorId;
     recalcularMultiplo();
 }
 
@@ -442,9 +577,17 @@ async function salvarMultiplo(){
       const itensValidos = multiploItens.filter(it => (it.produto_id || it.produto_nome) && (parseFloat(it.quantidade)||0)>0 && (parseFloat(it.valor_pago)||0)>0);
           if(!itensValidos.length) throw new Error('Informe ao menos um produto com quantidade e valor pago maiores que zero.');
 
-      for(const it of itensValidos){
+      const pag = lerPagamentoRateio('multiplo');
+          if(pag && pag.forma && !fornecedorId) throw new Error('Para lançar em Contas a Pagar, selecione o fornecedor.');
+          const pagApi = pagamentoParaApi(pag);
+          if(pagApi.forma_pagamento && !pagApi.documento && nota) pagApi.documento = nota;
+          const totalNota = itensValidos.reduce((a,it)=>a+(parseFloat(it.valor_pago)||0),0);
+          let codigoTitulo = null;
+          for(const [k,it] of itensValidos.entries()){
               const observacao = [nota ? `Nota ${nota}` : '', it.observacao || ''].filter(Boolean).join(' — ') || undefined;
-              await apiFetch('/api/produtos/rateio', {method:'POST', body: JSON.stringify({
+              // UM título para a nota inteira: vai junto no primeiro produto, com o total da nota (valor_titulo).
+              const extra = (k===0) ? Object.assign({}, pagApi, pagApi.forma_pagamento ? {valor_titulo: Math.round(totalNota*100)/100} : {}) : {};
+              const salvoItem = await apiFetch('/api/produtos/rateio', {method:'POST', body: JSON.stringify(Object.assign({
                         fornecedor_id: fornecedorId, data_compra: dataCompra, valor_total_pago: parseFloat(it.valor_pago),
                         base_rateio: 'quantidade', modo: 'direto',
                         itens: [{
@@ -454,13 +597,16 @@ async function salvarMultiplo(){
                                     preco_venda: it.preco_venda ? parseFloat(it.preco_venda) : undefined,
                                     observacao,
                         }],
-              })});
+              }, extra))});
+              if(k===0 && salvoItem && salvoItem.contas_pagar_codigo) codigoTitulo = salvoItem.contas_pagar_codigo;
       }
 
       multiploItens = [];
+          multiploCabecalho = { fornecedorId:'', data:'', nota:'', pagamento:null };
           await carregarCadastros();
-          msg.textContent = 'Lançamentos salvos com sucesso ✓'; msg.style.color = 'var(--olive)'; msg.style.display='block';
-          renderAbaMultiplo();
+          renderAbaMultiplo(false);
+          const msg2 = document.getElementById('multiploMsg');
+          if(msg2){ msg2.textContent = 'Lançamentos salvos com sucesso ✓' + (codigoTitulo ? ` · nota lançada em Contas a Pagar (título ${codigoTitulo}, total ${fmtBRL(totalNota)})` : ''); msg2.style.color = 'var(--olive)'; msg2.style.display='block'; }
     }catch(err){
           msg.textContent = 'Erro: ' + err.message; msg.style.color='var(--red)'; msg.style.display='block';
           btn.disabled = false;
@@ -694,8 +840,10 @@ function wireTipoPecaBarra(){
 }
 
 const __renderAbaRateioModo1Base = renderAbaRateioModo1;
-renderAbaRateioModo1 = function(){
-  __renderAbaRateioModo1Base();
+renderAbaRateioModo1 = function(preservarCabecalho){
+  // CORREÇÃO 26/10/2026: o wrapper não repassava o argumento para a função original,
+  // o que quebraria silenciosamente o reset pós-salvar (ver salvarRateio).
+  __renderAbaRateioModo1Base(preservarCabecalho);
   const wrap = document.getElementById('cpAbaContent');
   if(wrap && !document.getElementById('tipoPecaSelect')){
     carregarTiposPeca().then(tipos=>{

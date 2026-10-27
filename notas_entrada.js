@@ -156,7 +156,9 @@ function neStatusHtml(){
   const explicaResumo = s.ciencia_automatica === true ? 'o XML completo chega após a Ciência da Operação, feita automaticamente' : 'a SEFAZ só libera o XML completo após a Ciência da Operação, que o portal não envia automaticamente';
   const resumo = Number(s.notas_so_resumo) > 0 ? ` · <b>${s.notas_so_resumo}</b> nota(s) só com resumo (${explicaResumo})` : '';
   const auto = Number(s.sincronizacao_automatica_min) > 0 ? ` · busca automática a cada ${Number(s.sincronizacao_automatica_min)} min (a SEFAZ só atende cerca de 1 consulta por hora quando não há novidades)` : '';
-  const botao = neEhEscritorio() ? `<button type="button" class="btn ghost" id="neSincronizar">Sincronizar agora</button>` : '';
+  // PEDIDO 26/10/2026 (Dani): botão "Sincronizar agora" também para a cliente (antes só escritório).
+  // O backend (POST /api/nfe-entrada/sincronizar) deixou de restringir por papel em 27/10/2026.
+  const botao = `<button type="button" class="btn ghost" id="neSincronizar">Sincronizar agora</button>`;
   const erro = s.ultimo_erro ? `<div style="color:var(--red);">Último aviso: ${escapeHtml(s.ultimo_erro)}</div>` : '';
   return `<div class="ne-status${s.ultimo_erro ? ' erro' : ''}"><div>SEFAZ (${escapeHtml(s.ambiente)}): última consulta ${escapeHtml(quando)}${prox}${auto}${resumo}${erro}</div>${botao}<span id="neSyncMsg" class="ne-msg"></span></div>`;
 }
@@ -361,7 +363,14 @@ function neSugestaoHtml(n){
   const sugs = n.sugestoes || [];
   const forma = neFormaSugerida(n.pagamentos);
   const cats = (CADASTROS.categoriasDespesa || []);
-  const catSel = n.categoria_sugerida_id ? String(n.categoria_sugerida_id) : (n.fornecedor_categoria_id ? String(n.fornecedor_categoria_id) : '');
+  // PEDIDO 26/10/2026 (Dani): quando a nota não tem categoria sugerida nem o fornecedor
+  // tem categoria padrão cadastrada, pré-selecionar "Compras de mercadorias (COGS)" em
+  // vez de deixar em branco — continua sendo um <select> comum, a cliente pode trocar;
+  // é só o valor inicial que muda, para reduzir o risco de ela esquecer de categorizar.
+  const catCogs = cats.find(c => String(c.nome_categoria || c.nome || '').trim().toUpperCase() === 'COMPRAS DE MERCADORIAS (COGS)');
+  const catSel = n.categoria_sugerida_id ? String(n.categoria_sugerida_id)
+    : (n.fornecedor_categoria_id ? String(n.fornecedor_categoria_id)
+    : (catCogs ? String(catCogs.id) : ''));
   const optCat = '<option value="">Selecione a categoria…</option>' + cats.map(c => `<option value="${c.id}"${String(c.id) === catSel ? ' selected' : ''}>${escapeHtml(c.nome_categoria || c.nome || '')}</option>`).join('') + optionNovaCategoria(false);
   const optForma = ['', 'PIX', 'Boleto', 'TED', 'Cartão', 'Dinheiro'].map(f => `<option value="${f}"${f === forma ? ' selected' : ''}>${f || 'Selecione…'}</option>`).join('');
   const linhas = sugs.map((s, i) => {

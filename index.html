@@ -1062,8 +1062,47 @@ async function apiFetch(path, options = {}){
   const res = await fetch(API_BASE + path, Object.assign({}, options, {headers}));
   let corpo = null;
   try{ corpo = await res.json(); }catch(e){ /* resposta sem corpo JSON (ex: download de arquivo) */ }
+  // ALERTA DE DUPLICIDADE (27/10/2026, pedido da Dani: "avisar duplicidade de qualquer ordem, em todo o
+  // portal, alertando o reflexo"). O backend responde 409 + codigo POSSIVEL_DUPLICIDADE (sem gravar nada)
+  // quando acha lançamento parecido. Aqui mostramos o que foi achado e o reflexo (DRE/caixa/estoque); se a
+  // pessoa confirmar, repetimos o MESMO envio com confirmar_duplicidade:true. Vale para qualquer tela que
+  // use apiFetch para criar lançamento (contas a pagar/receber, rateio de compra, NF etc.).
+  if(res.status === 409 && corpo && corpo.codigo === 'POSSIVEL_DUPLICIDADE' && options.body && typeof options.body === 'string'){
+    const seguir = await mostrarAvisoDuplicidade(corpo);
+    if(!seguir){ const e = new Error('Lançamento NÃO gravado: você cancelou por possível duplicidade.'); e.duplicidadeCancelada = true; throw e; }
+    let novo = {}; try{ novo = JSON.parse(options.body); }catch(e){}
+    novo.confirmar_duplicidade = true;
+    return apiFetch(path, Object.assign({}, options, {body: JSON.stringify(novo)}));
+  }
   if(!res.ok) throw new Error((corpo && corpo.erro) || ('Erro ' + res.status));
   return corpo;
+}
+
+function mostrarAvisoDuplicidade(d){
+  return new Promise(resolve => {
+    const ov = document.createElement('div');
+    ov.id = 'dupOverlay';
+    ov.setAttribute('role', 'alertdialog');
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px;';
+    const lista = (d.encontrados || []).map(x => `<li style="margin:4px 0;"><b>${escapeHtml(x.tipo || '')}</b> — ${escapeHtml(x.descricao || '')}</li>`).join('');
+    const refl = (d.reflexos || []).map(x => `<li style="margin:4px 0;">${escapeHtml(x)}</li>`).join('');
+    ov.innerHTML = `<div style="background:var(--paper,#fff);color:var(--ink,#222);max-width:640px;width:100%;max-height:90vh;overflow:auto;border-radius:14px;padding:22px;border-top:5px solid var(--red,#b3261e);box-shadow:0 12px 40px rgba(0,0,0,.35);">
+      <div style="font-size:18px;font-weight:700;margin-bottom:6px;">⚠ ${escapeHtml(d.titulo || 'Possível lançamento duplicado')}</div>
+      <div style="font-size:13.5px;margin-bottom:12px;">${escapeHtml(d.resumo || '')}</div>
+      <div style="font-size:12.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-soft,#666);">Já existe</div>
+      <ul style="margin:6px 0 14px;padding-left:18px;font-size:13px;">${lista}</ul>
+      <div style="font-size:12.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--red,#b3261e);">Se for duplicado, o reflexo é</div>
+      <ul style="margin:6px 0 16px;padding-left:18px;font-size:13px;">${refl}</ul>
+      <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;">
+        <button type="button" class="btn gold" id="dupCancelar">Cancelar (não gravar)</button>
+        <button type="button" class="btn ghost" id="dupConfirmar">É outro lançamento — gravar mesmo assim</button>
+      </div></div>`;
+    document.body.appendChild(ov);
+    const fechar = r => { ov.remove(); resolve(r); };
+    ov.querySelector('#dupCancelar').addEventListener('click', () => fechar(false));
+    ov.querySelector('#dupConfirmar').addEventListener('click', () => fechar(true));
+    ov.querySelector('#dupCancelar').focus();
+  });
 }
 
 function showApp(){ document.body.classList.remove('not-authed'); document.getElementById('loginScreen').style.display = 'none'; }
@@ -4652,13 +4691,55 @@ function linhasDetalheLancamentos(lista){
 // com "Mostrar categorias sem movimento" lista também as cadastradas do grupo (R$ 0,00).
 // Pedido da Dani (17/10/2026): o DRE deve exibir as mesmas categorias da classificação dos gastos.
 let dreMostrarSemMovimento = false;
+// DRE EXPANSÍVEL (27/10/2026, pedido da Dani): "ao clicar no item e subitem, expandir para detalhar os
+// custos (nome, a que se refere, valor, vencimento)". Clicar na linha do grupo (item) abre/fecha os
+// lançamentos de todas as suas categorias; clicar numa categoria (subitem) abre/fecha só os dela. O que
+// está aberto é lembrado enquanto o painel é reaberto/recalculado (dreExpandido).
+let dreExpandido = new Set();   // chaves: 'c:<bloco>|<categoria>'
+function dreSeta(aberto){ return aberto ? '▾' : '▸'; }
+function dreAplicarExpansao(){
+  document.querySelectorAll('tr.dre-det').forEach(tr => { tr.hidden = !dreExpandido.has(tr.dataset.drePai); });
+  document.querySelectorAll('tr.dre-cat').forEach(tr => { const sp = tr.querySelector('.dre-seta'); if(sp) sp.textContent = dreSeta(dreExpandido.has(tr.dataset.dre)); });
+  document.querySelectorAll('tr.dre-grupo').forEach(tr => {
+    const cats = [...document.querySelectorAll(`tr.dre-cat[data-bloco="${tr.dataset.bloco}"]`)];
+    const sp = tr.querySelector('.dre-seta'); if(sp) sp.textContent = dreSeta(cats.length > 0 && cats.every(c => dreExpandido.has(c.dataset.dre)));
+  });
+}
+function dreToggleCat(tr){ const k = tr.dataset.dre; if(dreExpandido.has(k)) dreExpandido.delete(k); else dreExpandido.add(k); dreAplicarExpansao(); }
+function dreToggleGrupo(tr){
+  const cats = [...document.querySelectorAll(`tr.dre-cat[data-bloco="${tr.dataset.bloco}"]`)];
+  const todasAbertas = cats.length > 0 && cats.every(c => dreExpandido.has(c.dataset.dre));
+  cats.forEach(c => { if(todasAbertas) dreExpandido.delete(c.dataset.dre); else dreExpandido.add(c.dataset.dre); });
+  dreAplicarExpansao();
+}
+// Linha de um grupo do DRE (item). bloco = chave usada também nas categorias (grupos do DRE unidos por '+').
+function dreGrupoTr(bloco, rotuloHtml, valorHtml, cor, negrito){
+  const st = (cor ? `color:${cor};` : '');
+  return `<tr class="dre-grupo" data-bloco="${escapeHtml(bloco)}" onclick="dreToggleGrupo(this)" style="cursor:pointer;" title="Clique para ver os lançamentos"><td style="${st}"><span class="dre-seta" style="display:inline-block;width:14px;color:var(--ink-faint);">▸</span>${negrito ? '<strong>'+rotuloHtml+'</strong>' : rotuloHtml}</td><td style="text-align:right;${st}">${valorHtml}</td></tr>`;
+}
+function dreTabelaLancamentos(itens){
+  const ord = itens.slice().sort((a, b) => String(a.vencimento).localeCompare(String(b.vencimento)) || (b.valor_original - a.valor_original));
+  const ref = x => [x.documento, x.observacoes, x.forma_pagamento, (x.origem && x.origem !== 'Manual') ? x.origem : ''].filter(Boolean).map(t => String(t).trim()).filter(Boolean).join(' · ');
+  const lin = ord.map(x => `<tr><td style="padding:3px 6px;">${escapeHtml(x.credor || x.cliente || '(sem nome)')}</td><td style="padding:3px 6px; color:var(--ink-soft);">${escapeHtml(ref(x)) || '—'}</td><td style="padding:3px 6px; text-align:right; white-space:nowrap;">${fmtBRL(x.valor_original)}</td><td style="padding:3px 6px; white-space:nowrap;">${fmtDate(x.vencimento)}${x.status ? ` <span style="color:var(--ink-faint);">· ${escapeHtml(x.status)}</span>` : ''}</td></tr>`).join('');
+  return `<table style="width:100%; font-size:11.5px; border-collapse:collapse; background:var(--paper-2); border:1px solid var(--border); border-radius:6px;"><thead><tr style="text-align:left; color:var(--ink-soft);"><th style="padding:4px 6px;">Nome</th><th style="padding:4px 6px;">A que se refere</th><th style="padding:4px 6px; text-align:right;">Valor</th><th style="padding:4px 6px;">Vencimento</th></tr></thead><tbody>${lin}</tbody></table>`;
+}
 function detalheCategoriasDRE(itens, gruposAlvo, tipo){
-  const mov = new Map(agruparPorCategoria(itens));
+  const bloco = gruposAlvo.join('+');
+  const porCat = new Map();
+  itens.forEach(x => { const c = x.categoria || 'Sem categoria'; if(!porCat.has(c)) porCat.set(c, []); porCat.get(c).push(x); });
+  const mov = new Map([...porCat.entries()].map(([c, l]) => [c, l.reduce((s, x) => s + x.valor_original, 0)]));
   if(dreMostrarSemMovimento){
     const cats = (tipo === 'receita' ? CADASTROS.categoriasReceita : CADASTROS.categoriasDespesa) || [];
     cats.filter(c => gruposAlvo.includes(c.grupo_dre)).forEach(c => { if(!mov.has(c.nome_categoria)) mov.set(c.nome_categoria, 0); });
   }
-  return linhasDetalheDRE([...mov.entries()].sort((a, b) => (b[1] - a[1]) || String(a[0]).localeCompare(String(b[0]), 'pt-BR')));
+  return [...mov.entries()].sort((a, b) => (b[1] - a[1]) || String(a[0]).localeCompare(String(b[0]), 'pt-BR')).map(([cat, val]) => {
+    const lista = porCat.get(cat) || [];
+    const chave = `c:${bloco}|${cat}`;
+    const base = 'padding-left:24px; color:var(--ink-faint); font-size:11.5px;';
+    const cab = `<tr class="dre-cat" data-bloco="${escapeHtml(bloco)}" data-dre="${escapeHtml(chave)}"${lista.length ? ' onclick="dreToggleCat(this)" style="cursor:pointer;" title="Clique para ver os lançamentos"' : ''}><td style="${base}"><span class="dre-seta" style="display:inline-block;width:14px;">${lista.length ? '▸' : ''}</span>${escapeHtml(cat)}${lista.length ? ` <span style="opacity:.75;">(${lista.length})</span>` : ''}</td><td style="text-align:right; color:var(--ink-faint); font-size:11.5px;">${fmtBRL(val)}</td></tr>`;
+    const det = lista.length ? `<tr class="dre-det" data-dre-pai="${escapeHtml(chave)}" hidden><td colspan="2" style="padding:2px 0 10px 38px;">${dreTabelaLancamentos(lista)}</td></tr>` : '';
+    return cab + det;
+  }).join('');
 }
 
 async function openDRE(){
@@ -4717,16 +4798,17 @@ async function openDRE(){
       <button class="close-x" onclick="closeOverlay()">✕</button>
     </div>
     <label style="display:flex; gap:8px; align-items:center; font-size:12.5px; margin:0 0 10px;" class="no-print"><input type="checkbox" id="dreSemMovimento"${dreMostrarSemMovimento ? ' checked' : ''}> Mostrar categorias sem movimento neste mês</label>
+    <p class="no-print" style="font-size:12px; color:var(--ink-soft); margin:-4px 0 10px;">Clique em um item (ex.: Custos Variáveis) ou em uma categoria para ver cada lançamento: nome, a que se refere, valor e vencimento.</p>
     <table class="report">
       <tbody>
-        <tr><td>Receita Operacional Bruta</td><td style="text-align:right;">${fmtBRL(receitaBruta)}</td></tr>
+        ${dreGrupoTr('Receita', 'Receita Operacional Bruta', fmtBRL(receitaBruta))}
         ${detalheCategoriasDRE(receberPeriodo, ['Receita'], 'receita')}
-        <tr><td>(–) Custos Variáveis (CMV)</td><td style="text-align:right;">${fmtBRL(custosVar)}</td></tr>
+        ${dreGrupoTr('CMV+Despesas Variáveis', '(–) Custos Variáveis (CMV)', fmtBRL(custosVar))}
         ${detalheCategoriasDRE(itensVar, ['CMV', 'Despesas Variáveis'], 'despesa')}
         <tr><td><strong>Margem de Contribuição</strong></td><td style="text-align:right;"><strong>${fmtBRL(margem)} (${margemPct.toFixed(1)}%)</strong></td></tr>
-        <tr><td>(–) Custos Fixos</td><td style="text-align:right;">${fmtBRL(custosFixos)}</td></tr>
+        ${dreGrupoTr('Despesas Fixas', '(–) Custos Fixos', fmtBRL(custosFixos))}
         ${detalheCategoriasDRE(itensFixos, ['Despesas Fixas'], 'despesa')}
-        <tr><td style="color:var(--red);">(–) Despesas Financeiras (juros bancários, encargos de financiamentos)</td><td style="text-align:right; color:var(--red);">${fmtBRL(despFin)}</td></tr>
+        ${dreGrupoTr('Despesas Financeiras', '(–) Despesas Financeiras (juros bancários, encargos de financiamentos)', fmtBRL(despFin), 'var(--red)')}
         ${(despFinCad || dreMostrarSemMovimento) ? detalheCategoriasDRE(itensDespFinCad, ['Despesas Financeiras'], 'despesa') : ''}
         ${jurosFinanciamentos ? `<tr><td style="padding-left:24px; color:var(--ink-faint); font-size:11.5px;">Juros/encargos de financiamentos (contratos PJ)</td><td style="text-align:right; color:var(--ink-faint); font-size:11.5px;">${fmtBRL(jurosFinanciamentos)}</td></tr>` : ''}
         ${chequeEspecialDisponivel ? `<tr><td style="padding-left:24px; color:var(--ink-faint); font-size:11.5px;">Juros de cheque especial</td><td style="text-align:right; color:var(--ink-faint); font-size:11.5px;">${fmtBRL(chequeEspecialValor)}</td></tr>` : `<tr><td style="padding-left:24px; color:var(--gold); font-size:11.5px;">⚠ Juros de cheque especial: sem fonte de dado ainda (falta extrato bancário) — não incluído no total acima.</td><td></td></tr>`}
@@ -4737,11 +4819,11 @@ async function openDRE(){
     <div class="panel-head" style="margin-top:26px; margin-bottom:8px;"><div><h2 style="font-size:15px;">Fora do resultado operacional</h2><p>Não entram na margem de contribuição — são estrutura de capital/retirada, não custo da operação.</p></div></div>
     <table class="report">
       <tbody>
-        <tr><td>Retiradas de Sócios / Pró-labore</td><td style="text-align:right;">${fmtBRL(socios)}</td></tr>
+        ${dreGrupoTr('Retiradas de Sócios', 'Retiradas de Sócios / Pró-labore', fmtBRL(socios))}
         ${detalheCategoriasDRE(itensSocios, ['Retiradas de Sócios'], 'despesa')}
-        <tr><td>Cartão de Crédito (PJ/PF a confirmar)</td><td style="text-align:right;">${fmtBRL(cartao)}</td></tr>
+        ${dreGrupoTr('Cartao de Credito', 'Cartão de Crédito (PJ/PF a confirmar)', fmtBRL(cartao))}
         ${detalheCategoriasDRE(itensCartao, ['Cartao de Credito'], 'despesa')}
-        <tr><td>Serviço da Dívida (empréstimos/acordos)</td><td style="text-align:right;">${fmtBRL(divida)}</td></tr>
+        ${dreGrupoTr('Divida', 'Serviço da Dívida (empréstimos/acordos)', fmtBRL(divida))}
         ${detalheCategoriasDRE(itensDivida, ['Divida'], 'despesa')}
       </tbody>
     </table>
@@ -4749,6 +4831,7 @@ async function openDRE(){
       <button class="btn gold" onclick="window.print()">Imprimir / salvar PDF</button>
     </div>
   `);
+  dreAplicarExpansao();
   const chkSemMov = document.getElementById('dreSemMovimento');
   if(chkSemMov) chkSemMov.addEventListener('change', ()=>{ dreMostrarSemMovimento = chkSemMov.checked; openDRE(); });
 }
