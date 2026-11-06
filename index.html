@@ -1216,6 +1216,44 @@ function marcarSyncOffline(quandoISO){
   if(dot) dot.classList.add('offline');
 }
 
+// Alerta de atraso na transmissão do PDV da loja -- pedido da Danielle (06/11/2026), depois
+// do bot da loja Cristal ficar ~2h sem enviar nada (13h às 15h10) sem nenhum aviso visível
+// na tela até ela notar sozinha. Aparece para QUALQUER usuário logado (escritório e cliente),
+// igual ao aviso de "sem conexão" já existente (mesmo padrão visual e mesmo ponto de inserção,
+// logo acima do KPI grid). O backend só marca atrasado=true dentro do horário comercial
+// configurado para a empresa -- fora dele (loja fechada) nunca alerta, mesmo sem nenhum envio
+// há horas, então não precisa repetir essa lógica aqui.
+async function atualizarAlertaPDV(){
+  let status;
+  try{
+    status = await apiFetch('/api/pdv-integracao/alerta');
+  }catch(e){
+    // Falha ao consultar o alerta não pode travar o resto do dashboard nem exibir alerta
+    // falso -- só não atualiza o selo desta vez; a próxima consulta (a cada 5 min) tenta de novo.
+    console.error('Não consegui checar o status de transmissão do PDV.', e);
+    return;
+  }
+  const existente = document.getElementById('avisoPdvAtrasado');
+  if(!status || !status.atrasado){
+    if(existente) existente.remove();
+    return;
+  }
+  const minutos = status.minutosSemDados;
+  const txtMinutos = (minutos === null || minutos === undefined) ? 'o dia todo'
+    : (minutos >= 60 ? `${Math.floor(minutos/60)}h${String(minutos%60).padStart(2,'0')}min` : `${minutos} min`);
+  const txtUltimo = status.ultimoRecebimento
+    ? new Date(status.ultimoRecebimento).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})
+    : 'nenhum envio registrado';
+  const html = `<div id="avisoPdvAtrasado" style="background:rgba(201,169,97,.15); border:1px solid rgba(176,138,62,.4); color:#8C6A2E;
+      border-radius:12px; padding:10px 16px; font-size:12.5px; margin-bottom:18px;">
+      ⚠️ O PDV da loja está sem transmitir vendas há <strong>${txtMinutos}</strong> (última recepção: ${txtUltimo}).
+      Isso não significa que as vendas sumiram — quando o envio normalizar, tudo chega automaticamente —, mas vale
+      checar se o computador da loja está ligado e conectado à internet.
+    </div>`;
+  if(existente) existente.outerHTML = html;
+  else document.getElementById('kpiGrid').insertAdjacentHTML('beforebegin', html);
+}
+
 async function carregarDados(){
   limparAvisoDesatualizado();
   try{
@@ -1262,6 +1300,9 @@ async function carregarDados(){
   // Card "Saúde da Empresa" (04/10/2026) — mesmo cuidado: chamada própria, com seu próprio
   // try/catch interno (ver renderSaudeEmpresaCard), pra nunca travar o resto do dashboard.
   renderSaudeEmpresaCard();
+  // Alerta de atraso do PDV (06/11/2026) — mesmo cuidado: tem seu próprio try/catch interno
+  // (ver atualizarAlertaPDV), pra nunca travar o resto do dashboard.
+  atualizarAlertaPDV();
 }
 
 function loadMockData(){
