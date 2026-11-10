@@ -424,6 +424,8 @@
     table.report th, table.report td{padding:7px 6px;}
     table.report th:nth-child(2), table.report td:nth-child(2),
     table.report th:nth-child(7), table.report td:nth-child(7){display:none;}
+    /* DRE (10/11/2026): a tabela do DRE tem só 2 colunas (rótulo e valor); a regra acima escondia o VALOR no celular. */
+    table.report.dre-tab td:nth-child(2){display:table-cell;}
   }
 
   /* cabeçalho de impressão — normalmente invisível, só aparece quando a página é impressa
@@ -4783,12 +4785,77 @@ function detalheCategoriasDRE(itens, gruposAlvo, tipo){
   }).join('');
 }
 
-async function openDRE(){
-  const hoje = new Date();
-  // Regime de competência: considera o mês de vencimento, não a data em que foi de fato pago/recebido.
-  const noPeriodo = iso => { const d = new Date(iso); return d.getUTCFullYear()===hoje.getFullYear() && d.getUTCMonth()===hoje.getMonth(); };
-  const receberPeriodo = DATA.contasReceber.filter(x=>noPeriodo(x.vencimento));
-  const pagarPeriodo = DATA.contasPagar.filter(x=>noPeriodo(x.vencimento));
+/*DRE-MES-INICIO*/
+// DRE POR MÊS (10/11/2026, pedido da Dani: "para que a Milca consiga ver o DRE do mês que ela escolher").
+// O painel abre sempre no mês corrente; o seletor (lista + setas + "Mês atual") troca o mês. Os títulos do mês
+// vêm de /api/dashboard/dre?mes=AAAA-MM (consulta pelo mês exato, qualquer mês — a base do dashboard cobre só
+// ~180 dias). Se essa consulta falhar (ex.: backend ainda sem a rota), cai na base já carregada, com aviso.
+// Regime de competência (vencimento). Títulos Cancelados não entram no DRE (nem no card Saúde da Empresa).
+let dreReqSeq = 0;   // descarta resposta antiga quando a pessoa clica rápido em várias setas
+function dreMesAtualChave(){ const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; }
+function dreMesDelta(chave, delta){
+  const [a, m] = chave.split('-').map(Number);
+  const d = new Date(a, m - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+function dreNomeMes(chave){
+  const [a, m] = chave.split('-').map(Number);
+  const nome = MESES_PT[m - 1] || chave;
+  return `${nome.charAt(0).toUpperCase()}${nome.slice(1)}/${a}`;
+}
+// Meses oferecidos na lista: 24 para trás e 6 para frente do mês corrente (o mês escolhido sempre entra).
+function dreOpcoesMeses(selecionado){
+  const atual = dreMesAtualChave();
+  const chaves = [];
+  for(let i = -24; i <= 6; i++) chaves.push(dreMesDelta(atual, i));
+  if(!chaves.includes(selecionado)) chaves.push(selecionado);
+  chaves.sort();
+  return chaves.reverse().map(c => `<option value="${c}"${c === selecionado ? ' selected' : ''}>${dreNomeMes(c)}</option>`).join('');
+}
+async function dreCarregarMes(chave){
+  try{
+    const r = await apiFetch('/api/dashboard/dre?mes=' + chave);
+    if(r && Array.isArray(r.contasPagar) && Array.isArray(r.contasReceber)){
+      return { pagar: r.contasPagar, receber: r.contasReceber, origem: 'servidor', limites: r.limites || {} };
+    }
+  }catch(err){
+    console.error('Não foi possível consultar o DRE do mês no servidor; usando a base carregada:', err);
+  }
+  const noMes = x => String(x.vencimento).slice(0, 7) === chave;
+  const ativo = x => x.status !== 'Cancelado';
+  return { pagar: (DATA.contasPagar||[]).filter(x => noMes(x) && ativo(x)), receber: (DATA.contasReceber||[]).filter(x => noMes(x) && ativo(x)), origem: 'base', limites: {} };
+}
+// Avisos que acompanham o DRE do mês escolhido: base incompleta, mês anterior ao início dos lançamentos, mês futuro.
+function dreAvisosMes(chave, dados){
+  const av = [];
+  const ini = chave + '-01';
+  if(dados.origem === 'servidor'){
+    const l = dados.limites || {};
+    if(l.primeiroReceber && l.primeiroReceber > ini) av.push('Receita: o primeiro lançamento de A receber do portal é de ' + fmtDate(l.primeiroReceber) + '. Vendas anteriores a essa data não estão lançadas — a Receita Bruta deste mês pode estar zerada ou parcial, e a Margem e o Resultado não são confiáveis.');
+    if(l.primeiroPagar && l.primeiroPagar > ini) av.push('Custos: o primeiro lançamento de A pagar do portal é de ' + fmtDate(l.primeiroPagar) + '. Custos anteriores a essa data não estão lançados — os custos deste mês podem estar zerados ou parciais.');
+  } else {
+    av.push('Não consegui consultar este mês no servidor agora; mostrando a base já carregada na tela (títulos em aberto + vencimentos dos últimos ~180 dias).');
+    avisosBasePeriodo([chave]).forEach(a => av.push(a));
+  }
+  if(chave > dreMesAtualChave()) av.push('Mês futuro: mostra apenas os títulos já lançados (previsão), não resultado realizado.');
+  return av;
+}
+function dreAvisoHtml(texto){
+  return '<div class="dre-aviso" style="border-radius:12px; padding:10px 14px; margin:0 0 12px; background:var(--gold-wash); border:1px solid var(--gold-soft); font-size:12.5px; color:var(--ink);"><strong style="letter-spacing:.6px; text-transform:uppercase; font-size:11px; color:var(--gold);">⚠ Atenção</strong><div style="margin-top:4px;">' + escapeHtml(texto) + '</div></div>';
+}
+/*DRE-MES-FIM*/
+
+async function openDRE(mesArg){
+  // addEventListener('click', openDRE) entrega o evento como 1º argumento — só aceita string AAAA-MM.
+  const chave = (typeof mesArg === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(mesArg)) ? mesArg : dreMesAtualChave();
+  const reqId = ++dreReqSeq;
+  const [dados, resumoFin] = await Promise.all([
+    dreCarregarMes(chave),
+    apiFetch('/api/financiamentos/resumo?mes=' + chave).catch(err => { console.error('Não foi possível carregar juros de financiamentos para o DRE:', err); return null; }),
+  ]);
+  if(reqId !== dreReqSeq) return;   // chegou outra escolha de mês depois desta
+  const receberPeriodo = dados.receber;
+  const pagarPeriodo = dados.pagar;
 
   const receitaBruta = receberPeriodo.reduce((s,x)=>s+x.valor_original,0);
 
@@ -4819,13 +4886,9 @@ async function openDRE(){
   // tem fonte de dado (aguardando extratos bancários) — sinalizado explicitamente em vez de
   // tratado como zero, para não maquiar o resultado.
   let jurosFinanciamentos = 0, chequeEspecialDisponivel = false, chequeEspecialValor = 0;
-  try{
-    const mesRef = `${hoje.getFullYear()}-${String(hoje.getMonth()+1).padStart(2,'0')}`;
-    const resumoFin = await apiFetch('/api/financiamentos/resumo?mes=' + mesRef);
+  if(resumoFin){   // buscado acima, junto com os títulos, para o mês escolhido (falha -> segue sem juros, como antes)
     jurosFinanciamentos = (resumoFin.financiamentos && resumoFin.financiamentos.mesAtual) || 0;
     if(resumoFin.chequeEspecial != null){ chequeEspecialDisponivel = true; chequeEspecialValor = resumoFin.chequeEspecial; }
-  }catch(err){
-    console.error('Não foi possível carregar juros de financiamentos para o DRE:', err);
   }
   const despFin = despFinCad + jurosFinanciamentos + (chequeEspecialDisponivel ? chequeEspecialValor : 0);
 
@@ -4835,12 +4898,21 @@ async function openDRE(){
 
   openOverlay(`
     <div class="panel-head">
-      <div><h2>DRE automático — ${nomeMesAtual()}</h2><p>Regime de competência (por vencimento) · custos fixos e variáveis separados pelo grupo de DRE de cada categoria.</p></div>
+      <div><h2>DRE automático — ${dreNomeMes(chave)}</h2><p>Regime de competência (por vencimento) · custos fixos e variáveis separados pelo grupo de DRE de cada categoria.</p></div>
       <button class="close-x" onclick="closeOverlay()">✕</button>
     </div>
+    <div class="no-print" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:0 0 12px;">
+      <button class="btn" id="dreMesAnt" type="button" title="Mês anterior" aria-label="Mês anterior">‹</button>
+      <label style="display:flex; gap:8px; align-items:center; font-size:12.5px;">Mês
+        <select id="dreMesSel" style="padding:8px 10px; border-radius:10px; border:1px solid var(--border); background:var(--surface); font-family:inherit; font-size:12.5px; color:var(--ink);">${dreOpcoesMeses(chave)}</select>
+      </label>
+      <button class="btn" id="dreMesProx" type="button" title="Próximo mês" aria-label="Próximo mês">›</button>
+      ${chave !== dreMesAtualChave() ? '<button class="btn" id="dreMesHoje" type="button">Mês atual</button>' : ''}
+    </div>
+    ${dreAvisosMes(chave, dados).map(a => dreAvisoHtml(a)).join('')}
     <label style="display:flex; gap:8px; align-items:center; font-size:12.5px; margin:0 0 10px;" class="no-print"><input type="checkbox" id="dreSemMovimento"${dreMostrarSemMovimento ? ' checked' : ''}> Mostrar categorias sem movimento neste mês</label>
     <p class="no-print" style="font-size:12px; color:var(--ink-soft); margin:-4px 0 10px;">Clique em um item (ex.: Custos Variáveis) ou em uma categoria para ver cada lançamento: nome, a que se refere, valor e vencimento.</p>
-    <table class="report">
+    <table class="report dre-tab">
       <tbody>
         ${dreGrupoTr('Receita', 'Receita Operacional Bruta', fmtBRL(receitaBruta))}
         ${detalheCategoriasDRE(receberPeriodo, ['Receita'], 'receita')}
@@ -4858,7 +4930,7 @@ async function openDRE(){
       </tbody>
     </table>
     <div class="panel-head" style="margin-top:26px; margin-bottom:8px;"><div><h2 style="font-size:15px;">Fora do resultado operacional</h2><p>Não entram na margem de contribuição — são estrutura de capital/retirada, não custo da operação.</p></div></div>
-    <table class="report">
+    <table class="report dre-tab">
       <tbody>
         ${dreGrupoTr('Retiradas de Sócios', 'Retiradas de Sócios / Pró-labore', fmtBRL(socios))}
         ${detalheCategoriasDRE(itensSocios, ['Retiradas de Sócios'], 'despesa')}
@@ -4874,7 +4946,12 @@ async function openDRE(){
   `);
   dreAplicarExpansao();
   const chkSemMov = document.getElementById('dreSemMovimento');
-  if(chkSemMov) chkSemMov.addEventListener('change', ()=>{ dreMostrarSemMovimento = chkSemMov.checked; openDRE(); });
+  if(chkSemMov) chkSemMov.addEventListener('change', ()=>{ dreMostrarSemMovimento = chkSemMov.checked; openDRE(chave); });
+  const selMes = document.getElementById('dreMesSel');
+  if(selMes) selMes.addEventListener('change', ()=> openDRE(selMes.value));
+  const bAnt = document.getElementById('dreMesAnt'); if(bAnt) bAnt.addEventListener('click', ()=> openDRE(dreMesDelta(chave, -1)));
+  const bProx = document.getElementById('dreMesProx'); if(bProx) bProx.addEventListener('click', ()=> openDRE(dreMesDelta(chave, 1)));
+  const bHoje = document.getElementById('dreMesHoje'); if(bHoje) bHoje.addEventListener('click', ()=> openDRE(dreMesAtualChave()));
 }
 
 /* ==========================================================================================
@@ -4954,8 +5031,9 @@ async function calcularSaudeEmpresa(periodo){
   const chaves = janelaMesesSaude(periodo);
   const noPeriodo = iso => chaves.includes(String(iso).slice(0,7));
 
-  const receberPeriodo = (DATA.contasReceber||[]).filter(x=>noPeriodo(x.vencimento));
-  const pagarPeriodo = (DATA.contasPagar||[]).filter(x=>noPeriodo(x.vencimento));
+  // Cancelado não é custo nem receita (10/11/2026 — mesmo critério do DRE por mês, para os dois baterem).
+  const receberPeriodo = (DATA.contasReceber||[]).filter(x=>noPeriodo(x.vencimento) && x.status!=='Cancelado');
+  const pagarPeriodo = (DATA.contasPagar||[]).filter(x=>noPeriodo(x.vencimento) && x.status!=='Cancelado');
 
   const receitaBruta = receberPeriodo.reduce((s,x)=>s+x.valor_original,0);
   const itensVar = pagarPeriodo.filter(x=>x.grupo_dre==='CMV' || x.grupo_dre==='Despesas Variáveis');
@@ -7313,7 +7391,7 @@ document.querySelectorAll('[data-close-form]').forEach(b=>b.addEventListener('cl
 document.getElementById('fabInsert').addEventListener('click', ()=>openForm('pagar'));
 document.getElementById('fabBaixa').addEventListener('click', openBaixaFab);
 document.getElementById('overlayBaixa').addEventListener('click', e=>{ if(e.target.id==='overlayBaixa') closeBaixa(); });
-document.getElementById('btnDRE').addEventListener('click', openDRE);
+document.getElementById('btnDRE').addEventListener('click', ()=> openDRE(dreMesAtualChave()));
 document.getElementById('btnPrint').addEventListener('click', openPrintAll);
 document.getElementById('btnImportar').addEventListener('click', openImportPanel);
 document.getElementById('btnContratos').addEventListener('click', openContratosPanel);
