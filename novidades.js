@@ -9,10 +9,13 @@
    ========================================================================================== */
 (function(){
   'use strict';
-  var PORTAL_VERSAO = '4.4';
+  var PORTAL_VERSAO = '4.6';
 
   // Mais recente primeiro. id = identificador estável (nunca reaproveitar). Texto: frases curtas e simples.
   var NOVIDADES = [
+    { id:'2026-11-10-dre-por-mes', versao:'4.6', data:'10/11/2026',
+      titulo:'DRE: escolha o mês que quer ver',
+      texto:'No DRE há um seletor de mês, com setas para o mês anterior e o próximo, e o botão “Mês atual” para voltar. O DRE mostra os lançamentos com vencimento no mês escolhido. Lançamentos cancelados não entram mais no DRE. Quando o mês escolhido é anterior ao início dos lançamentos no portal, aparece um aviso de que a receita ou os custos podem estar incompletos.' },
     { id:'2026-10-27-rateio-contas-pagar', versao:'4.4', data:'27/10/2026',
       titulo:'Compras: o pagamento já vai para o A pagar',
       texto:'Nas telas de Compras e custos (Rateio, Lançamento direto e Vários produtos) há um novo bloco “Pagamento desta compra”. Escolha a forma (PIX, TED, Dinheiro, Boleto ou Cartão) e o portal lança também o título no A pagar, na categoria Compras de mercadorias (COGS). PIX, TED e dinheiro entram como pagos na data da compra; boleto entra em aberto no vencimento e pode ser parcelado; cartão entra em aberto no vencimento da fatura, para o resultado cair no mês certo. Se deixar em branco, tudo continua como antes. Também corrigimos o problema que apagava o fornecedor e o valor total ao incluir uma mercadoria.' },
