@@ -9,10 +9,13 @@
    ========================================================================================== */
 (function(){
   'use strict';
-  var PORTAL_VERSAO = '4.6';
+  var PORTAL_VERSAO = '4.7';
 
   // Mais recente primeiro. id = identificador estável (nunca reaproveitar). Texto: frases curtas e simples.
   var NOVIDADES = [
+{ id:'2026-11-11-dre-a-partir-de-agosto', versao:'4.7', data:'11/11/2026',
+titulo:'DRE: mostrado a partir de agosto/2026',
+texto:'O DRE agora só pode ser consultado de agosto/2026 em diante, porque o A receber do portal começa em 18/08/2026 e, antes disso, a receita não está lançada (o resultado ficaria errado). Em agosto/2026 o mês é parcial, e o aviso na tela informa isso.' },
     { id:'2026-11-10-dre-por-mes', versao:'4.6', data:'10/11/2026',
       titulo:'DRE: escolha o mês que quer ver',
       texto:'No DRE há um seletor de mês, com setas para o mês anterior e o próximo, e o botão “Mês atual” para voltar. O DRE mostra os lançamentos com vencimento no mês escolhido. Lançamentos cancelados não entram mais no DRE. Quando o mês escolhido é anterior ao início dos lançamentos no portal, aparece um aviso de que a receita ou os custos podem estar incompletos.' },

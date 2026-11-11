@@ -4791,6 +4791,10 @@ function detalheCategoriasDRE(itens, gruposAlvo, tipo){
 // vêm de /api/dashboard/dre?mes=AAAA-MM (consulta pelo mês exato, qualquer mês — a base do dashboard cobre só
 // ~180 dias). Se essa consulta falhar (ex.: backend ainda sem a rota), cai na base já carregada, com aviso.
 // Regime de competência (vencimento). Títulos Cancelados não entram no DRE (nem no card Saúde da Empresa).
+// v4.7 (11/11/2026, pedido da Dani): o DRE só é mostrado a partir de AGOSTO/2026, porque o A receber do portal começa em
+// 18/08/2026 (antes disso a receita não está lançada e o resultado seria falso). Para mudar o início: trocar estas 2 constantes.
+const DRE_MES_MINIMO = '2026-08';
+const DRE_INICIO_TXT = '18/08/2026';
 let dreReqSeq = 0;   // descarta resposta antiga quando a pessoa clica rápido em várias setas
 function dreMesAtualChave(){ const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; }
 function dreMesDelta(chave, delta){
@@ -4803,11 +4807,11 @@ function dreNomeMes(chave){
   const nome = MESES_PT[m - 1] || chave;
   return `${nome.charAt(0).toUpperCase()}${nome.slice(1)}/${a}`;
 }
-// Meses oferecidos na lista: 24 para trás e 6 para frente do mês corrente (o mês escolhido sempre entra).
+// Meses oferecidos na lista: de DRE_MES_MINIMO até 6 meses à frente do mês corrente (o mês escolhido sempre entra).
 function dreOpcoesMeses(selecionado){
   const atual = dreMesAtualChave();
   const chaves = [];
-  for(let i = -24; i <= 6; i++) chaves.push(dreMesDelta(atual, i));
+  for(let i = -240; i <= 6; i++){ const c = dreMesDelta(atual, i); if(c >= DRE_MES_MINIMO) chaves.push(c); }
   if(!chaves.includes(selecionado)) chaves.push(selecionado);
   chaves.sort();
   return chaves.reverse().map(c => `<option value="${c}"${c === selecionado ? ' selected' : ''}>${dreNomeMes(c)}</option>`).join('');
@@ -4847,7 +4851,8 @@ function dreAvisoHtml(texto){
 
 async function openDRE(mesArg){
   // addEventListener('click', openDRE) entrega o evento como 1º argumento — só aceita string AAAA-MM.
-  const chave = (typeof mesArg === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(mesArg)) ? mesArg : dreMesAtualChave();
+  let chave = (typeof mesArg === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(mesArg)) ? mesArg : dreMesAtualChave();
+  if(chave < DRE_MES_MINIMO) chave = DRE_MES_MINIMO;   // antes de agosto/2026 não há receita lançada: não mostra
   const reqId = ++dreReqSeq;
   const [dados, resumoFin] = await Promise.all([
     dreCarregarMes(chave),
@@ -4902,12 +4907,13 @@ async function openDRE(mesArg){
       <button class="close-x" onclick="closeOverlay()">✕</button>
     </div>
     <div class="no-print" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:0 0 12px;">
-      <button class="btn" id="dreMesAnt" type="button" title="Mês anterior" aria-label="Mês anterior">‹</button>
+      <button class="btn" id="dreMesAnt" type="button" title="${chave <= DRE_MES_MINIMO ? 'Não há DRE antes de ' + dreNomeMes(DRE_MES_MINIMO) : 'Mês anterior'}" aria-label="Mês anterior"${chave <= DRE_MES_MINIMO ? ' disabled style="opacity:.4; cursor:not-allowed;"' : ''}>‹</button>
       <label style="display:flex; gap:8px; align-items:center; font-size:12.5px;">Mês
         <select id="dreMesSel" style="padding:8px 10px; border-radius:10px; border:1px solid var(--border); background:var(--surface); font-family:inherit; font-size:12.5px; color:var(--ink);">${dreOpcoesMeses(chave)}</select>
       </label>
       <button class="btn" id="dreMesProx" type="button" title="Próximo mês" aria-label="Próximo mês">›</button>
       ${chave !== dreMesAtualChave() ? '<button class="btn" id="dreMesHoje" type="button">Mês atual</button>' : ''}
+      <span id="dreInicioNota" style="font-size:11.5px; color:var(--ink-soft);">DRE disponível a partir de ${dreNomeMes(DRE_MES_MINIMO)}: o A receber do portal começa em ${DRE_INICIO_TXT}.</span>
     </div>
     ${dreAvisosMes(chave, dados).map(a => dreAvisoHtml(a)).join('')}
     <label style="display:flex; gap:8px; align-items:center; font-size:12.5px; margin:0 0 10px;" class="no-print"><input type="checkbox" id="dreSemMovimento"${dreMostrarSemMovimento ? ' checked' : ''}> Mostrar categorias sem movimento neste mês</label>
@@ -4949,7 +4955,7 @@ async function openDRE(mesArg){
   if(chkSemMov) chkSemMov.addEventListener('change', ()=>{ dreMostrarSemMovimento = chkSemMov.checked; openDRE(chave); });
   const selMes = document.getElementById('dreMesSel');
   if(selMes) selMes.addEventListener('change', ()=> openDRE(selMes.value));
-  const bAnt = document.getElementById('dreMesAnt'); if(bAnt) bAnt.addEventListener('click', ()=> openDRE(dreMesDelta(chave, -1)));
+  const bAnt = document.getElementById('dreMesAnt'); if(bAnt) bAnt.addEventListener('click', ()=>{ if(chave > DRE_MES_MINIMO) openDRE(dreMesDelta(chave, -1)); });
   const bProx = document.getElementById('dreMesProx'); if(bProx) bProx.addEventListener('click', ()=> openDRE(dreMesDelta(chave, 1)));
   const bHoje = document.getElementById('dreMesHoje'); if(bHoje) bHoje.addEventListener('click', ()=> openDRE(dreMesAtualChave()));
 }
